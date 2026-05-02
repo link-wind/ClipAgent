@@ -1,0 +1,16 @@
+.next/
+node_modules/
+.venv/
+tsconfig.tsbuildinfo
+
+.worktrees/
+.superpowers/
+
+backend/downloads/*
+!backend/downloads/.gitkeep
+backend/output/*
+!backend/output/.gitkeep
+
+__pycache__/
+*.py[cod]
+.pytest_cache/

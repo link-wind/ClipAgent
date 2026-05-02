@@ -1,0 +1,23 @@
+{
+  "permissions": {
+    "allow": [
+      "mcp__my-filesystem__directory_tree",
+      "mcp__my-filesystem__list_directory",
+      "mcp__my-filesystem__read_text_file",
+      "mcp__my-filesystem__list_allowed_directories",
+      "mcp__my-filesystem__write_file",
+      "mcp__my-filesystem__create_directory",
+      "mcp__my-filesystem__read_multiple_files",
+      "Bash(npm install *)",
+      "Bash(npx tsc *)",
+      "Bash(git init *)",
+      "Bash(git add *)",
+      "Bash(git commit *)",
+      "mcp__my-filesystem__get_file_info",
+      "mcp__my-filesystem__read_file",
+      "mcp__my-filesystem__search_files",
+      "Bash(dir \"D:\\\\Code\\\\ClipForge_v2\\\\fixtures\")",
+      "Bash(timeout 15 npm run dev)"
+    ]
+  }
+}

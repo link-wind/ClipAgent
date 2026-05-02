@@ -1,0 +1,47 @@
+[
+  {
+    "id": "vid_001",
+    "title": "城市黄昏车流",
+    "description": "傍晚城市街道，车流穿梭，霓虹初上",
+    "duration": 45,
+    "tags": ["城市", "黄昏", "车流", "夜景"],
+    "thumbnailUrl": "/fixtures/thumbnails/vid_001.jpg",
+    "videoUrl": "/fixtures/vid_001.mp4"
+  },
+  {
+    "id": "vid_002",
+    "title": "海边日落",
+    "description": "金色夕阳沉入海平面",
+    "duration": 30,
+    "tags": ["海边", "日落", "自然", "风景"],
+    "thumbnailUrl": "/fixtures/thumbnails/vid_002.jpg",
+    "videoUrl": "/fixtures/vid_002.mp4"
+  },
+  {
+    "id": "vid_003",
+    "title": "竹林风声",
+    "description": "阳光穿过竹林，微风轻拂",
+    "duration": 60,
+    "tags": ["竹林", "自然", "风", "冥想"],
+    "thumbnailUrl": "/fixtures/thumbnails/vid_003.jpg",
+    "videoUrl": "/fixtures/vid_003.mp4"
+  },
+  {
+    "id": "vid_004",
+    "title": "咖啡拉花特写",
+    "description": "手工咖啡拉花过程特写",
+    "duration": 20,
+    "tags": ["咖啡", "美食", "特写", "手工艺"],
+    "thumbnailUrl": "/fixtures/thumbnails/vid_004.jpg",
+    "videoUrl": "/fixtures/vid_004.mp4"
+  },
+  {
+    "id": "vid_005",
+    "title": "雪山航拍",
+    "description": "无人机航拍雪山峰峦",
+    "duration": 90,
+    "tags": ["雪山", "航拍", "自然", "风景"],
+    "thumbnailUrl": "/fixtures/thumbnails/vid_005.jpg",
+    "videoUrl": "/fixtures/vid_005.mp4"
+  }
+]

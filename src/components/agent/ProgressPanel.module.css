@@ -1,0 +1,91 @@
+.panel {
+  padding: 22px;
+  border-bottom: 1px solid #242a33;
+}
+
+.heading {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: center;
+  margin-bottom: 14px;
+}
+
+.heading h2 {
+  font-size: 16px;
+  letter-spacing: 0;
+}
+
+.heading span {
+  color: #8fe7c1;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.progressTrack {
+  height: 8px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: #242a33;
+}
+
+.progressBar {
+  height: 100%;
+  border-radius: inherit;
+  background: #2aa7d8;
+  transition: width 180ms ease;
+}
+
+.current {
+  display: grid;
+  gap: 8px;
+  margin: 16px 0;
+}
+
+.current div {
+  display: grid;
+  grid-template-columns: 76px minmax(0, 1fr);
+  gap: 10px;
+}
+
+.current dt {
+  color: #8b98a5;
+}
+
+.current dd {
+  color: #eef3f8;
+  overflow-wrap: anywhere;
+}
+
+.steps {
+  list-style: none;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.steps li {
+  min-height: 30px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: #8b98a5;
+  font-size: 12px;
+}
+
+.steps span {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #3a4450;
+  flex: 0 0 auto;
+}
+
+.active {
+  color: #eef3f8 !important;
+}
+
+.active span {
+  background: #8fe7c1;
+  box-shadow: 0 0 0 4px rgba(143, 231, 193, 0.12);
+}
