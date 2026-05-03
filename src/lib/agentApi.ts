@@ -36,6 +36,10 @@ export interface ClipInfo {
   sourceUrl: string
   localPath: string
   publicUrl: string
+  sourceDuration: number
+  trimStart: number
+  trimDuration: number
+  caption: string
   startTime: number
   duration: number
 }
@@ -145,3 +149,5 @@ export function getAgentSessionEvents(sessionId: string): Promise<AgentEvent[]> 
 
   return request<AgentEvent[]>(`/api/agent/sessions/${encodedSessionId}/events`)
 }
+
+

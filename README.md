@@ -37,9 +37,31 @@ uvicorn backend.main:app --reload --host 127.0.0.1 --port 8010
 .\.venv\Scripts\python.exe -m uvicorn backend.main:app --reload --host 127.0.0.1 --port 8010
 ```
 
+### 初始化数据库
+
+真实联调前先执行数据库迁移，避免 `agent_sessions`、`agent_jobs` 等表不存在：
+
+```powershell
+.\.venv\Scripts\python.exe -m alembic -c backend\alembic.ini upgrade head
+```
+
 ### Celery 说明
 
-当前阶段只先预留 Celery 相关环境变量，实际的 Celery app 和 worker 启动入口会在后续 P0 任务里补齐。现在不需要单独启动 Celery worker。
+`/api/agent/sessions/{id}/confirm` 现在会真实投递 Celery 任务，所以本地联调时需要单独启动 worker。
+
+```powershell
+.\.venv\Scripts\python.exe -m celery -A backend.tasks.celery_app:celery_app worker --pool solo --loglevel INFO
+```
+
+如果你同时开了多个 worktree，建议给当前工作区设置独立的 Redis DB 或队列名，避免不同 worker 抢同一条任务。注意这些环境变量要同时提供给后端 API 进程和 worker：
+
+```powershell
+$env:CELERY_BROKER_URL='redis://localhost:6379/1'
+$env:CELERY_RESULT_BACKEND='redis://localhost:6379/1'
+$env:CLIPFORGE_CELERY_QUEUE='clipforge-agent-wt1'
+.\.venv\Scripts\python.exe -m uvicorn backend.main:app --reload --host 127.0.0.1 --port 8010
+.\.venv\Scripts\python.exe -m celery -A backend.tasks.celery_app:celery_app worker --pool solo --loglevel INFO -Q $env:CLIPFORGE_CELERY_QUEUE
+```
 
 ### 启动前端
 
@@ -57,8 +79,9 @@ npm run dev
 - `CLIPFORGE_API_ORIGIN`：可选，Next.js 代理目标，默认 `http://127.0.0.1:8010`。
 - `CLIPFORGE_DATABASE_URL`：PostgreSQL 连接地址。
 - `CLIPFORGE_REDIS_URL`：Redis 连接地址。
-- `CELERY_BROKER_URL`：Celery Broker 预留地址。
-- `CELERY_RESULT_BACKEND`：Celery 结果后端预留地址。
+- `CELERY_BROKER_URL`：Celery Broker 地址。
+- `CELERY_RESULT_BACKEND`：Celery 结果后端地址。
+- `CLIPFORGE_CELERY_QUEUE`：Celery 默认队列名，默认 `clipforge-agent`。
 
 本机需要可执行的 FFmpeg，后端需要能访问公开视频平台，yt-dlp 才能完成真实素材搜索和下载。
 

@@ -14,3 +14,5 @@ backend/output/*
 __pycache__/
 *.py[cod]
 .pytest_cache/
+
+.run-*.log
