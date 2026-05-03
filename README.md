@@ -7,22 +7,27 @@
 - Next.js 14 + React 18 + TypeScript
 - Zustand
 - FastAPI + Pydantic
+- PostgreSQL + Redis
+- Celery
 - yt-dlp
 - FFmpeg / ffmpeg-python
 
-## 启动前端
+## P0 本地开发方式
+
+当前阶段只容器化 PostgreSQL 和 Redis；前端、FastAPI、Celery worker 继续在本地环境运行，不放进 Docker。
+
+### 启动 PostgreSQL 和 Redis
 
 ```bash
-npm install
-npm run dev
+docker compose up -d postgres redis
 ```
 
-前端默认运行在 <http://localhost:3000>，并将 `/api/agent/*` 代理到后端。
+`docker-compose.yml` 会启动本地开发需要的 PostgreSQL 和 Redis，并分别暴露 `5432`、`6379` 端口。
 
-## 启动后端
+### 启动 FastAPI 后端
 
 ```bash
-pip install -r requirements.txt
+pip install -r backend/requirements.txt
 uvicorn backend.main:app --reload --host 127.0.0.1 --port 8010
 ```
 
@@ -32,11 +37,28 @@ uvicorn backend.main:app --reload --host 127.0.0.1 --port 8010
 .\.venv\Scripts\python.exe -m uvicorn backend.main:app --reload --host 127.0.0.1 --port 8010
 ```
 
+### Celery 说明
+
+当前阶段只先预留 Celery 相关环境变量，实际的 Celery app 和 worker 启动入口会在后续 P0 任务里补齐。现在不需要单独启动 Celery worker。
+
+### 启动前端
+
+```bash
+npm install
+npm run dev
+```
+
+前端默认运行在 <http://localhost:3000>，并将 `/api/agent/*` 代理到后端。
+
 ## 环境变量
 
 - `OPENAI_API_KEY`：用于生成智能剪辑方案。
 - `OPENAI_BASE_URL`：可选，兼容 OpenAI API 的代理地址。
 - `CLIPFORGE_API_ORIGIN`：可选，Next.js 代理目标，默认 `http://127.0.0.1:8010`。
+- `CLIPFORGE_DATABASE_URL`：PostgreSQL 连接地址。
+- `CLIPFORGE_REDIS_URL`：Redis 连接地址。
+- `CELERY_BROKER_URL`：Celery Broker 预留地址。
+- `CELERY_RESULT_BACKEND`：Celery 结果后端预留地址。
 
 本机需要可执行的 FFmpeg，后端需要能访问公开视频平台，yt-dlp 才能完成真实素材搜索和下载。
 

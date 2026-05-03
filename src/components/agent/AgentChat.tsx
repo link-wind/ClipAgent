@@ -26,6 +26,7 @@ export default function AgentChat() {
   const session = useAgentStore((state) => state.session);
   const isSubmitting = useAgentStore((state) => state.isSubmitting);
   const setSession = useAgentStore((state) => state.setSession);
+  const setActiveSessionId = useAgentStore((state) => state.setActiveSessionId);
   const setSubmitting = useAgentStore((state) => state.setSubmitting);
   const [message, setMessage] = useState('');
   const [errorText, setErrorText] = useState('');
@@ -47,6 +48,7 @@ export default function AgentChat() {
       const nextSession = session
         ? await sendAgentMessage(session.id, trimmedMessage)
         : await createAgentSession(trimmedMessage);
+      setActiveSessionId(nextSession.id);
       setSession(nextSession);
       setMessage('');
     } catch (error) {
@@ -65,7 +67,9 @@ export default function AgentChat() {
     setErrorText('');
 
     try {
-      setSession(await confirmAgentSession(session.id));
+      const nextSession = await confirmAgentSession(session.id);
+      setActiveSessionId(nextSession.id);
+      setSession(nextSession);
     } catch (error) {
       setErrorText(toUserError(error, () => setSession(null)));
     } finally {

@@ -8,6 +8,7 @@ from fastapi.staticfiles import StaticFiles
 
 from backend.api.agent import router as agent_router
 from backend.api.ai import router as ai_router
+from backend.db import engine as _engine
 from backend.utils.websocket import ws_manager
 
 

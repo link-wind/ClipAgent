@@ -5,13 +5,16 @@ import styles from './ResultPanel.module.css';
 
 export default function ResultPanel() {
   const session = useAgentStore((state) => state.session);
-  const videoUrl = session?.videoUrl;
+  const videoUrl =
+    session?.videoUrl ||
+    session?.clips.find((clip) => clip.publicUrl.includes('/output/'))?.publicUrl ||
+    null;
 
   return (
     <section className={styles.panel}>
       <div className={styles.heading}>
         <h2>结果</h2>
-        {videoUrl ? <span>已生成</span> : null}
+        {videoUrl ? <span>{session?.activeJobId ? '已生成' : '已恢复'}</span> : null}
       </div>
 
       {session?.error ? <p className={styles.error}>{session.error.message}</p> : null}

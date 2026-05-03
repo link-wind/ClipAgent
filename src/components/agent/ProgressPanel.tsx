@@ -4,10 +4,11 @@ import type { AgentStatus } from '@/lib/agentApi';
 import { useAgentStore } from '@/stores/useAgentStore';
 import styles from './ProgressPanel.module.css';
 
-const STEPS: AgentStatus[] = ['planning', 'plan_ready', 'searching', 'downloading', 'rendering', 'done', 'failed'];
+const STEPS: AgentStatus[] = ['queued', 'planning', 'plan_ready', 'searching', 'downloading', 'rendering', 'done', 'failed'];
 
 const STEP_LABELS: Record<AgentStatus, string> = {
   idle: '等待',
+  queued: '排队中',
   planning: '规划',
   plan_ready: '待确认',
   searching: '搜索',
@@ -52,6 +53,17 @@ export default function ProgressPanel() {
           </li>
         ))}
       </ol>
+
+      {session?.events && session.events.length > 0 ? (
+        <ol className={styles.steps}>
+          {session.events.slice(-3).map((event) => (
+            <li key={event.id}>
+              <span />
+              {event.message || event.eventType}
+            </li>
+          ))}
+        </ol>
+      ) : null}
     </section>
   );
 }

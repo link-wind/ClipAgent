@@ -1,5 +1,6 @@
 export type AgentStatus =
   | 'idle'
+  | 'queued'
   | 'planning'
   | 'plan_ready'
   | 'searching'
@@ -39,13 +40,25 @@ export interface ClipInfo {
   duration: number
 }
 
+export interface AgentEvent {
+  id: string
+  eventType: string
+  step: string | null
+  progress: number | null
+  message: string | null
+  payload: Record<string, unknown>
+  createdAt: string
+}
+
 export interface AgentSession {
   id: string
   status: AgentStatus
   messages: AgentMessage[]
   plan: EditPlan | null
   clips: ClipInfo[]
+  events: AgentEvent[]
   videoUrl: string | null
+  activeJobId: string | null
   progress: number
   currentStep: string
   error: { message: string; retryableStep?: string | null } | null
@@ -125,4 +138,10 @@ export function getAgentSession(sessionId: string): Promise<AgentSession> {
   const encodedSessionId = encodeURIComponent(sessionId)
 
   return request<AgentSession>(`/api/agent/sessions/${encodedSessionId}`)
+}
+
+export function getAgentSessionEvents(sessionId: string): Promise<AgentEvent[]> {
+  const encodedSessionId = encodeURIComponent(sessionId)
+
+  return request<AgentEvent[]>(`/api/agent/sessions/${encodedSessionId}/events`)
 }
