@@ -45,6 +45,9 @@ class ClipInfo(BaseModel):
     publicUrl: str
     startTime: float = 0.0
     duration: float = 6.0
+    sourceDuration: float = 0.0
+    trimStart: float = 0.0
+    trimDuration: float = 6.0
 
 
 class AgentError(BaseModel):

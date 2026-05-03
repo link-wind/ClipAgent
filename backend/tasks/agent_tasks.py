@@ -53,6 +53,11 @@ def run_agent_job(job_id: str) -> None:
                     local_path=clip.localPath,
                     public_url=clip.publicUrl,
                     duration=clip.duration,
+                    metadata={
+                        "sourceDuration": clip.sourceDuration,
+                        "trimStart": clip.trimStart,
+                        "trimDuration": clip.trimDuration,
+                    },
                 )
             db.commit()
 

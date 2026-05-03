@@ -9,6 +9,32 @@ from backend.utils.websocket import ws_manager
 DOWNLOADS_DIR = "backend/downloads"
 
 
+def normalize_duration(value: object) -> float:
+    """统一时长值，避免空值和负数。"""
+    try:
+        duration = float(value)
+    except (TypeError, ValueError):
+        return 0.0
+    return max(0.0, duration)
+
+
+def calculate_trim_window(source_duration: float, target_duration: float) -> tuple[float, float]:
+    """为长素材计算默认裁剪区间。"""
+    source_duration = normalize_duration(source_duration)
+    target_duration = normalize_duration(target_duration)
+
+    if source_duration <= 0.0:
+        return 0.0, 0.0
+    if target_duration <= 0.0:
+        return 0.0, source_duration
+    if source_duration <= target_duration:
+        return 0.0, source_duration
+
+    available = source_duration - target_duration
+    trim_start = max(0.0, available * 0.35)
+    return trim_start, target_duration
+
+
 def build_search_options() -> Dict:
     """构造 YouTube 搜索参数，降低客户端兼容问题。"""
     return {
@@ -224,6 +250,9 @@ async def search_and_download_agent_clips(
                 last_error = summarize_download_error(exc)
                 continue
 
+            source_duration = normalize_duration(selected_video.get("duration", 0))
+            trim_start, trim_duration = calculate_trim_window(source_duration, scene.duration)
+
             clips.append(
                 AgentClipInfo(
                     sceneId=scene.id,
@@ -232,6 +261,9 @@ async def search_and_download_agent_clips(
                     publicUrl=f"/downloads/{output_filename}",
                     startTime=0,
                     duration=scene.duration,
+                    sourceDuration=source_duration,
+                    trimStart=trim_start,
+                    trimDuration=trim_duration,
                 )
             )
             break

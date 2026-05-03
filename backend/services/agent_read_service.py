@@ -52,6 +52,7 @@ class AgentReadService:
     def build_session_response(self, session_record, message_rows, plan_row, artifact_rows, event_rows) -> AgentSession:
         # 将数据库行映射回 Pydantic 会话
         plan = EditPlan.model_validate(plan_row.plan_json) if plan_row is not None else None
+        clip_rows = [row for row in artifact_rows if row.artifact_type == "clip"]
         return AgentSession(
             id=session_record.id,
             status=AgentStatus(session_record.status),
@@ -66,14 +67,8 @@ class AgentReadService:
             ],
             plan=plan,
             clips=[
-                ClipInfo(
-                    sceneId=int(row.scene_id) if row.scene_id is not None and str(row.scene_id).isdigit() else 0,
-                    sourceUrl=row.source_url or "",
-                    localPath=row.local_path or "",
-                    publicUrl=row.public_url or "",
-                    duration=row.duration or 0.0,
-                )
-                for row in artifact_rows
+                self._build_clip_info(row)
+                for row in clip_rows
             ],
             events=[
                 event
@@ -91,6 +86,20 @@ class AgentReadService:
             ),
             progress=session_record.progress,
             currentStep=session_record.current_step or "",
+        )
+
+    def _build_clip_info(self, row) -> ClipInfo:
+        # 从产物记录恢复片段信息
+        metadata = row.metadata_json or {}
+        return ClipInfo(
+            sceneId=int(row.scene_id) if row.scene_id is not None and str(row.scene_id).isdigit() else 0,
+            sourceUrl=row.source_url or "",
+            localPath=row.local_path or "",
+            publicUrl=row.public_url or "",
+            duration=row.duration or 0.0,
+            sourceDuration=float(metadata.get("sourceDuration", 0.0) or 0.0),
+            trimStart=float(metadata.get("trimStart", 0.0) or 0.0),
+            trimDuration=float(metadata.get("trimDuration", row.duration or 0.0) or 0.0),
         )
 
     def build_event_response(self, event_rows) -> list[AgentEvent]:
