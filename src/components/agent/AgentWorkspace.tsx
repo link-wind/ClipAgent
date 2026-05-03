@@ -28,10 +28,11 @@ export default function AgentWorkspace() {
   const session = useAgentStore((state) => state.session);
   const activeSessionId = useAgentStore((state) => state.activeSessionId);
   const setSession = useAgentStore((state) => state.setSession);
-  const setEvents = useAgentStore((state) => state.setEvents);
   const videoUrl = resolveSessionVideoUrl(session);
   const sceneCount = session?.plan?.scenes.length ?? 0;
   const targetDuration = session?.plan?.targetDuration ?? null;
+  const sessionId = session?.id ?? null;
+  const sessionStatus = session?.status ?? 'idle';
 
   useEffect(() => {
     if (!activeSessionId || session) {
@@ -48,7 +49,6 @@ export default function AgentWorkspace() {
         ]);
         if (isActive) {
           setSession({ ...nextSession, events: nextEvents });
-          setEvents(nextEvents);
         }
       } catch {
         // 恢复失败时保留当前空白状态，避免打断用户继续发起新会话。
@@ -59,10 +59,10 @@ export default function AgentWorkspace() {
     return () => {
       isActive = false;
     };
-  }, [activeSessionId, session, setEvents, setSession]);
+  }, [activeSessionId, session, setSession]);
 
   useEffect(() => {
-    if (!session || !RUNNING_STATUSES.has(session.status)) {
+    if (!sessionId || !RUNNING_STATUSES.has(sessionStatus)) {
       return;
     }
 
@@ -71,12 +71,11 @@ export default function AgentWorkspace() {
     const pollSession = async () => {
       try {
         const [nextSession, nextEvents] = await Promise.all([
-          getAgentSession(session.id),
-          getAgentSessionEvents(session.id),
+          getAgentSession(sessionId),
+          getAgentSessionEvents(sessionId),
         ]);
         if (isActive) {
           setSession({ ...nextSession, events: nextEvents });
-          setEvents(nextEvents);
         }
       } catch {
         // 轮询失败不覆盖当前会话，交互错误由聊天组件展示。
@@ -89,7 +88,7 @@ export default function AgentWorkspace() {
       isActive = false;
       window.clearInterval(intervalId);
     };
-  }, [session, setEvents, setSession]);
+  }, [sessionId, sessionStatus, setSession]);
 
   return (
     <div className={styles.workspace}>
