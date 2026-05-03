@@ -1,6 +1,6 @@
 .panel {
-  padding: 22px;
-  border-bottom: 1px solid #242a33;
+  padding: 20px;
+  border-bottom: 1px solid rgba(76, 67, 43, 0.58);
 }
 
 .heading {
@@ -12,51 +12,57 @@
 }
 
 .heading h2 {
-  font-size: 16px;
+  font-size: 15px;
   letter-spacing: 0;
 }
 
 .heading span {
-  color: #8fe7c1;
+  color: var(--accent);
   font-size: 12px;
+  font-weight: 800;
 }
 
 .empty {
-  color: #8b98a5;
+  color: var(--text-secondary);
   overflow-wrap: anywhere;
 }
 
 .summary {
   display: grid;
   grid-template-columns: 1fr;
-  gap: 10px;
+  gap: 8px;
   margin-bottom: 18px;
 }
 
 .summary div {
-  display: grid;
-  grid-template-columns: 76px minmax(0, 1fr);
-  gap: 10px;
+  min-width: 0;
+  padding: 10px;
+  border: 1px solid rgba(76, 67, 43, 0.54);
+  border-radius: 8px;
+  background: rgba(36, 35, 29, 0.52);
 }
 
 .summary dt {
-  color: #8b98a5;
+  margin-bottom: 4px;
+  color: var(--text-secondary);
+  font-size: 12px;
 }
 
 .summary dd {
-  color: #eef3f8;
+  color: var(--text-primary);
+  font-weight: 700;
   overflow-wrap: anywhere;
 }
 
 .scenes {
   display: flex;
   flex-direction: column;
-  gap: 14px;
+  gap: 0;
 }
 
 .scene {
-  padding-top: 14px;
-  border-top: 1px solid #242a33;
+  padding: 13px 0;
+  border-top: 1px solid rgba(76, 67, 43, 0.44);
 }
 
 .sceneHeader {
@@ -64,7 +70,7 @@
   justify-content: space-between;
   gap: 12px;
   align-items: center;
-  margin-bottom: 8px;
+  margin-bottom: 7px;
 }
 
 .sceneHeader h3 {
@@ -73,12 +79,13 @@
 }
 
 .sceneHeader span {
-  color: #7ec7f0;
+  color: var(--accent-alt);
   font-size: 12px;
+  font-weight: 800;
 }
 
 .scene p {
-  color: #d6dde5;
+  color: var(--text-secondary);
   overflow-wrap: anywhere;
 }
 
@@ -87,7 +94,7 @@
   display: flex;
   flex-direction: column;
   gap: 6px;
-  color: #8b98a5;
+  color: var(--text-muted);
   font-size: 12px;
 }
 
