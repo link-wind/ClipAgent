@@ -5,6 +5,7 @@ import { useAgentStore } from '@/stores/useAgentStore';
 import styles from './ProgressPanel.module.css';
 
 const STEPS: AgentStatus[] = ['queued', 'planning', 'plan_ready', 'searching', 'downloading', 'rendering', 'done', 'failed'];
+const RECENT_EVENT_LIMIT = 5;
 
 const STEP_LABELS: Record<AgentStatus, string> = {
   idle: '等待',
@@ -18,10 +19,16 @@ const STEP_LABELS: Record<AgentStatus, string> = {
   failed: '失败',
 };
 
+const EVENT_MESSAGE_LABELS: Record<string, string> = {
+  render_captioning: '正在合成字幕',
+  render_audio_mix: '正在混合背景音乐',
+};
+
 export default function ProgressPanel() {
   const session = useAgentStore((state) => state.session);
   const status = session?.status ?? 'idle';
   const progress = Math.max(0, Math.min(100, session?.progress ?? 0));
+  const recentEvents = session?.events?.slice(-RECENT_EVENT_LIMIT) ?? [];
 
   return (
     <section className={styles.panel}>
@@ -54,12 +61,12 @@ export default function ProgressPanel() {
         ))}
       </ol>
 
-      {session?.events && session.events.length > 0 ? (
+      {recentEvents.length > 0 ? (
         <ol className={styles.steps}>
-          {session.events.slice(-3).map((event) => (
+          {recentEvents.map((event) => (
             <li key={event.id}>
               <span />
-              {event.message || event.eventType}
+              {event.message || EVENT_MESSAGE_LABELS[event.eventType] || event.eventType}
             </li>
           ))}
         </ol>

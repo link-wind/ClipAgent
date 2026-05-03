@@ -4,18 +4,7 @@ from backend.db.repositories import AgentJobRepository, AgentPlanRepository
 from backend.models.agent import ClipInfo, EditPlan
 from backend.services.agent_progress_service import AgentProgressService
 from backend.services.search_service import search_and_download_agent_clips
-
-try:
-    from backend.tasks.celery_app import celery_app
-except ModuleNotFoundError:
-    class _DummyCelery:
-        def task(self, *args, **kwargs):
-            def decorator(fn):
-                return fn
-
-            return decorator
-
-    celery_app = _DummyCelery()
+from backend.tasks.celery_app import celery_app
 
 
 SessionLocal = None
@@ -29,12 +18,6 @@ def run_agent_job(job_id: str) -> None:
         from backend.db import SessionLocal as _SessionLocal
 
         SessionLocal = _SessionLocal
-
-    global render_video
-    if render_video is None:
-        from backend.services.render_service import render_video as _render_video
-
-        render_video = _render_video
 
     # 执行正式任务并持久化状态
     with SessionLocal() as db:
@@ -90,7 +73,32 @@ def run_agent_job(job_id: str) -> None:
             progress_service.mark_render_started(session_id, job_id)
             db.commit()
 
-            video_url = asyncio.run(render_video(session_id, clips, f"{session_id}.mp4"))
+            global render_video
+            if render_video is None:
+                from backend.services.render_service import render_video as _render_video
+
+                render_video = _render_video
+
+            def on_render_progress(event_type: str, message: str, progress: float) -> None:
+                # 记录渲染阶段细粒度事件
+                progress_service.record_event(
+                    session_id=session_id,
+                    job_id=job_id,
+                    event_type=event_type,
+                    step="rendering",
+                    message=message,
+                    progress=progress,
+                )
+                db.commit()
+
+            video_url = asyncio.run(
+                render_video(
+                    session_id,
+                    clips,
+                    f"{session_id}.mp4",
+                    progress_callback=on_render_progress,
+                )
+            )
             progress_service.create_artifact(
                 session_id=session_id,
                 job_id=job_id,
