@@ -1,4 +1,7 @@
 import asyncio
+import importlib
+import subprocess
+import sys
 import unittest
 from unittest.mock import patch
 
@@ -18,6 +21,29 @@ class CeleryContractTests(unittest.TestCase):
         from backend.tasks.agent_tasks import run_agent_job
 
         self.assertTrue(callable(run_agent_job))
+
+    def test_celery_app_subprocess_registers_agent_job_task(self):
+        result = subprocess.run(
+            [
+                sys.executable,
+                "-c",
+                (
+                    "from backend.tasks.celery_app import celery_app; "
+                    "print('backend.tasks.agent_tasks.run_agent_job' in celery_app.tasks)"
+                ),
+            ],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+
+        self.assertEqual(result.returncode, 0, msg=result.stderr)
+        self.assertEqual(result.stdout.strip(), "True")
+
+    def test_celery_app_registers_agent_job_task(self):
+        from backend.tasks.celery_app import celery_app
+
+        self.assertIn("backend.tasks.agent_tasks.run_agent_job", celery_app.tasks)
 
 
 class ConfirmFlowContractTests(unittest.TestCase):
