@@ -82,8 +82,9 @@ export default function AgentChat() {
       <div className={styles.messages}>
         {!session ? (
           <div className={styles.empty}>
+            <span>NEW PROJECT</span>
             <h2>描述你想生成的视频</h2>
-            <p>告诉 Agent 主题、风格、时长和素材偏好，它会先生成剪辑计划。</p>
+            <p>告诉 Agent 主题、风格、时长和素材偏好，它会先生成剪辑计划，并把结果预览放到上方画布。</p>
           </div>
         ) : (
           session.messages.map((item) => (
@@ -112,6 +113,7 @@ export default function AgentChat() {
           disabled={isSubmitting}
         />
         <div className={styles.actions}>
+          <span className={styles.composerHint}>Enter 发送 · Shift Enter 换行</span>
           <Button type="button" variant="secondary" onClick={confirmPlan} disabled={!canConfirm}>
             确认并开始
           </Button>
