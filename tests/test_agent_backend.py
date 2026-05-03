@@ -7,6 +7,15 @@ from pathlib import Path
 from unittest.mock import AsyncMock, patch
 
 import httpx
+from sqlalchemy import create_engine, event
+from sqlalchemy.orm import sessionmaker
+from sqlalchemy.pool import StaticPool
+
+import backend.api.agent as agent_api_module
+from backend.db.base import Base
+from backend.services.agent_execution_service import AgentExecutionService
+from backend.services.agent_read_service import AgentReadService
+from backend.services.agent_session_service import AgentSessionService
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -126,6 +135,46 @@ class AgentSessionTests(unittest.TestCase):
 
 
 class AgentApiTests(unittest.TestCase):
+    def setUp(self):
+        self.engine = create_engine(
+            "sqlite+pysqlite:///:memory:",
+            future=True,
+            connect_args={"check_same_thread": False},
+            poolclass=StaticPool,
+        )
+        event.listen(self.engine, "connect", self._enable_sqlite_foreign_keys)
+        Base.metadata.create_all(self.engine)
+        self.session_factory = sessionmaker(
+            bind=self.engine,
+            autoflush=False,
+            autocommit=False,
+            future=True,
+        )
+        self.session_service = AgentSessionService(session_factory=self.session_factory)
+        self.read_service = AgentReadService(session_factory=self.session_factory)
+        self.execution_service = AgentExecutionService(
+            session_factory=self.session_factory,
+            enqueue_job=lambda _job_id: None,
+        )
+        self.patches = [
+            patch.object(agent_api_module, "session_service", self.session_service),
+            patch.object(agent_api_module, "read_service", self.read_service),
+            patch.object(agent_api_module, "execution_service", self.execution_service),
+        ]
+        for patcher in self.patches:
+            patcher.start()
+
+    def tearDown(self):
+        for patcher in reversed(self.patches):
+            patcher.stop()
+        self.engine.dispose()
+
+    @staticmethod
+    def _enable_sqlite_foreign_keys(dbapi_connection, _connection_record):
+        cursor = dbapi_connection.cursor()
+        cursor.execute("PRAGMA foreign_keys=ON")
+        cursor.close()
+
     def test_create_session_api_returns_plan_ready_session(self):
         from backend.main import app
 
@@ -486,6 +535,69 @@ class FrontendProxyConfigTests(unittest.TestCase):
 
 
 class FrontendClientContractTests(unittest.TestCase):
+    def setUp(self):
+        self.engine = create_engine(
+            "sqlite+pysqlite:///:memory:",
+            future=True,
+            connect_args={"check_same_thread": False},
+            poolclass=StaticPool,
+        )
+        event.listen(self.engine, "connect", AgentApiTests._enable_sqlite_foreign_keys)
+        Base.metadata.create_all(self.engine)
+        self.session_factory = sessionmaker(
+            bind=self.engine,
+            autoflush=False,
+            autocommit=False,
+            future=True,
+        )
+        self.session_service = AgentSessionService(session_factory=self.session_factory)
+        self.read_service = AgentReadService(session_factory=self.session_factory)
+        self.execution_service = AgentExecutionService(
+            session_factory=self.session_factory,
+            enqueue_job=lambda _job_id: None,
+        )
+        self.patches = [
+            patch.object(agent_api_module, "session_service", self.session_service),
+            patch.object(agent_api_module, "read_service", self.read_service),
+            patch.object(agent_api_module, "execution_service", self.execution_service),
+        ]
+        for patcher in self.patches:
+            patcher.start()
+
+    def tearDown(self):
+        for patcher in reversed(self.patches):
+            patcher.stop()
+        self.engine.dispose()
+
+    def test_frontend_store_supports_recovery_fields(self):
+        store_source = (ROOT / "src" / "stores" / "useAgentStore.ts").read_text(encoding="utf-8")
+        api_source = (ROOT / "src" / "lib" / "agentApi.ts").read_text(encoding="utf-8")
+
+        self.assertIn("activeSessionId", store_source)
+        self.assertIn("events", store_source)
+        self.assertIn("setActiveSessionId", store_source)
+        self.assertIn("setEvents", store_source)
+        self.assertIn("getAgentSessionEvents", api_source)
+        self.assertIn("queued", api_source)
+
+    def test_workspace_polls_running_sessions_and_restores_events(self):
+        workspace_source = (ROOT / "src" / "components" / "agent" / "AgentWorkspace.tsx").read_text(
+            encoding="utf-8"
+        )
+        progress_source = (ROOT / "src" / "components" / "agent" / "ProgressPanel.tsx").read_text(
+            encoding="utf-8"
+        )
+        result_source = (ROOT / "src" / "components" / "agent" / "ResultPanel.tsx").read_text(
+            encoding="utf-8"
+        )
+
+        self.assertIn("getAgentSessionEvents", workspace_source)
+        self.assertIn("activeSessionId", workspace_source)
+        self.assertIn("queued", workspace_source)
+        self.assertIn("setEvents", workspace_source)
+        self.assertIn("session.events", progress_source)
+        self.assertIn("activeJobId", result_source)
+
     def test_agent_chat_resets_stale_session_on_missing_backend_session(self):
         content = (ROOT / "src" / "components" / "agent" / "AgentChat.tsx").read_text(encoding="utf-8")
 
@@ -554,23 +666,20 @@ class FrontendClientContractTests(unittest.TestCase):
 
         client = _make_test_client(app)
         created = client.post("/api/agent/sessions", json={"message": "做一个科技短片"}).json()
-        with patch("backend.api.agent.agent_service.run_confirmed_session", new_callable=AsyncMock) as mock_run:
-            response = client.post(f"/api/agent/sessions/{created['id']}/confirm")
+        response = client.post(f"/api/agent/sessions/{created['id']}/confirm")
 
         self.assertEqual(response.status_code, 200)
         data = response.json()
-        self.assertEqual(data["status"], "searching")
-        self.assertEqual(data["progress"], 30)
-        self.assertIn("正在搜索素材", data["currentStep"])
-        mock_run.assert_awaited_once_with(created["id"])
+        self.assertEqual(data["status"], "queued")
+        self.assertEqual(data["progress"], 25)
+        self.assertIn("任务已入队", data["currentStep"])
 
     def test_confirm_session_api_rejects_non_confirmable_status(self):
         from backend.main import app
 
         client = _make_test_client(app)
         created = client.post("/api/agent/sessions", json={"message": "做一个科技短片"}).json()
-        with patch("backend.api.agent.agent_service.run_confirmed_session", new_callable=AsyncMock):
-            first = client.post(f"/api/agent/sessions/{created['id']}/confirm")
+        first = client.post(f"/api/agent/sessions/{created['id']}/confirm")
         second = client.post(f"/api/agent/sessions/{created['id']}/confirm")
 
         self.assertEqual(first.status_code, 200)

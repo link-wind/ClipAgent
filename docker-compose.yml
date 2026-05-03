@@ -1,0 +1,25 @@
+services:
+  postgres:
+    image: postgres:16
+    container_name: clipforge-postgres
+    environment:
+      POSTGRES_DB: clipforge
+      POSTGRES_USER: clipforge
+      POSTGRES_PASSWORD: clipforge
+    ports:
+      - "5432:5432"
+    volumes:
+      - clipforge-postgres-data:/var/lib/postgresql/data
+
+  redis:
+    image: redis:7
+    container_name: clipforge-redis
+    ports:
+      - "6379:6379"
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - clipforge-redis-data:/data
+
+volumes:
+  clipforge-postgres-data:
+  clipforge-redis-data:

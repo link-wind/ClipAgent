@@ -13,6 +13,11 @@ class AgentService:
     def __init__(self):
         self.sessions: Dict[str, AgentSession] = {}
 
+    def sync_session(self, session: AgentSession) -> AgentSession:
+        # 同步数据库会话到兼容缓存
+        self.sessions[session.id] = session
+        return session
+
     def create_session(self, prompt: Optional[str] = None) -> AgentSession:
         session = AgentSession(id=str(uuid.uuid4()))
         self.sessions[session.id] = session

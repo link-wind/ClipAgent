@@ -6,6 +6,7 @@ from pydantic import BaseModel, Field
 
 class AgentStatus(str, Enum):
     IDLE = "idle"
+    QUEUED = "queued"
     PLANNING = "planning"
     PLAN_READY = "plan_ready"
     SEARCHING = "searching"
@@ -51,13 +52,25 @@ class AgentError(BaseModel):
     retryableStep: Optional[str] = None
 
 
+class AgentEvent(BaseModel):
+    id: str
+    eventType: str
+    step: Optional[str] = None
+    progress: Optional[float] = None
+    message: Optional[str] = None
+    payload: dict = Field(default_factory=dict)
+    createdAt: str
+
+
 class AgentSession(BaseModel):
     id: str
     status: AgentStatus = AgentStatus.IDLE
     messages: List[AgentMessage] = Field(default_factory=list)
     plan: Optional[EditPlan] = None
     clips: List[ClipInfo] = Field(default_factory=list)
+    events: List[AgentEvent] = Field(default_factory=list)
     videoUrl: Optional[str] = None
+    activeJobId: Optional[str] = None
     error: Optional[AgentError] = None
     progress: float = 0.0
     currentStep: str = ""
