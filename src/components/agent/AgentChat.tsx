@@ -1,6 +1,6 @@
 'use client';
 
-import { FormEvent, useState } from 'react';
+import { FormEvent, KeyboardEvent, useState } from 'react';
 import { confirmAgentSession, createAgentSession, sendAgentMessage } from '@/lib/agentApi';
 import { useAgentStore } from '@/stores/useAgentStore';
 import Button from '@/components/common/Button';
@@ -58,6 +58,17 @@ export default function AgentChat() {
     }
   };
 
+  const submitMessageFromKeyboard = (event: KeyboardEvent<HTMLTextAreaElement>) => {
+    if (event.key !== 'Enter' || event.shiftKey || event.nativeEvent.isComposing) {
+      return;
+    }
+
+    event.preventDefault();
+    if (canSend) {
+      event.currentTarget.form?.requestSubmit();
+    }
+  };
+
   const confirmPlan = async () => {
     if (!session || !canConfirm) {
       return;
@@ -108,6 +119,7 @@ export default function AgentChat() {
         <textarea
           value={message}
           onChange={(event) => setMessage(event.target.value)}
+          onKeyDown={submitMessageFromKeyboard}
           placeholder="输入需求或补充说明"
           rows={4}
           disabled={isSubmitting}
