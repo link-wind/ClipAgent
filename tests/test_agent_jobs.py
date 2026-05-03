@@ -1,5 +1,4 @@
 import asyncio
-import importlib
 import subprocess
 import sys
 import unittest
@@ -10,9 +9,7 @@ from sqlalchemy import create_engine, event
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
-import backend.api.agent as agent_api_module
 from backend.db.base import Base
-from backend.main import app
 from backend.services.agent_session_service import AgentSessionService
 
 
@@ -64,6 +61,20 @@ class ClipInfoContractTests(unittest.TestCase):
         self.assertEqual(clip.sourceDuration, 18.0)
         self.assertEqual(clip.trimStart, 4.2)
         self.assertEqual(clip.trimDuration, 6.0)
+
+    def test_clip_info_supports_caption(self):
+        from backend.models.agent import ClipInfo
+
+        clip = ClipInfo(
+            sceneId=1,
+            sourceUrl="https://example.com/video",
+            localPath="backend/downloads/demo.mp4",
+            publicUrl="/downloads/demo.mp4",
+            duration=6.0,
+            caption="开场镜头",
+        )
+
+        self.assertEqual(clip.caption, "开场镜头")
 
 
 class ClipTrimCalculationTests(unittest.TestCase):
@@ -126,6 +137,42 @@ class SearchClipAssemblyTests(unittest.TestCase):
             self.assertEqual(clips[0].sourceDuration, 20.0)
             self.assertAlmostEqual(clips[0].trimStart, 4.9)
             self.assertEqual(clips[0].trimDuration, 6.0)
+
+        asyncio.run(run_test())
+
+    def test_search_and_download_agent_clips_populates_caption(self):
+        from backend.models.agent import PlanScene
+        from backend.services.search_service import search_and_download_agent_clips
+
+        async def run_test():
+            scenes = [
+                PlanScene(
+                    id=1,
+                    description="开场",
+                    keywords=["city"],
+                    duration=6.0,
+                    searchQuery="city motion",
+                )
+            ]
+
+            with patch("backend.services.search_service.search_youtube") as mock_search, patch(
+                "backend.services.search_service.download_video",
+                new_callable=AsyncMock,
+            ) as mock_download:
+                mock_search.return_value = [
+                    {
+                        "id": "abc",
+                        "title": "demo",
+                        "url": "https://example.com/watch?v=abc",
+                        "duration": 20.0,
+                    }
+                ]
+                mock_download.return_value = "backend/downloads/demo.mp4"
+
+                clips = await search_and_download_agent_clips("session-1", scenes)
+
+            self.assertEqual(len(clips), 1)
+            self.assertEqual(clips[0].caption, "开场")
 
         asyncio.run(run_test())
 
@@ -202,6 +249,46 @@ class ArtifactTrimMetadataTests(unittest.TestCase):
         self.assertEqual(clip_artifact.metadata_json["sourceDuration"], 20.0)
         self.assertEqual(clip_artifact.metadata_json["trimStart"], 4.9)
         self.assertEqual(clip_artifact.metadata_json["trimDuration"], 6.0)
+
+    def test_run_agent_job_persists_caption_in_artifacts(self):
+        from backend.db.repositories import AgentArtifactRepository
+        from backend.tasks.agent_tasks import run_agent_job
+
+        session_id, job_id = self._create_queued_job()
+
+        async def fake_search_runner(_session_id, _scenes):
+            return [
+                {
+                    "sceneId": 1,
+                    "sourceUrl": "https://example.com/1",
+                    "localPath": "backend/downloads/1.mp4",
+                    "publicUrl": "/downloads/1.mp4",
+                    "duration": 6.0,
+                    "caption": "开场镜头",
+                    "sourceDuration": 20.0,
+                    "trimStart": 4.9,
+                    "trimDuration": 6.0,
+                }
+            ]
+
+        async def fake_render_runner(_session_id, _clips, _filename):
+            return "/output/final.mp4"
+
+        with patch("backend.tasks.agent_tasks.SessionLocal", self.session_factory), patch(
+            "backend.tasks.agent_tasks.search_and_download_agent_clips",
+            fake_search_runner,
+        ), patch(
+            "backend.tasks.agent_tasks.render_video",
+            fake_render_runner,
+        ):
+            run_agent_job(job_id)
+
+        with self.session_factory() as db:
+            artifact_repo = AgentArtifactRepository(db)
+            artifacts = artifact_repo.list_for_session(session_id)
+
+        clip_artifact = next(row for row in artifacts if row.artifact_type == "clip")
+        self.assertEqual(clip_artifact.metadata_json["caption"], "开场镜头")
 
 
 class RenderPreparationTests(unittest.TestCase):
@@ -324,6 +411,8 @@ class ConfirmFlowContractTests(unittest.TestCase):
             self.assertEqual(event_rows[0].event_type, "job_queued")
 
     def test_confirm_endpoint_returns_queued_session(self):
+        import backend.api.agent as agent_api_module
+        from backend.main import app
         from backend.models.agent import AgentStatus
         from backend.services.agent_execution_service import AgentExecutionService
 

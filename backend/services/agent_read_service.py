@@ -96,6 +96,7 @@ class AgentReadService:
             sourceUrl=row.source_url or "",
             localPath=row.local_path or "",
             publicUrl=row.public_url or "",
+            caption=metadata.get("caption", "") or "",
             duration=row.duration or 0.0,
             sourceDuration=float(metadata.get("sourceDuration", 0.0) or 0.0),
             trimStart=float(metadata.get("trimStart", 0.0) or 0.0),

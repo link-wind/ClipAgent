@@ -1,16 +1,41 @@
 import asyncio
 
-from backend.db import SessionLocal
 from backend.db.repositories import AgentJobRepository, AgentPlanRepository
 from backend.models.agent import ClipInfo, EditPlan
 from backend.services.agent_progress_service import AgentProgressService
-from backend.services.render_service import render_video
 from backend.services.search_service import search_and_download_agent_clips
-from backend.tasks.celery_app import celery_app
+
+try:
+    from backend.tasks.celery_app import celery_app
+except ModuleNotFoundError:
+    class _DummyCelery:
+        def task(self, *args, **kwargs):
+            def decorator(fn):
+                return fn
+
+            return decorator
+
+    celery_app = _DummyCelery()
+
+
+SessionLocal = None
+render_video = None
 
 
 @celery_app.task(name="backend.tasks.agent_tasks.run_agent_job")
 def run_agent_job(job_id: str) -> None:
+    global SessionLocal
+    if SessionLocal is None:
+        from backend.db import SessionLocal as _SessionLocal
+
+        SessionLocal = _SessionLocal
+
+    global render_video
+    if render_video is None:
+        from backend.services.render_service import render_video as _render_video
+
+        render_video = _render_video
+
     # 执行正式任务并持久化状态
     with SessionLocal() as db:
         job_repo = AgentJobRepository(db)
@@ -54,6 +79,7 @@ def run_agent_job(job_id: str) -> None:
                     public_url=clip.publicUrl,
                     duration=clip.duration,
                     metadata={
+                        "caption": clip.caption,
                         "sourceDuration": clip.sourceDuration,
                         "trimStart": clip.trimStart,
                         "trimDuration": clip.trimDuration,

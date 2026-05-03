@@ -43,6 +43,7 @@ class ClipInfo(BaseModel):
     sourceUrl: str
     localPath: str
     publicUrl: str
+    caption: str = ""
     startTime: float = 0.0
     duration: float = 6.0
     sourceDuration: float = 0.0
