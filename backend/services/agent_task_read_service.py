@@ -8,7 +8,7 @@ from backend.models.agent import AgentDashboardSummary, AgentError, AgentTaskDet
 from backend.services.agent_read_service import AgentReadService
 
 
-RUNNING_JOB_STATUSES = {"queued", "searching", "downloading", "rendering", "pending"}
+RUNNING_JOB_STATUSES = {"queued", "pending", "running"}
 
 
 class AgentTaskReadService:
@@ -35,6 +35,8 @@ class AgentTaskReadService:
             artifacts = AgentArtifactRepository(db).list_for_job(job.id)
             events = AgentEventRepository(db).list_for_job(job.id)
             clip_rows = [row for row in artifacts if row.artifact_type == "clip"]
+            video_url = self._resolve_video_url(artifacts, events, session)
+            retryable_step = self._resolve_retryable_step(events, session)
             summary = self._build_task_summary(job, session)
             return AgentTaskDetail(
                 **summary.model_dump(),
@@ -43,12 +45,12 @@ class AgentTaskReadService:
                 error=(
                     AgentError(
                         message=job.error_message,
-                        retryableStep=session.error_retryable_step if session else None,
+                        retryableStep=retryable_step,
                     )
                     if job.error_message
                     else None
                 ),
-                videoUrl=session.video_url if session else None,
+                videoUrl=video_url,
             )
 
     def read_dashboard(self) -> AgentDashboardSummary:
@@ -61,7 +63,7 @@ class AgentTaskReadService:
             return AgentDashboardSummary(
                 totalSessions=session_repo.count_all(),
                 activeTasks=job_repo.count_by_statuses(RUNNING_JOB_STATUSES),
-                completedTasks=job_repo.count_by_status("done"),
+                completedTasks=job_repo.count_by_status("succeeded"),
                 failedTasks=job_repo.count_by_status("failed"),
                 recentTasks=[
                     self._build_task_summary(job, session_by_id.get(job.session_id))
@@ -85,3 +87,25 @@ class AgentTaskReadService:
     def _load_sessions_for_jobs(self, session_repo, jobs) -> dict[str, object]:
         session_ids = [job.session_id for job in jobs if job.session_id]
         return {session.id: session for session in session_repo.get_many(session_ids)}
+
+    def _resolve_video_url(self, artifacts, events, session) -> str | None:
+        for row in reversed(artifacts):
+            if row.artifact_type == "video" and row.public_url:
+                return row.public_url
+
+        for row in reversed(events):
+            payload = row.payload_json or {}
+            video_url = payload.get("videoUrl")
+            if video_url:
+                return str(video_url)
+
+        return session.video_url if session else None
+
+    def _resolve_retryable_step(self, events, session) -> str | None:
+        for row in reversed(events):
+            payload = row.payload_json or {}
+            retryable_step = payload.get("retryableStep")
+            if retryable_step:
+                return str(retryable_step)
+
+        return session.error_retryable_step if session else None

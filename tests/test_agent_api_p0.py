@@ -9,7 +9,12 @@ from sqlalchemy.pool import StaticPool
 
 import backend.api.agent as agent_api_module
 from backend.db.base import Base
-from backend.db.repositories import AgentArtifactRepository, AgentEventRepository, AgentJobRepository
+from backend.db.repositories import (
+    AgentArtifactRepository,
+    AgentEventRepository,
+    AgentJobRepository,
+    AgentSessionRepository,
+)
 from backend.main import app
 from backend.services.agent_read_service import AgentReadService
 from backend.services.agent_service import agent_service
@@ -306,14 +311,14 @@ class AgentApiP0ContractTests(unittest.TestCase):
                 for index in range(55):
                     session = self.session_service.create_session(f"任务 {index}")
                     sessions.append(session.id)
-                    status = "queued" if index < 30 else "done" if index < 45 else "failed"
-                    current_step = "处理中" if status == "queued" else "已完成" if status == "done" else "执行失败"
+                    status = "running" if index < 30 else "succeeded" if index < 45 else "failed"
+                    current_step = "处理中" if status == "running" else "已完成" if status == "succeeded" else "执行失败"
                     job_repo.create(
                         session_id=session.id,
                         plan_id=None,
                         job_type="generate_video",
                         status=status,
-                        progress=50 if status == "queued" else 100 if status == "done" else 0,
+                        progress=50 if status == "running" else 100 if status == "succeeded" else 0,
                         current_step=current_step,
                     )
                 db.commit()
@@ -351,19 +356,25 @@ class AgentApiP0ContractTests(unittest.TestCase):
                     session_id=session.id,
                     plan_id=None,
                     job_type="generate_video",
-                    status="done",
+                    status="succeeded",
                     progress=100,
                     current_step="已完成",
+                    error_message="旧任务失败信息不该串进来",
                 )
                 second_job = job_repo.create(
                     session_id=session.id,
                     plan_id=None,
                     job_type="generate_video",
-                    status="queued",
+                    status="failed",
                     progress=20,
-                    current_step="准备素材",
+                    current_step="处理失败：渲染服务不可用",
+                    error_message="渲染服务不可用",
                 )
                 second_job_id = second_job.id
+
+                session_record = AgentSessionRepository(db).get(session.id)
+                session_record.video_url = "https://cdn.example.com/final-video-from-old-job.mp4"
+                session_record.error_retryable_step = "searching"
 
                 artifact_repo.create(
                     session_id=session.id,
@@ -387,23 +398,47 @@ class AgentApiP0ContractTests(unittest.TestCase):
                     duration=5.0,
                     metadata_json={"caption": "clip 2"},
                 )
+                artifact_repo.create(
+                    session_id=session.id,
+                    job_id=first_job.id,
+                    artifact_type="video",
+                    public_url="https://cdn.example.com/final-video-from-old-job.mp4",
+                )
                 event_repo.create(
                     session_id=session.id,
                     job_id=first_job.id,
-                    event_type="job_completed",
+                    event_type="job_succeeded",
                     step="done",
                     progress=100,
                     message="首个任务完成",
-                    payload_json={"jobId": first_job.id},
+                    payload_json={
+                        "jobId": first_job.id,
+                        "videoUrl": "https://cdn.example.com/final-video-from-old-job.mp4",
+                    },
                 )
                 event_repo.create(
                     session_id=session.id,
                     job_id=second_job.id,
-                    event_type="job_progress",
-                    step="queued",
+                    event_type="job_failed",
+                    step="failed",
                     progress=20,
-                    message="第二个任务排队中",
-                    payload_json={"jobId": second_job.id},
+                    message="第二个任务失败",
+                    payload_json={"jobId": second_job.id, "retryableStep": "rendering"},
+                )
+                event_repo.create(
+                    session_id=session.id,
+                    job_id=second_job.id,
+                    event_type="render_started",
+                    step="rendering",
+                    progress=80,
+                    message="开始合成视频",
+                    payload_json={"videoUrl": "https://cdn.example.com/final-video-from-current-job.mp4"},
+                )
+                artifact_repo.create(
+                    session_id=session.id,
+                    job_id=second_job.id,
+                    artifact_type="video",
+                    public_url="https://cdn.example.com/final-video-from-current-job.mp4",
                 )
                 db.commit()
 
@@ -414,10 +449,15 @@ class AgentApiP0ContractTests(unittest.TestCase):
                 payload = response.json()
 
                 self.assertEqual(payload["id"], second_job_id)
-                self.assertEqual(len(payload["events"]), 1)
-                self.assertEqual(payload["events"][0]["payload"]["jobId"], second_job_id)
+                self.assertEqual(len(payload["events"]), 2)
+                self.assertEqual(
+                    {event["eventType"] for event in payload["events"]},
+                    {"job_failed", "render_started"},
+                )
                 self.assertEqual(len(payload["clips"]), 1)
                 self.assertEqual(payload["clips"][0]["caption"], "clip 2")
+                self.assertEqual(payload["videoUrl"], "https://cdn.example.com/final-video-from-current-job.mp4")
+                self.assertEqual(payload["error"]["retryableStep"], "rendering")
 
         import asyncio
 
