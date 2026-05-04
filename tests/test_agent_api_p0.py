@@ -136,6 +136,29 @@ class AgentApiP0ContractTests(unittest.TestCase):
         self.assertEqual(detail.id, "job-1")
         self.assertEqual(dashboard.activeTasks, 1)
 
+    def test_agent_step_response_models_can_be_instantiated(self):
+        from backend.models.agent import AgentStep, AgentStepError
+
+        step = AgentStep(
+            id="understand_request",
+            title="理解原始需求",
+            description="读取用户原始 prompt，提炼主题、受众、用途和初步意图。",
+            status="failed",
+            progress=30,
+            summary="已读取原始需求",
+            result={"originalPrompt": "做一个 30 秒产品宣传片"},
+            error=AgentStepError(
+                message="规划失败",
+                retryable=True,
+                retryableStep="finalize_plan",
+            ),
+            startedAt="2026-05-05T10:00:00",
+            finishedAt="2026-05-05T10:01:00",
+        )
+
+        self.assertEqual(step.id, "understand_request")
+        self.assertEqual(step.error.retryableStep, "finalize_plan")
+
     def test_agent_api_create_get_and_add_message_round_trip_uses_db_backed_services(self):
         async def _run():
             transport = httpx.ASGITransport(app=app)
