@@ -58,7 +58,8 @@ class InfrastructureDocsTests(unittest.TestCase):
         self.assertIn("uvicorn backend.main:app", content)
         self.assertIn("npm run dev", content)
         self.assertIn("只容器化 PostgreSQL 和 Redis", content)
-        self.assertIn("实际的 Celery app 和 worker 启动入口会在后续 P0 任务里补齐", content)
+        self.assertIn("现在会真实投递 Celery 任务", content)
+        self.assertIn("worker --pool solo", content)
 
 
 class AgentApiP0ContractTests(unittest.TestCase):
