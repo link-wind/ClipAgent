@@ -54,6 +54,11 @@ export interface AgentEvent {
   createdAt: string
 }
 
+export interface AgentErrorInfo {
+  message: string
+  retryableStep?: string | null
+}
+
 export interface AgentSession {
   id: string
   status: AgentStatus
@@ -65,7 +70,7 @@ export interface AgentSession {
   activeJobId: string | null
   progress: number
   currentStep: string
-  error: { message: string; retryableStep?: string | null } | null
+  error: AgentErrorInfo | null
 }
 
 type RequestOptions = {
@@ -149,5 +154,4 @@ export function getAgentSessionEvents(sessionId: string): Promise<AgentEvent[]> 
 
   return request<AgentEvent[]>(`/api/agent/sessions/${encodedSessionId}/events`)
 }
-
 
