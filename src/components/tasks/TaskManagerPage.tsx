@@ -63,12 +63,10 @@ function getTaskSearchText(task: AgentTaskSummary) {
 
 function buildTaskSummary(task: AgentTaskDetail) {
   return [
-    { label: '任务 ID', value: task.id },
-    { label: '会话 ID', value: task.sessionId },
+    { label: '状态', value: getStatusLabel(task.status) },
     { label: '当前步骤', value: task.currentStep || '无' },
-    { label: '进度', value: formatProgress(task.progress) },
-    { label: '创建时间', value: formatDateTime(task.createdAt) },
-    { label: '更新时间', value: formatDateTime(task.updatedAt) },
+    { label: '总进度', value: formatProgress(task.progress) },
+    { label: '最近更新时间', value: formatDateTime(task.updatedAt) },
   ];
 }
 
@@ -165,6 +163,10 @@ export default function TaskManagerPage() {
   }
 
   const hasTasks = filteredTasks.length > 0;
+  const selectedTasks = useMemo(
+    () => filteredTasks.filter((task) => selectedIds.includes(task.id)),
+    [filteredTasks, selectedIds],
+  );
 
   useEffect(() => {
     if (activeTask) {
@@ -234,9 +236,9 @@ export default function TaskManagerPage() {
 
           <div className={styles.heroBody}>
             <div className={styles.heroCopy}>
-              <h1>Task Manager</h1>
+              <h1>任务管理页面</h1>
               <p>
-                统一查看任务队列、状态和最近结果；点开任一任务会以 modal 形式展示完整详情，方便在列表和细节之间来回切换。
+                统一查看任务队列、状态和最近结果；在列表里筛选、搜索、批量理解任务状态，并通过弹窗查看和处理单个任务。
               </p>
             </div>
 
@@ -262,17 +264,21 @@ export default function TaskManagerPage() {
                   ))}
                 </select>
               </label>
+
+              <button type="button" className={styles.primaryAction} disabled={selectedIds.length === 0}>
+                批量操作
+              </button>
             </div>
           </div>
         </section>
 
         {errorText ? <p className={styles.errorBanner}>{errorText}</p> : null}
 
-        <section className={styles.contentGrid} aria-label="任务列表和详情">
-          <article className={styles.listPane} aria-label="任务列表">
+        <section className={styles.listPane} aria-label="任务列表">
+          <div className={styles.boardToolbar}>
             <div className={styles.panelHeader}>
               <div>
-                <span className={styles.panelEyebrow}>列表</span>
+                <span className={styles.panelEyebrow}>任务列表</span>
                 <h2>可管理任务列表</h2>
               </div>
               <span className={styles.panelMeta}>{selectedIds.length} 已选</span>
@@ -300,68 +306,91 @@ export default function TaskManagerPage() {
                 查看已选
               </button>
             </div>
+          </div>
 
-            <div className={styles.taskList}>
-              {hasTasks ? (
-                filteredTasks.map((task) => {
-                  const isSelected = selectedIds.includes(task.id);
-                  return (
-                    <div key={task.id} className={`${styles.taskRow} ${isSelected ? styles.taskRowSelected : ''}`}>
-                      <label className={styles.taskSelect}>
-                        <input
-                          type="checkbox"
-                          checked={isSelected}
-                          onChange={() => toggleSelected(task.id)}
-                          aria-label={`选择任务 ${task.title}`}
-                        />
-                        <span />
-                      </label>
+          <div className={styles.listSummary}>
+            <span className={styles.summaryChip}>{tasks.length} 个任务</span>
+            <span className={styles.summaryChip}>{selectedTasks.length} 个已选</span>
+            <span className={styles.summaryChip}>按更新时间查看</span>
+          </div>
 
-                      <button
-                        type="button"
-                        className={styles.taskMain}
-                        onClick={() => void openTaskDetail(task.id)}
-                      >
-                        <span className={styles.taskTitle}>{task.title}</span>
-                        <span className={styles.taskMeta}>
-                          {task.sessionId} · {task.currentStep || '无当前步骤'}
-                        </span>
-                      </button>
+          <div className={styles.tableHead} aria-hidden="true">
+            <span />
+            <span>任务</span>
+            <span>状态</span>
+            <span>进度</span>
+            <span>当前阶段</span>
+            <span>更新时间</span>
+            <span>操作</span>
+          </div>
 
-                      <div className={styles.taskStatus}>
-                        <span className={styles.statusBadge} style={{ '--task-status-tone': getStatusTone(task.status) } as CSSProperties}>
-                          {getStatusLabel(task.status)}
-                        </span>
-                        <span className={styles.progressText}>{formatProgress(task.progress)}</span>
-                      </div>
+          <div className={styles.taskList}>
+            {hasTasks ? (
+              filteredTasks.map((task) => {
+                const isSelected = selectedIds.includes(task.id);
+                return (
+                  <div key={task.id} className={`${styles.taskRow} ${isSelected ? styles.taskRowSelected : ''}`}>
+                    <label className={styles.taskSelect}>
+                      <input
+                        type="checkbox"
+                        checked={isSelected}
+                        onChange={() => toggleSelected(task.id)}
+                        aria-label={`选择任务 ${task.title}`}
+                      />
+                      <span />
+                    </label>
 
-                      <div className={styles.taskTimes}>
-                        <span>{formatDateTime(task.updatedAt)}</span>
+                    <button
+                      type="button"
+                      className={styles.taskMain}
+                      onClick={() => void openTaskDetail(task.id)}
+                    >
+                      <span className={styles.taskTitle}>{task.title}</span>
+                      <span className={styles.taskMeta}>
+                        {task.sessionId} · 任务 ID {task.id}
+                      </span>
+                    </button>
+
+                    <div className={styles.taskStatus}>
+                      <span className={styles.statusBadge} style={{ '--task-status-tone': getStatusTone(task.status) } as CSSProperties}>
+                        {getStatusLabel(task.status)}
+                      </span>
+                    </div>
+
+                    <div className={styles.progressCell}>
+                      <span className={styles.progressText}>{formatProgress(task.progress)}</span>
+                      <div className={styles.progressTrack} aria-hidden="true">
+                        <span style={{ width: formatProgress(task.progress) }} />
                       </div>
                     </div>
-                  );
-                })
-              ) : (
-                <div className={styles.emptyState}>
-                  <p>当前没有匹配的任务。</p>
-                </div>
-              )}
-            </div>
-          </article>
 
-          <aside className={styles.detailPane} aria-label="任务详情">
-            <div className={styles.panelHeader}>
-              <div>
-                <span className={styles.panelEyebrow}>详情</span>
-                <h2>Modal 任务详情</h2>
+                    <div className={styles.stageCell}>
+                      <span>{task.currentStep || '等待下一步推进'}</span>
+                    </div>
+
+                    <div className={styles.taskTimes}>
+                      <span>{formatDateTime(task.updatedAt)}</span>
+                    </div>
+
+                    <div className={styles.rowActions}>
+                      {task.status === 'failed' || task.status === 'error' ? (
+                        <button type="button" className={styles.linkAction}>
+                          重试
+                        </button>
+                      ) : null}
+                      <button type="button" className={styles.linkAction} onClick={() => void openTaskDetail(task.id)}>
+                        查看详情
+                      </button>
+                    </div>
+                  </div>
+                );
+              })
+            ) : (
+              <div className={styles.emptyState}>
+                <p>当前没有匹配的任务。</p>
               </div>
-              <span className={styles.panelMeta}>{activeTask ? '已打开' : '未打开'}</span>
-            </div>
-
-            <div className={styles.detailPrompt}>
-              <p>点击列表中的任务即可打开详情弹窗。这里保留详情面板作为入口说明，主内容通过 modal 呈现。</p>
-            </div>
-          </aside>
+            )}
+          </div>
         </section>
       </div>
 
@@ -380,7 +409,10 @@ export default function TaskManagerPage() {
             <div className={styles.modalHeader}>
               <div>
                 <span className={styles.panelEyebrow}>任务详情</span>
-                <h2 id="task-detail-title">{activeTask.title}</h2>
+                <h2 id="task-detail-title">任务详情：{activeTask.title}</h2>
+                <p className={styles.modalSubhead}>
+                  {activeTask.sessionId} · 任务 ID {activeTask.id} · 创建于 {formatDateTime(activeTask.createdAt)}
+                </p>
               </div>
               <button
                 ref={closeButtonRef}
@@ -405,12 +437,15 @@ export default function TaskManagerPage() {
             <div className={styles.modalBody}>
               <section className={styles.modalSection}>
                 <h3>状态与进度</h3>
-                <p>
+                <p className={styles.statusLine}>
                   <span className={styles.statusBadge} style={{ '--task-status-tone': getStatusTone(activeTask.status) } as CSSProperties}>
                     {getStatusLabel(activeTask.status)}
                   </span>
                   <span className={styles.modalProgress}>{formatProgress(activeTask.progress)}</span>
                 </p>
+                <div className={styles.progressTrack} aria-hidden="true">
+                  <span style={{ width: formatProgress(activeTask.progress) }} />
+                </div>
               </section>
 
               <section className={styles.modalSection}>
@@ -419,7 +454,7 @@ export default function TaskManagerPage() {
               </section>
 
               <section className={styles.modalSection}>
-                <h3>事件</h3>
+                <h3>事件时间线</h3>
                 <ul className={styles.eventList}>
                   {activeTask.events.length > 0 ? (
                     activeTask.events.map((event, index) => (
@@ -435,6 +470,23 @@ export default function TaskManagerPage() {
                     <li>暂无事件。</li>
                   )}
                 </ul>
+              </section>
+
+              <section className={styles.modalSection}>
+                <h3>结果与操作</h3>
+                <div className={styles.modalActions}>
+                  <button type="button" className={styles.secondaryAction}>
+                    刷新状态
+                  </button>
+                  <button type="button" className={styles.secondaryAction}>
+                    查看方案
+                  </button>
+                  {(activeTask.status === 'failed' || activeTask.status === 'error') && activeTask.error ? (
+                    <button type="button" className={styles.primaryAction}>
+                      重新执行
+                    </button>
+                  ) : null}
+                </div>
               </section>
             </div>
           </div>

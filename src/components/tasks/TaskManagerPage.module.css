@@ -6,11 +6,10 @@
 
 .hero,
 .listPane,
-.detailPane,
 .errorBanner {
   border: 1px solid rgba(79, 85, 99, 0.18);
   border-radius: 8px;
-  background: rgba(255, 255, 255, 0.8);
+  background: rgba(255, 255, 255, 0.88);
   box-shadow: 0 10px 30px rgba(23, 27, 38, 0.05);
 }
 
@@ -22,8 +21,8 @@
 .heroBody,
 .panelHeader,
 .listTools,
-.taskRow,
-.modalHeader {
+.modalHeader,
+.boardToolbar {
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -78,7 +77,7 @@
   min-width: 0;
   flex: 1;
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 150px;
+  grid-template-columns: minmax(0, 1fr) 150px auto;
   gap: 12px;
 }
 
@@ -108,22 +107,50 @@
   color: var(--text-primary);
 }
 
+.primaryAction,
+.secondaryAction,
+.iconButton,
+.linkAction {
+  min-height: 36px;
+  padding: 0 12px;
+  border-radius: 8px;
+  font-weight: 700;
+}
+
+.primaryAction {
+  border: 1px solid #1f2522;
+  background: #1f2522;
+  color: #ffffff;
+}
+
+.primaryAction:disabled,
+.secondaryAction:disabled {
+  opacity: 0.45;
+}
+
+.secondaryAction,
+.iconButton {
+  border: 1px solid rgba(79, 85, 99, 0.2);
+  background: rgba(255, 255, 255, 0.92);
+  color: var(--text-primary);
+}
+
+.linkAction {
+  min-height: auto;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--accent-ink);
+  font-size: 12px;
+}
+
 .errorBanner {
   padding: 12px 14px;
   color: #7a2d29;
   background: rgba(255, 236, 234, 0.92);
 }
 
-.contentGrid {
-  min-width: 0;
-  display: grid;
-  grid-template-columns: minmax(0, 1.25fr) minmax(280px, 0.75fr);
-  gap: 16px;
-  align-items: start;
-}
-
-.listPane,
-.detailPane {
+.listPane {
   padding: 16px;
 }
 
@@ -134,46 +161,64 @@
 }
 
 .listTools {
-  margin-top: 14px;
   justify-content: flex-start;
 }
 
-.secondaryAction,
-.iconButton {
-  min-height: 36px;
-  padding: 0 12px;
-  border: 1px solid rgba(79, 85, 99, 0.2);
-  border-radius: 8px;
-  background: rgba(255, 255, 255, 0.92);
-  color: var(--text-primary);
+.listSummary {
+  margin-top: 14px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.summaryChip {
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 7px 10px;
+  background: rgba(247, 248, 251, 0.82);
+  color: var(--text-secondary);
+  font-size: 12px;
   font-weight: 700;
 }
 
-.secondaryAction:disabled {
-  opacity: 0.45;
+.tableHead,
+.taskRow {
+  display: grid;
+  grid-template-columns: 28px minmax(220px, 1.45fr) 110px 130px minmax(140px, 0.9fr) 130px 110px;
+  gap: 10px;
+  align-items: center;
+}
+
+.tableHead {
+  margin-top: 14px;
+  padding: 0 12px;
+  min-height: 44px;
+  border-bottom: 1px solid #eef1ed;
+  color: #6f7a72;
+  font-size: 12px;
+  font-weight: 850;
 }
 
 .taskList {
-  margin-top: 14px;
   display: grid;
-  gap: 10px;
 }
 
 .taskRow {
   align-items: stretch;
   padding: 12px;
-  border: 1px solid rgba(79, 85, 99, 0.14);
-  border-radius: 8px;
-  background: rgba(247, 248, 251, 0.82);
+  border-bottom: 1px solid #eef1ed;
+  background: #ffffff;
+}
+
+.taskRow:last-child {
+  border-bottom: 0;
 }
 
 .taskRowSelected {
-  border-color: rgba(29, 78, 216, 0.42);
-  background: rgba(239, 246, 255, 0.88);
+  background: #f6faef;
 }
 
 .taskSelect {
-  flex: 0 0 auto;
   width: 18px;
   display: inline-grid;
   place-items: start;
@@ -188,7 +233,6 @@
 
 .taskMain {
   min-width: 0;
-  flex: 1;
   display: grid;
   gap: 6px;
   text-align: left;
@@ -204,8 +248,9 @@
 }
 
 .taskMeta,
+.stageCell,
 .taskTimes,
-.detailPrompt,
+.modalSubhead,
 .modalSection p,
 .emptyState {
   color: var(--text-secondary);
@@ -213,10 +258,7 @@
 }
 
 .taskStatus {
-  min-width: 92px;
-  display: grid;
-  justify-items: end;
-  gap: 8px;
+  min-width: 0;
 }
 
 .statusBadge {
@@ -232,18 +274,46 @@
   font-weight: 800;
 }
 
+.progressCell {
+  display: grid;
+  gap: 6px;
+}
+
 .progressText {
   font-size: 12px;
   font-weight: 700;
 }
 
+.progressTrack {
+  height: 8px;
+  border-radius: 999px;
+  overflow: hidden;
+  background: #edf1ed;
+}
+
+.progressTrack span {
+  display: block;
+  height: 100%;
+  border-radius: 999px;
+  background: linear-gradient(90deg, #6da7a2, #a8c66c);
+}
+
+.stageCell {
+  line-height: 1.45;
+}
+
 .taskTimes {
-  flex: 0 0 auto;
-  min-width: 110px;
   text-align: right;
 }
 
-.detailPrompt,
+.rowActions {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
 .emptyState {
   margin-top: 14px;
   padding: 16px;
@@ -263,7 +333,7 @@
 }
 
 .modal {
-  width: min(880px, 100%);
+  width: min(920px, 100%);
   max-height: calc(100vh - 48px);
   overflow: auto;
   border-radius: 8px;
@@ -283,6 +353,10 @@
   line-height: 1.2;
 }
 
+.modalSubhead {
+  margin-top: 8px;
+}
+
 .iconButton {
   width: 36px;
   padding: 0;
@@ -293,7 +367,7 @@
 .modalSummary {
   margin-top: 16px;
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 12px;
 }
 
@@ -341,8 +415,14 @@
   line-height: 1.55;
 }
 
+.statusLine {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
 .modalProgress {
-  margin-left: 10px;
   font-weight: 800;
 }
 
@@ -355,15 +435,39 @@
 .eventList li {
   display: grid;
   gap: 4px;
+  padding: 10px 0;
+  border-bottom: 1px solid rgba(79, 85, 99, 0.1);
+}
+
+.eventList li:last-child {
+  border-bottom: 0;
+  padding-bottom: 0;
+}
+
+.modalActions {
+  margin-top: 10px;
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+@media (max-width: 1120px) {
+  .tableHead,
+  .taskRow {
+    grid-template-columns: 28px minmax(220px, 1.4fr) 100px 120px minmax(120px, 0.9fr) 120px 100px;
+  }
 }
 
 @media (max-width: 960px) {
-  .contentGrid,
+  .heroBody,
+  .boardToolbar,
   .modalSummary {
     grid-template-columns: 1fr;
   }
 
-  .heroBody {
+  .heroBody,
+  .boardToolbar,
+  .modalHeader {
     flex-direction: column;
     align-items: stretch;
   }
@@ -372,11 +476,39 @@
     grid-template-columns: 1fr;
   }
 
-  .taskRow {
-    flex-wrap: wrap;
+  .tableHead {
+    display: none;
   }
 
-  .taskTimes {
+  .taskList {
+    margin-top: 14px;
+    gap: 10px;
+  }
+
+  .taskRow {
+    border: 1px solid #e4e8e3;
+    border-radius: 8px;
+    grid-template-columns: 24px 1fr;
+  }
+
+  .taskRow > :nth-child(n + 3) {
+    grid-column: 2;
+  }
+
+  .taskTimes,
+  .rowActions {
     text-align: left;
+    justify-content: flex-start;
+  }
+
+  .modalSummary {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+  }
+}
+
+@media (max-width: 640px) {
+  .modalSummary {
+    grid-template-columns: 1fr;
   }
 }
