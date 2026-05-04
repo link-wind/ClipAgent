@@ -2,17 +2,19 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
 from backend.db import SessionLocal
-from backend.models.agent import AgentEvent, AgentSession
+from backend.models.agent import AgentDashboardSummary, AgentEvent, AgentSession, AgentTaskDetail, AgentTaskSummary
 from backend.services.agent_execution_service import AgentExecutionService
 from backend.services.agent_read_service import AgentReadService
 from backend.services.agent_service import agent_service
 from backend.services.agent_session_service import AgentSessionService
+from backend.services.agent_task_read_service import AgentTaskReadService
 
 
 router = APIRouter()
 session_service = AgentSessionService(session_factory=SessionLocal)
 read_service = AgentReadService(session_factory=SessionLocal)
 execution_service = AgentExecutionService(session_factory=SessionLocal)
+task_read_service = AgentTaskReadService(session_factory=SessionLocal)
 
 
 class SessionCreateRequest(BaseModel):
@@ -66,3 +68,21 @@ async def get_session_events(session_id: str):
         return read_service.read_events(session_id)
     except KeyError:
         raise HTTPException(status_code=404, detail="Session not found")
+
+
+@router.get("/dashboard", response_model=AgentDashboardSummary)
+async def get_dashboard():
+    return task_read_service.read_dashboard()
+
+
+@router.get("/tasks", response_model=list[AgentTaskSummary])
+async def list_tasks():
+    return task_read_service.list_tasks()
+
+
+@router.get("/tasks/{job_id}", response_model=AgentTaskDetail)
+async def get_task(job_id: str):
+    try:
+        return task_read_service.read_task(job_id)
+    except KeyError:
+        raise HTTPException(status_code=404, detail="Task not found")

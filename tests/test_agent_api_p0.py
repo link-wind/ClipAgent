@@ -14,6 +14,7 @@ from backend.main import app
 from backend.services.agent_read_service import AgentReadService
 from backend.services.agent_service import agent_service
 from backend.services.agent_session_service import AgentSessionService
+from backend.services.agent_task_read_service import AgentTaskReadService
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -221,6 +222,66 @@ class AgentApiP0ContractTests(unittest.TestCase):
             "read_service",
             self.read_service,
         ):
+            asyncio.run(_run())
+
+    def test_agent_dashboard_task_list_and_detail_endpoints_return_persisted_jobs(self):
+        async def _run():
+            session = self.session_service.create_session("做一个 30 秒产品宣传片")
+
+            with self.session_factory() as db:
+                job_repo = AgentJobRepository(db)
+                event_repo = AgentEventRepository(db)
+                job_record = job_repo.create(
+                    session_id=session.id,
+                    plan_id=None,
+                    job_type="generate_video",
+                    status="queued",
+                    progress=25,
+                    current_step="任务已入队",
+                )
+                event_repo.create(
+                    session_id=session.id,
+                    job_id=job_record.id,
+                    event_type="job_queued",
+                    step="queued",
+                    progress=25,
+                    message="任务已入队，等待执行",
+                    payload_json={"jobId": job_record.id, "source": "test"},
+                )
+                job_id = job_record.id
+                db.commit()
+
+            transport = httpx.ASGITransport(app=app)
+            async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as client:
+                dashboard_response = await client.get("/api/agent/dashboard")
+                self.assertEqual(dashboard_response.status_code, 200)
+                dashboard_payload = dashboard_response.json()
+                self.assertEqual(dashboard_payload["totalSessions"], 1)
+                self.assertEqual(dashboard_payload["activeTasks"], 1)
+                self.assertEqual(dashboard_payload["recentTasks"][0]["id"], job_id)
+
+                tasks_response = await client.get("/api/agent/tasks")
+                self.assertEqual(tasks_response.status_code, 200)
+                tasks_payload = tasks_response.json()
+                self.assertEqual(len(tasks_payload), 1)
+                self.assertEqual(tasks_payload[0]["id"], job_id)
+                self.assertEqual(tasks_payload[0]["sessionId"], session.id)
+                self.assertEqual(tasks_payload[0]["status"], "queued")
+
+                detail_response = await client.get(f"/api/agent/tasks/{job_id}")
+                self.assertEqual(detail_response.status_code, 200)
+                detail_payload = detail_response.json()
+                self.assertEqual(detail_payload["id"], job_id)
+                self.assertEqual(detail_payload["events"][0]["eventType"], "job_queued")
+
+        import asyncio
+
+        task_read_service = AgentTaskReadService(session_factory=self.session_factory)
+        with patch.object(agent_api_module, "session_service", self.session_service), patch.object(
+            agent_api_module,
+            "read_service",
+            self.read_service,
+        ), patch.object(agent_api_module, "task_read_service", task_read_service):
             asyncio.run(_run())
 
 

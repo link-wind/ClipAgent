@@ -1,3 +1,4 @@
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from backend.db.models import AgentJobRecord
@@ -30,6 +31,15 @@ class AgentJobRepository:
     def get(self, job_id: str) -> AgentJobRecord | None:
         # 按主键读取任务
         return self.db.get(AgentJobRecord, job_id)
+
+    def list_recent(self, limit: int = 50) -> list[AgentJobRecord]:
+        # 按最近更新时间列出任务
+        stmt = (
+            select(AgentJobRecord)
+            .order_by(AgentJobRecord.updated_at.desc(), AgentJobRecord.id.asc())
+            .limit(limit)
+        )
+        return list(self.db.scalars(stmt))
 
     def update_status(self, job_id: str, **values) -> AgentJobRecord | None:
         # 更新任务状态相关字段
