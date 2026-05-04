@@ -56,31 +56,6 @@ class AgentError(BaseModel):
     retryableStep: Optional[str] = None
 
 
-class AgentTaskStatus(str, Enum):
-    QUEUED = "queued"
-    PENDING = "pending"
-    RUNNING = "running"
-    SUCCEEDED = "succeeded"
-    FAILED = "failed"
-
-
-LEGACY_AGENT_TASK_STATUS_MAP: dict[str, AgentTaskStatus] = {
-    "done": AgentTaskStatus.SUCCEEDED,
-}
-
-
-def normalize_agent_task_status(status: str) -> AgentTaskStatus:
-    normalized = status.strip().lower()
-    legacy_status = LEGACY_AGENT_TASK_STATUS_MAP.get(normalized)
-    if legacy_status is not None:
-        return legacy_status
-
-    try:
-        return AgentTaskStatus(normalized)
-    except ValueError:
-        return AgentTaskStatus.FAILED
-
-
 class AgentEvent(BaseModel):
     id: str
     eventType: str
@@ -109,7 +84,7 @@ class AgentTaskSummary(BaseModel):
     id: str
     sessionId: str
     title: str
-    status: AgentTaskStatus
+    status: str
     progress: float = 0.0
     currentStep: str = ""
     createdAt: str

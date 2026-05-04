@@ -1,18 +1,11 @@
 import { requestJson } from './agentApi'
 import type { AgentErrorInfo, AgentEvent, ClipInfo } from './agentApi'
 
-export type AgentJobStatus =
-  | 'queued'
-  | 'pending'
-  | 'running'
-  | 'succeeded'
-  | 'failed'
-
 export interface AgentTaskSummary {
   id: string
   sessionId: string
   title: string
-  status: AgentJobStatus
+  status: string
   progress: number
   currentStep: string
   createdAt: string
