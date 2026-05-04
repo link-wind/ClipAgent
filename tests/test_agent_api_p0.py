@@ -289,6 +289,52 @@ class AgentApiP0ContractTests(unittest.TestCase):
         ), patch.object(agent_api_module, "task_read_service", task_read_service):
             asyncio.run(_run())
 
+    def test_agent_task_endpoints_normalize_legacy_or_dirty_job_status_values(self):
+        async def _run():
+            session = self.session_service.create_session("做一个兼容旧数据的任务")
+
+            with self.session_factory() as db:
+                job_repo = AgentJobRepository(db)
+                job_record = job_repo.create(
+                    session_id=session.id,
+                    plan_id=None,
+                    job_type="generate_video",
+                    status="done",
+                    progress=100,
+                    current_step="完成",
+                )
+                job_id = job_record.id
+                db.commit()
+
+            transport = httpx.ASGITransport(app=app)
+            async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as client:
+                dashboard_response = await client.get("/api/agent/dashboard")
+                self.assertEqual(dashboard_response.status_code, 200)
+                dashboard_payload = dashboard_response.json()
+                self.assertEqual(dashboard_payload["recentTasks"][0]["id"], job_id)
+                self.assertEqual(dashboard_payload["recentTasks"][0]["status"], "succeeded")
+
+                tasks_response = await client.get("/api/agent/tasks")
+                self.assertEqual(tasks_response.status_code, 200)
+                tasks_payload = tasks_response.json()
+                self.assertEqual(tasks_payload[0]["id"], job_id)
+                self.assertEqual(tasks_payload[0]["status"], "succeeded")
+
+                detail_response = await client.get(f"/api/agent/tasks/{job_id}")
+                self.assertEqual(detail_response.status_code, 200)
+                detail_payload = detail_response.json()
+                self.assertEqual(detail_payload["status"], "succeeded")
+
+        import asyncio
+
+        task_read_service = AgentTaskReadService(session_factory=self.session_factory)
+        with patch.object(agent_api_module, "session_service", self.session_service), patch.object(
+            agent_api_module,
+            "read_service",
+            self.read_service,
+        ), patch.object(agent_api_module, "task_read_service", task_read_service):
+            asyncio.run(_run())
+
     def test_agent_task_detail_endpoint_returns_404_for_missing_job(self):
         async def _run():
             transport = httpx.ASGITransport(app=app)

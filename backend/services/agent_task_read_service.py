@@ -4,7 +4,13 @@ from backend.db.repositories import (
     AgentJobRepository,
     AgentSessionRepository,
 )
-from backend.models.agent import AgentDashboardSummary, AgentError, AgentTaskDetail, AgentTaskSummary
+from backend.models.agent import (
+    AgentDashboardSummary,
+    AgentError,
+    AgentTaskDetail,
+    AgentTaskSummary,
+    normalize_agent_task_status,
+)
 from backend.services.agent_read_service import AgentReadService
 
 
@@ -63,7 +69,8 @@ class AgentTaskReadService:
             return AgentDashboardSummary(
                 totalSessions=session_repo.count_all(),
                 activeTasks=job_repo.count_by_statuses(RUNNING_JOB_STATUSES),
-                completedTasks=job_repo.count_by_status("succeeded"),
+                completedTasks=job_repo.count_by_status("succeeded")
+                + job_repo.count_by_status("done"),
                 failedTasks=job_repo.count_by_status("failed"),
                 recentTasks=[
                     self._build_task_summary(job, session_by_id.get(job.session_id))
@@ -77,7 +84,7 @@ class AgentTaskReadService:
             id=job.id,
             sessionId=job.session_id or "",
             title=title,
-            status=job.status,
+            status=normalize_agent_task_status(job.status),
             progress=job.progress,
             currentStep=job.current_step or "",
             createdAt=job.created_at.isoformat(),
