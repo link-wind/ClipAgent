@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useState, type CSSProperties } from 'react';
+import { useEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent as ReactKeyboardEvent } from 'react';
 import Link from 'next/link';
 import ProductShell from '@/components/layout/ProductShell';
 import { getAgentTask, listAgentTasks, type AgentTaskDetail, type AgentTaskSummary } from '@/lib/taskApi';
@@ -15,6 +15,7 @@ const STATUS_LABELS: Record<string, string> = {
   active: '进行中',
   completed: '已完成',
   done: '已完成',
+  succeeded: '已完成',
   failed: '失败',
   error: '失败',
   canceled: '已取消',
@@ -29,6 +30,7 @@ const STATUS_TONES: Record<string, string> = {
   active: 'var(--task-accent-2)',
   completed: 'var(--task-accent-3)',
   done: 'var(--task-accent-3)',
+  succeeded: 'var(--task-accent-3)',
   failed: 'var(--task-accent-4)',
   error: 'var(--task-accent-4)',
   canceled: 'var(--task-accent-5)',
@@ -78,6 +80,11 @@ export default function TaskManagerPage() {
   const [activeTask, setActiveTask] = useState<AgentTaskDetail | null>(null);
   const [errorText, setErrorText] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const closeButtonRef = useRef<HTMLButtonElement | null>(null);
+  const modalRef = useRef<HTMLDivElement | null>(null);
+  const returnFocusRef = useRef<HTMLElement | null>(null);
+  const detailRequestIdRef = useRef(0);
+  const focusRestoreTokenRef = useRef(0);
 
   useEffect(() => {
     let isActive = true;
@@ -134,15 +141,22 @@ export default function TaskManagerPage() {
   );
 
   async function openTaskDetail(taskId: string) {
+    detailRequestIdRef.current += 1;
+    const requestId = detailRequestIdRef.current;
+    focusRestoreTokenRef.current += 1;
+    returnFocusRef.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
     setErrorText(null);
+    setSelectedIds((prev) => (prev.includes(taskId) ? prev : [...prev, taskId]));
     try {
       const detail = await getAgentTask(taskId);
-      setActiveTask(detail);
-      if (!selectedIds.includes(taskId)) {
-        setSelectedIds([taskId]);
+      if (detailRequestIdRef.current !== requestId) {
+        return;
       }
+      setActiveTask(detail);
     } catch {
-      setErrorText('任务详情暂时加载失败。');
+      if (detailRequestIdRef.current === requestId) {
+        setErrorText('任务详情暂时加载失败。');
+      }
     }
   }
 
@@ -151,6 +165,57 @@ export default function TaskManagerPage() {
   }
 
   const hasTasks = filteredTasks.length > 0;
+
+  useEffect(() => {
+    if (activeTask) {
+      closeButtonRef.current?.focus();
+    }
+  }, [activeTask]);
+
+  function closeTaskDetail() {
+    detailRequestIdRef.current += 1;
+    focusRestoreTokenRef.current += 1;
+    const restoreToken = focusRestoreTokenRef.current;
+    setActiveTask(null);
+    requestAnimationFrame(() => {
+      if (focusRestoreTokenRef.current === restoreToken) {
+        returnFocusRef.current?.focus();
+      }
+    });
+  }
+
+  function handleModalKeyDown(event: ReactKeyboardEvent<HTMLDivElement>) {
+    if (event.key === 'Escape') {
+      event.stopPropagation();
+      closeTaskDetail();
+      return;
+    }
+
+    if (event.key !== 'Tab' || !modalRef.current) {
+      return;
+    }
+
+    const focusableElements = Array.from(
+      modalRef.current.querySelectorAll<HTMLElement>(
+        'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])',
+      ),
+    ).filter((element) => !element.hasAttribute('disabled') && element.tabIndex !== -1);
+
+    if (focusableElements.length === 0) {
+      return;
+    }
+
+    const firstElement = focusableElements[0];
+    const lastElement = focusableElements[focusableElements.length - 1];
+
+    if (event.shiftKey && document.activeElement === firstElement) {
+      event.preventDefault();
+      lastElement.focus();
+    } else if (!event.shiftKey && document.activeElement === lastElement) {
+      event.preventDefault();
+      firstElement.focus();
+    }
+  }
 
   return (
     <ProductShell>
@@ -301,20 +366,29 @@ export default function TaskManagerPage() {
       </div>
 
       {activeTask ? (
-        <div className={styles.modalBackdrop} role="presentation" onClick={() => setActiveTask(null)}>
+        <div className={styles.modalBackdrop} role="presentation" onClick={closeTaskDetail}>
           <div
+            ref={modalRef}
             className={styles.modal}
             role="dialog"
             aria-modal="true"
             aria-labelledby="task-detail-title"
+            tabIndex={-1}
             onClick={(event) => event.stopPropagation()}
+            onKeyDown={handleModalKeyDown}
           >
             <div className={styles.modalHeader}>
               <div>
                 <span className={styles.panelEyebrow}>任务详情</span>
                 <h2 id="task-detail-title">{activeTask.title}</h2>
               </div>
-              <button type="button" className={styles.iconButton} onClick={() => setActiveTask(null)} aria-label="关闭详情">
+              <button
+                ref={closeButtonRef}
+                type="button"
+                className={styles.iconButton}
+                onClick={closeTaskDetail}
+                aria-label="关闭详情"
+              >
                 ×
               </button>
             </div>

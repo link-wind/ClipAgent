@@ -46,8 +46,8 @@ export default function AgentChat() {
 
     try {
       const nextSession = session
-        ? await sendAgentMessage(session.id, trimmedMessage)
-        : await createAgentSession(trimmedMessage);
+        ? await sendAgentMessage(session.id, message)
+        : await createAgentSession(message);
       setActiveSessionId(nextSession.id);
       setSession(nextSession);
       setMessage('');

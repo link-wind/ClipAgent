@@ -358,10 +358,14 @@
 }
 
 @media (max-width: 960px) {
-  .heroBody,
   .contentGrid,
   .modalSummary {
     grid-template-columns: 1fr;
+  }
+
+  .heroBody {
+    flex-direction: column;
+    align-items: stretch;
   }
 
   .toolbar {
