@@ -2,6 +2,7 @@
 
 import { useAgentStore } from '@/stores/useAgentStore';
 import styles from './ResultPanel.module.css';
+import { resolveSessionVideoUrl } from './sessionMedia';
 
 function formatSeconds(value?: number) {
   if (typeof value !== 'number' || Number.isNaN(value)) {
@@ -12,10 +13,7 @@ function formatSeconds(value?: number) {
 
 export default function ResultPanel() {
   const session = useAgentStore((state) => state.session);
-  const videoUrl =
-    session?.videoUrl ||
-    session?.clips.find((clip) => clip.publicUrl.includes('/output/'))?.publicUrl ||
-    null;
+  const videoUrl = resolveSessionVideoUrl(session);
 
   return (
     <section className={styles.panel}>

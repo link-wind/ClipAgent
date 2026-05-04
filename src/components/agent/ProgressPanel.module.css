@@ -1,6 +1,6 @@
 .panel {
-  padding: 22px;
-  border-bottom: 1px solid #242a33;
+  padding: 20px;
+  border-bottom: 1px solid rgba(76, 67, 43, 0.58);
 }
 
 .heading {
@@ -12,27 +12,54 @@
 }
 
 .heading h2 {
-  font-size: 16px;
+  font-size: 15px;
   letter-spacing: 0;
 }
 
 .heading span {
-  color: #8fe7c1;
+  color: var(--accent);
   font-size: 13px;
-  font-weight: 700;
+  font-weight: 800;
+}
+
+.metrics {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  margin-bottom: 16px;
+}
+
+.metrics div {
+  min-height: 68px;
+  padding: 10px;
+  border: 1px solid rgba(76, 67, 43, 0.62);
+  border-radius: 8px;
+  background: rgba(36, 35, 29, 0.64);
+}
+
+.metrics strong {
+  display: block;
+  color: var(--text-primary);
+  font-size: 16px;
+  overflow-wrap: anywhere;
+}
+
+.metrics span {
+  color: var(--text-secondary);
+  font-size: 12px;
 }
 
 .progressTrack {
   height: 8px;
   overflow: hidden;
   border-radius: 999px;
-  background: #242a33;
+  background: var(--border);
 }
 
 .progressBar {
   height: 100%;
   border-radius: inherit;
-  background: #2aa7d8;
+  background: linear-gradient(90deg, var(--accent), var(--accent-alt));
   transition: width 180ms ease;
 }
 
@@ -49,43 +76,47 @@
 }
 
 .current dt {
-  color: #8b98a5;
+  color: var(--text-secondary);
 }
 
 .current dd {
-  color: #eef3f8;
+  color: var(--text-primary);
   overflow-wrap: anywhere;
 }
 
 .steps {
   list-style: none;
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 8px;
+  grid-template-columns: 1fr;
+  gap: 10px;
+}
+
+.steps + .steps {
+  margin-top: 16px;
 }
 
 .steps li {
-  min-height: 30px;
+  min-height: 24px;
   display: flex;
   align-items: center;
-  gap: 8px;
-  color: #8b98a5;
+  gap: 10px;
+  color: var(--text-secondary);
   font-size: 12px;
 }
 
 .steps span {
-  width: 8px;
-  height: 8px;
+  width: 9px;
+  height: 9px;
   border-radius: 50%;
-  background: #3a4450;
+  background: #59513b;
   flex: 0 0 auto;
 }
 
 .active {
-  color: #eef3f8 !important;
+  color: var(--text-primary) !important;
 }
 
 .active span {
-  background: #8fe7c1;
-  box-shadow: 0 0 0 4px rgba(143, 231, 193, 0.12);
+  background: var(--accent);
+  box-shadow: 0 0 0 4px rgba(239, 199, 94, 0.12);
 }

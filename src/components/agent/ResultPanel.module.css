@@ -1,6 +1,6 @@
 .panel {
-  padding: 22px;
-  border-bottom: 1px solid #242a33;
+  padding: 20px;
+  border-bottom: 1px solid rgba(76, 67, 43, 0.58);
 }
 
 .heading {
@@ -12,27 +12,28 @@
 }
 
 .heading h2 {
-  font-size: 16px;
+  font-size: 15px;
   letter-spacing: 0;
 }
 
 .heading span {
-  color: #8fe7c1;
+  color: var(--success);
   font-size: 12px;
+  font-weight: 800;
 }
 
 .empty {
-  color: #8b98a5;
+  color: var(--text-secondary);
   overflow-wrap: anywhere;
 }
 
 .error {
   margin-bottom: 12px;
   padding: 10px 12px;
-  border: 1px solid #7a3340;
+  border: 1px solid rgba(255, 143, 160, 0.42);
   border-radius: 6px;
-  color: #ffb8c2;
-  background: #2a1419;
+  color: #ffc0ca;
+  background: rgba(63, 22, 29, 0.72);
   overflow-wrap: anywhere;
 }
 
@@ -44,30 +45,34 @@
 
 .result video {
   width: 100%;
-  aspect-ratio: 16 / 9;
+  aspect-ratio: 9 / 16;
+  max-height: 420px;
+  border: 1px solid rgba(239, 199, 94, 0.36);
   border-radius: 8px;
-  background: #0b0f14;
+  background: #050505;
+  object-fit: contain;
 }
 
 .actions {
-  display: flex;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 10px;
-  flex-wrap: wrap;
 }
 
 .actions a {
-  min-height: 34px;
+  min-height: 36px;
   padding: 8px 12px;
-  border: 1px solid #2d3946;
+  border: 1px solid var(--border-strong);
   border-radius: 6px;
-  color: #eef3f8;
-  background: #17212a;
+  color: var(--text-primary);
+  background: var(--bg-elevated);
   text-decoration: none;
-  font-weight: 600;
+  font-weight: 800;
+  text-align: center;
 }
 
 .actions a:hover {
-  border-color: #2aa7d8;
+  border-color: var(--accent);
 }
 
 .clipListSection {
@@ -86,26 +91,28 @@
 
 .clipListHeader h3 {
   font-size: 13px;
-  color: #eef3f8;
+  color: var(--text-primary);
 }
 
 .clipListHeader span {
   font-size: 12px;
-  color: #8b98a5;
+  color: var(--text-secondary);
 }
 
 .clipList {
   list-style: none;
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 9px;
   margin: 0;
   padding: 0;
 }
 
 .clipItem {
-  padding: 10px 0;
-  border-top: 1px solid #242a33;
+  padding: 10px;
+  border: 1px solid rgba(76, 67, 43, 0.58);
+  border-radius: 8px;
+  background: rgba(31, 32, 27, 0.72);
 }
 
 .clipTitleRow {
@@ -118,14 +125,15 @@
 
 .clipTitleRow strong {
   font-size: 13px;
-  color: #eef3f8;
+  color: var(--text-primary);
   overflow-wrap: anywhere;
 }
 
 .clipTitleRow span {
   flex-shrink: 0;
   font-size: 12px;
-  color: #8fe7c1;
+  color: var(--accent);
+  font-weight: 800;
 }
 
 .clipMeta {
@@ -142,13 +150,13 @@
 .clipMeta dt {
   margin-bottom: 3px;
   font-size: 11px;
-  color: #8b98a5;
+  color: var(--text-muted);
 }
 
 .clipMeta dd {
   margin: 0;
   font-size: 12px;
-  color: #eef3f8;
+  color: var(--text-primary);
   overflow-wrap: anywhere;
 }
 
@@ -156,10 +164,10 @@
   display: inline-flex;
   margin-top: 8px;
   font-size: 12px;
-  color: #7fcdf0;
+  color: var(--accent-alt);
   text-decoration: none;
 }
 
 .sourceLink:hover {
-  color: #a6e4ff;
+  color: #8de3ee;
 }

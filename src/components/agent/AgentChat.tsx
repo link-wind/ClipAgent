@@ -1,6 +1,6 @@
 'use client';
 
-import { FormEvent, useState } from 'react';
+import { FormEvent, KeyboardEvent, useState } from 'react';
 import { confirmAgentSession, createAgentSession, sendAgentMessage } from '@/lib/agentApi';
 import { useAgentStore } from '@/stores/useAgentStore';
 import Button from '@/components/common/Button';
@@ -58,6 +58,17 @@ export default function AgentChat() {
     }
   };
 
+  const submitMessageFromKeyboard = (event: KeyboardEvent<HTMLTextAreaElement>) => {
+    if (event.key !== 'Enter' || event.shiftKey || event.nativeEvent.isComposing) {
+      return;
+    }
+
+    event.preventDefault();
+    if (canSend) {
+      event.currentTarget.form?.requestSubmit();
+    }
+  };
+
   const confirmPlan = async () => {
     if (!session || !canConfirm) {
       return;
@@ -82,8 +93,9 @@ export default function AgentChat() {
       <div className={styles.messages}>
         {!session ? (
           <div className={styles.empty}>
+            <span>NEW PROJECT</span>
             <h2>描述你想生成的视频</h2>
-            <p>告诉 Agent 主题、风格、时长和素材偏好，它会先生成剪辑计划。</p>
+            <p>告诉 Agent 主题、风格、时长和素材偏好，它会先生成剪辑计划，并把结果预览放到上方画布。</p>
           </div>
         ) : (
           session.messages.map((item) => (
@@ -107,11 +119,13 @@ export default function AgentChat() {
         <textarea
           value={message}
           onChange={(event) => setMessage(event.target.value)}
+          onKeyDown={submitMessageFromKeyboard}
           placeholder="输入需求或补充说明"
           rows={4}
           disabled={isSubmitting}
         />
         <div className={styles.actions}>
+          <span className={styles.composerHint}>Enter 发送 · Shift Enter 换行</span>
           <Button type="button" variant="secondary" onClick={confirmPlan} disabled={!canConfirm}>
             确认并开始
           </Button>

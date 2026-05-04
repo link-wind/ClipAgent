@@ -37,6 +37,21 @@ export default function ProgressPanel() {
         <span>{progress}%</span>
       </div>
 
+      <div className={styles.metrics}>
+        <div>
+          <strong>{session?.plan?.targetDuration ? `${session.plan.targetDuration}s` : '--'}</strong>
+          <span>目标时长</span>
+        </div>
+        <div>
+          <strong>{session?.plan?.scenes.length ?? '--'}</strong>
+          <span>场景</span>
+        </div>
+        <div>
+          <strong>{STEP_LABELS[status]}</strong>
+          <span>状态</span>
+        </div>
+      </div>
+
       <div className={styles.progressTrack} aria-label="当前进度">
         <div className={styles.progressBar} style={{ width: `${progress}%` }} />
       </div>
