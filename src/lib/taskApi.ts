@@ -7,10 +7,6 @@ export type AgentJobStatus =
   | 'running'
   | 'succeeded'
   | 'failed'
-  | 'done'
-  | 'searching'
-  | 'downloading'
-  | 'rendering'
 
 export interface AgentTaskSummary {
   id: string
