@@ -78,7 +78,7 @@ type RequestOptions = {
   body?: unknown
 }
 
-async function request<T>(path: string, options: RequestOptions = {}): Promise<T> {
+export async function requestJson<T>(path: string, options: RequestOptions = {}): Promise<T> {
   const response = await fetch(path, {
     method: options.method ?? 'GET',
     headers: {
@@ -98,7 +98,7 @@ async function request<T>(path: string, options: RequestOptions = {}): Promise<T
   return response.json() as Promise<T>
 }
 
-async function readErrorMessage(response: Response): Promise<string> {
+export async function readErrorMessage(response: Response): Promise<string> {
   const fallback = `请求失败：${response.status} ${response.statusText}`
 
   try {
@@ -120,7 +120,7 @@ async function readErrorMessage(response: Response): Promise<string> {
 }
 
 export function createAgentSession(message: string): Promise<AgentSession> {
-  return request<AgentSession>('/api/agent/sessions', {
+  return requestJson<AgentSession>('/api/agent/sessions', {
     method: 'POST',
     body: { message },
   })
@@ -129,7 +129,7 @@ export function createAgentSession(message: string): Promise<AgentSession> {
 export function sendAgentMessage(sessionId: string, message: string): Promise<AgentSession> {
   const encodedSessionId = encodeURIComponent(sessionId)
 
-  return request<AgentSession>(`/api/agent/sessions/${encodedSessionId}/messages`, {
+  return requestJson<AgentSession>(`/api/agent/sessions/${encodedSessionId}/messages`, {
     method: 'POST',
     body: { message },
   })
@@ -138,7 +138,7 @@ export function sendAgentMessage(sessionId: string, message: string): Promise<Ag
 export function confirmAgentSession(sessionId: string): Promise<AgentSession> {
   const encodedSessionId = encodeURIComponent(sessionId)
 
-  return request<AgentSession>(`/api/agent/sessions/${encodedSessionId}/confirm`, {
+  return requestJson<AgentSession>(`/api/agent/sessions/${encodedSessionId}/confirm`, {
     method: 'POST',
   })
 }
@@ -146,12 +146,11 @@ export function confirmAgentSession(sessionId: string): Promise<AgentSession> {
 export function getAgentSession(sessionId: string): Promise<AgentSession> {
   const encodedSessionId = encodeURIComponent(sessionId)
 
-  return request<AgentSession>(`/api/agent/sessions/${encodedSessionId}`)
+  return requestJson<AgentSession>(`/api/agent/sessions/${encodedSessionId}`)
 }
 
 export function getAgentSessionEvents(sessionId: string): Promise<AgentEvent[]> {
   const encodedSessionId = encodeURIComponent(sessionId)
 
-  return request<AgentEvent[]>(`/api/agent/sessions/${encodedSessionId}/events`)
+  return requestJson<AgentEvent[]>(`/api/agent/sessions/${encodedSessionId}/events`)
 }
-

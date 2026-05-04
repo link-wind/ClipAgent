@@ -1,10 +1,22 @@
-import type { AgentErrorInfo, AgentEvent, AgentStatus, ClipInfo } from './agentApi'
+import { requestJson } from './agentApi'
+import type { AgentErrorInfo, AgentEvent, ClipInfo } from './agentApi'
+
+export type AgentJobStatus =
+  | 'queued'
+  | 'pending'
+  | 'running'
+  | 'succeeded'
+  | 'failed'
+  | 'done'
+  | 'searching'
+  | 'downloading'
+  | 'rendering'
 
 export interface AgentTaskSummary {
   id: string
   sessionId: string
   title: string
-  status: AgentStatus
+  status: AgentJobStatus
   progress: number
   currentStep: string
   createdAt: string
@@ -26,53 +38,14 @@ export interface AgentDashboardSummary {
   recentTasks: AgentTaskSummary[]
 }
 
-async function request<T>(path: string): Promise<T> {
-  const response = await fetch(path, {
-    headers: {
-      'Content-Type': 'application/json',
-    },
-  })
-
-  if (!response.ok) {
-    throw new Error(await readErrorMessage(response))
-  }
-
-  if (response.status === 204) {
-    return undefined as T
-  }
-
-  return response.json() as Promise<T>
-}
-
-async function readErrorMessage(response: Response): Promise<string> {
-  const fallback = `请求失败：${response.status} ${response.statusText}`
-
-  try {
-    const data = (await response.json()) as { detail?: unknown; error?: unknown; message?: unknown }
-    const detail = data.detail ?? data.error ?? data.message
-
-    if (typeof detail === 'string' && detail.trim()) {
-      return `${fallback} - ${detail}`
-    }
-
-    if (detail !== undefined && detail !== null) {
-      return `${fallback} - ${JSON.stringify(detail)}`
-    }
-  } catch {
-    // 响应体可能不是 JSON，使用状态码信息即可。
-  }
-
-  return fallback
-}
-
 export function getAgentDashboard(): Promise<AgentDashboardSummary> {
-  return request<AgentDashboardSummary>('/api/agent/dashboard')
+  return requestJson<AgentDashboardSummary>('/api/agent/dashboard')
 }
 
 export function listAgentTasks(): Promise<AgentTaskSummary[]> {
-  return request<AgentTaskSummary[]>('/api/agent/tasks')
+  return requestJson<AgentTaskSummary[]>('/api/agent/tasks')
 }
 
 export function getAgentTask(jobId: string): Promise<AgentTaskDetail> {
-  return request<AgentTaskDetail>(`/api/agent/tasks/${encodeURIComponent(jobId)}`)
+  return requestJson<AgentTaskDetail>(`/api/agent/tasks/${encodeURIComponent(jobId)}`)
 }
