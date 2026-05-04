@@ -1,0 +1,78 @@
+.shell {
+  min-height: 100vh;
+  display: grid;
+  grid-template-columns: 72px minmax(0, 1fr);
+  background: var(--page-bg);
+  color: var(--text-primary);
+}
+
+.rail {
+  position: sticky;
+  top: 0;
+  height: 100vh;
+  padding: 18px 12px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 18px;
+  background: var(--ink);
+}
+
+.logo,
+.navItem {
+  width: 40px;
+  height: 40px;
+  border-radius: var(--radius-md);
+  display: grid;
+  place-items: center;
+  text-decoration: none;
+  font-weight: 900;
+}
+
+.logo {
+  background: var(--accent);
+  color: var(--ink);
+}
+
+.nav {
+  display: grid;
+  gap: 12px;
+}
+
+.navItem {
+  color: var(--rail-text);
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.navItem.active {
+  color: var(--ink);
+  background: var(--accent);
+}
+
+.main {
+  min-width: 0;
+  padding: 22px 26px 30px;
+}
+
+@media (max-width: 760px) {
+  .shell {
+    grid-template-columns: 1fr;
+  }
+
+  .rail {
+    position: static;
+    height: auto;
+    min-height: 64px;
+    padding: 12px 14px;
+    flex-direction: row;
+    justify-content: space-between;
+  }
+
+  .nav {
+    grid-auto-flow: column;
+  }
+
+  .main {
+    padding: 18px 14px 24px;
+  }
+}

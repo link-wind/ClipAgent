@@ -1,20 +1,34 @@
 :root {
-  --bg-primary: #0f1012;
-  --bg-secondary: #141413;
-  --bg-surface: #1f201b;
-  --bg-elevated: #24231d;
-  --accent: #efc75e;
-  --accent-contrast: #15110a;
-  --accent-alt: #4bbfd0;
-  --success: #7fd7a8;
-  --danger: #ff8fa0;
-  --text-primary: #f4f0e8;
-  --text-secondary: #a49c8e;
-  --text-muted: #726b61;
-  --border: #343229;
-  --border-strong: #4c432b;
+  --page-bg: #f4f5f3;
+  --surface: #ffffff;
+  --surface-subtle: #f7f9f6;
+  --surface-muted: #eef2ed;
+  --ink: #1f2522;
+  --text-primary: #1f2522;
+  --text-secondary: #68736c;
+  --text-muted: #7b847d;
+  --rail-text: #c8d0c8;
+  --border: #dfe4df;
+  --border-soft: #e8ebe7;
+  --accent: #a8c66c;
+  --accent-strong: #6da7a2;
+  --accent-ink: #365314;
+  --danger: #991b1b;
+  --danger-bg: #fee2e2;
+  --info: #1d4ed8;
+  --info-bg: #dbeafe;
+  --shadow-soft: 0 10px 28px rgba(32, 37, 34, 0.045);
   --radius-sm: 4px;
   --radius-md: 8px;
+
+  --bg-primary: var(--page-bg);
+  --bg-secondary: var(--surface-subtle);
+  --bg-surface: var(--surface);
+  --bg-elevated: var(--surface-muted);
+  --accent-contrast: var(--accent-ink);
+  --accent-alt: var(--accent-strong);
+  --success: #7fd7a8;
+  --border-strong: #c7cdc7;
 }
 
 * {
@@ -24,13 +38,12 @@
 }
 
 body {
-  background:
-    linear-gradient(180deg, rgba(239, 199, 94, 0.06), transparent 280px),
-    var(--bg-primary);
+  background: var(--page-bg);
   color: var(--text-primary);
   font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
   font-size: 14px;
   line-height: 1.5;
+  letter-spacing: 0;
   overflow: auto;
 }
 
