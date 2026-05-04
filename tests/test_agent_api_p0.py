@@ -467,6 +467,84 @@ class AgentApiP0ContractTests(unittest.TestCase):
         ):
             asyncio.run(_run())
 
+    def test_agent_task_detail_does_not_fallback_to_session_level_video_or_retryable_step(self):
+        async def _run():
+            session = self.session_service.create_session("做一个不会串值的任务")
+
+            with self.session_factory() as db:
+                job_repo = AgentJobRepository(db)
+                artifact_repo = AgentArtifactRepository(db)
+                event_repo = AgentEventRepository(db)
+                session_repo = AgentSessionRepository(db)
+
+                old_job = job_repo.create(
+                    session_id=session.id,
+                    plan_id=None,
+                    job_type="generate_video",
+                    status="succeeded",
+                    progress=100,
+                    current_step="已完成",
+                )
+                current_job = job_repo.create(
+                    session_id=session.id,
+                    plan_id=None,
+                    job_type="generate_video",
+                    status="failed",
+                    progress=20,
+                    current_step="处理失败：网络波动",
+                    error_message="网络波动",
+                )
+
+                session_record = session_repo.get(session.id)
+                session_record.video_url = "https://cdn.example.com/stale-session-video.mp4"
+                session_record.error_retryable_step = "searching"
+
+                artifact_repo.create(
+                    session_id=session.id,
+                    job_id=old_job.id,
+                    artifact_type="video",
+                    public_url="https://cdn.example.com/old-job-video.mp4",
+                )
+                event_repo.create(
+                    session_id=session.id,
+                    job_id=old_job.id,
+                    event_type="job_succeeded",
+                    step="done",
+                    progress=100,
+                    message="旧任务完成",
+                    payload_json={"videoUrl": "https://cdn.example.com/old-job-video.mp4"},
+                )
+                event_repo.create(
+                    session_id=session.id,
+                    job_id=current_job.id,
+                    event_type="job_failed",
+                    step="failed",
+                    progress=20,
+                    message="当前任务失败",
+                    payload_json={"jobId": current_job.id},
+                )
+                db.commit()
+                current_job_id = current_job.id
+
+            transport = httpx.ASGITransport(app=app)
+            async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as client:
+                response = await client.get(f"/api/agent/tasks/{current_job_id}")
+                self.assertEqual(response.status_code, 200)
+                payload = response.json()
+
+                self.assertEqual(payload["id"], current_job_id)
+                self.assertIsNone(payload["videoUrl"])
+                self.assertEqual(payload["error"]["message"], "网络波动")
+                self.assertIsNone(payload["error"]["retryableStep"])
+
+        import asyncio
+
+        task_read_service = AgentTaskReadService(session_factory=self.session_factory)
+        with patch.object(agent_api_module, "session_service", self.session_service), patch.object(
+            agent_api_module, "task_read_service", task_read_service
+        ):
+            asyncio.run(_run())
+
 
 if __name__ == "__main__":
     unittest.main()

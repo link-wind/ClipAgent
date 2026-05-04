@@ -35,8 +35,8 @@ class AgentTaskReadService:
             artifacts = AgentArtifactRepository(db).list_for_job(job.id)
             events = AgentEventRepository(db).list_for_job(job.id)
             clip_rows = [row for row in artifacts if row.artifact_type == "clip"]
-            video_url = self._resolve_video_url(artifacts, events, session)
-            retryable_step = self._resolve_retryable_step(events, session)
+            video_url = self._resolve_video_url(artifacts, events)
+            retryable_step = self._resolve_retryable_step(events)
             summary = self._build_task_summary(job, session)
             return AgentTaskDetail(
                 **summary.model_dump(),
@@ -88,7 +88,7 @@ class AgentTaskReadService:
         session_ids = [job.session_id for job in jobs if job.session_id]
         return {session.id: session for session in session_repo.get_many(session_ids)}
 
-    def _resolve_video_url(self, artifacts, events, session) -> str | None:
+    def _resolve_video_url(self, artifacts, events) -> str | None:
         for row in reversed(artifacts):
             if row.artifact_type == "video" and row.public_url:
                 return row.public_url
@@ -99,13 +99,13 @@ class AgentTaskReadService:
             if video_url:
                 return str(video_url)
 
-        return session.video_url if session else None
+        return None
 
-    def _resolve_retryable_step(self, events, session) -> str | None:
+    def _resolve_retryable_step(self, events) -> str | None:
         for row in reversed(events):
             payload = row.payload_json or {}
             retryable_step = payload.get("retryableStep")
             if retryable_step:
                 return str(retryable_step)
 
-        return session.error_retryable_step if session else None
+        return None
