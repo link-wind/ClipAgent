@@ -9,7 +9,7 @@ from sqlalchemy.pool import StaticPool
 
 import backend.api.agent as agent_api_module
 from backend.db.base import Base
-from backend.db.repositories import AgentEventRepository, AgentJobRepository
+from backend.db.repositories import AgentArtifactRepository, AgentEventRepository, AgentJobRepository
 from backend.main import app
 from backend.services.agent_read_service import AgentReadService
 from backend.services.agent_service import agent_service
@@ -282,6 +282,149 @@ class AgentApiP0ContractTests(unittest.TestCase):
             "read_service",
             self.read_service,
         ), patch.object(agent_api_module, "task_read_service", task_read_service):
+            asyncio.run(_run())
+
+    def test_agent_task_detail_endpoint_returns_404_for_missing_job(self):
+        async def _run():
+            transport = httpx.ASGITransport(app=app)
+            async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as client:
+                response = await client.get("/api/agent/tasks/job-missing")
+                self.assertEqual(response.status_code, 404)
+                self.assertEqual(response.json()["detail"], "Task not found")
+
+        import asyncio
+
+        task_read_service = AgentTaskReadService(session_factory=self.session_factory)
+        with patch.object(agent_api_module, "task_read_service", task_read_service):
+            asyncio.run(_run())
+
+    def test_agent_dashboard_counts_are_not_limited_by_recent_tasks_window(self):
+        async def _run():
+            sessions: list[str] = []
+            with self.session_factory() as db:
+                job_repo = AgentJobRepository(db)
+                for index in range(55):
+                    session = self.session_service.create_session(f"任务 {index}")
+                    sessions.append(session.id)
+                    status = "queued" if index < 30 else "done" if index < 45 else "failed"
+                    current_step = "处理中" if status == "queued" else "已完成" if status == "done" else "执行失败"
+                    job_repo.create(
+                        session_id=session.id,
+                        plan_id=None,
+                        job_type="generate_video",
+                        status=status,
+                        progress=50 if status == "queued" else 100 if status == "done" else 0,
+                        current_step=current_step,
+                    )
+                db.commit()
+
+            transport = httpx.ASGITransport(app=app)
+            async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as client:
+                response = await client.get("/api/agent/dashboard")
+                self.assertEqual(response.status_code, 200)
+                payload = response.json()
+
+                self.assertEqual(payload["totalSessions"], 55)
+                self.assertEqual(payload["activeTasks"], 30)
+                self.assertEqual(payload["completedTasks"], 15)
+                self.assertEqual(payload["failedTasks"], 10)
+                self.assertEqual(len(payload["recentTasks"]), 50)
+
+        import asyncio
+
+        task_read_service = AgentTaskReadService(session_factory=self.session_factory)
+        with patch.object(agent_api_module, "session_service", self.session_service), patch.object(
+            agent_api_module, "task_read_service", task_read_service
+        ):
+            asyncio.run(_run())
+
+    def test_agent_task_detail_isolated_to_requested_job_within_same_session(self):
+        async def _run():
+            session = self.session_service.create_session("做一个多阶段短片")
+
+            with self.session_factory() as db:
+                job_repo = AgentJobRepository(db)
+                artifact_repo = AgentArtifactRepository(db)
+                event_repo = AgentEventRepository(db)
+
+                first_job = job_repo.create(
+                    session_id=session.id,
+                    plan_id=None,
+                    job_type="generate_video",
+                    status="done",
+                    progress=100,
+                    current_step="已完成",
+                )
+                second_job = job_repo.create(
+                    session_id=session.id,
+                    plan_id=None,
+                    job_type="generate_video",
+                    status="queued",
+                    progress=20,
+                    current_step="准备素材",
+                )
+                second_job_id = second_job.id
+
+                artifact_repo.create(
+                    session_id=session.id,
+                    job_id=first_job.id,
+                    artifact_type="clip",
+                    scene_id="1",
+                    source_url="https://example.com/source-1.mp4",
+                    local_path="/tmp/clip-1.mp4",
+                    public_url="https://cdn.example.com/clip-1.mp4",
+                    duration=3.0,
+                    metadata_json={"caption": "clip 1"},
+                )
+                artifact_repo.create(
+                    session_id=session.id,
+                    job_id=second_job.id,
+                    artifact_type="clip",
+                    scene_id="2",
+                    source_url="https://example.com/source-2.mp4",
+                    local_path="/tmp/clip-2.mp4",
+                    public_url="https://cdn.example.com/clip-2.mp4",
+                    duration=5.0,
+                    metadata_json={"caption": "clip 2"},
+                )
+                event_repo.create(
+                    session_id=session.id,
+                    job_id=first_job.id,
+                    event_type="job_completed",
+                    step="done",
+                    progress=100,
+                    message="首个任务完成",
+                    payload_json={"jobId": first_job.id},
+                )
+                event_repo.create(
+                    session_id=session.id,
+                    job_id=second_job.id,
+                    event_type="job_progress",
+                    step="queued",
+                    progress=20,
+                    message="第二个任务排队中",
+                    payload_json={"jobId": second_job.id},
+                )
+                db.commit()
+
+            transport = httpx.ASGITransport(app=app)
+            async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as client:
+                response = await client.get(f"/api/agent/tasks/{second_job_id}")
+                self.assertEqual(response.status_code, 200)
+                payload = response.json()
+
+                self.assertEqual(payload["id"], second_job_id)
+                self.assertEqual(len(payload["events"]), 1)
+                self.assertEqual(payload["events"][0]["payload"]["jobId"], second_job_id)
+                self.assertEqual(len(payload["clips"]), 1)
+                self.assertEqual(payload["clips"][0]["caption"], "clip 2")
+
+        import asyncio
+
+        task_read_service = AgentTaskReadService(session_factory=self.session_factory)
+        with patch.object(agent_api_module, "session_service", self.session_service), patch.object(
+            agent_api_module, "task_read_service", task_read_service
+        ):
             asyncio.run(_run())
 
 

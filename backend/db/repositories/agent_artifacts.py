@@ -24,3 +24,12 @@ class AgentArtifactRepository:
             .order_by(AgentArtifactRecord.created_at.asc(), AgentArtifactRecord.id.asc())
         )
         return list(self.db.scalars(stmt))
+
+    def list_for_job(self, job_id: str) -> list[AgentArtifactRecord]:
+        # 按时间顺序列出任务产物
+        stmt = (
+            select(AgentArtifactRecord)
+            .where(AgentArtifactRecord.job_id == job_id)
+            .order_by(AgentArtifactRecord.created_at.asc(), AgentArtifactRecord.id.asc())
+        )
+        return list(self.db.scalars(stmt))

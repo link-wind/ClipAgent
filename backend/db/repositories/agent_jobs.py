@@ -1,4 +1,4 @@
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from backend.db.models import AgentJobRecord
@@ -40,6 +40,27 @@ class AgentJobRepository:
             .limit(limit)
         )
         return list(self.db.scalars(stmt))
+
+    def count_by_status(self, status: str) -> int:
+        # 按状态统计任务数量
+        stmt = (
+            select(func.count())
+            .select_from(AgentJobRecord)
+            .where(AgentJobRecord.status == status)
+        )
+        return int(self.db.scalar(stmt) or 0)
+
+    def count_by_statuses(self, statuses: set[str] | list[str] | tuple[str, ...]) -> int:
+        # 按状态集合统计任务数量
+        if not statuses:
+            return 0
+
+        stmt = (
+            select(func.count())
+            .select_from(AgentJobRecord)
+            .where(AgentJobRecord.status.in_(tuple(statuses)))
+        )
+        return int(self.db.scalar(stmt) or 0)
 
     def update_status(self, job_id: str, **values) -> AgentJobRecord | None:
         # 更新任务状态相关字段

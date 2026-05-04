@@ -24,3 +24,12 @@ class AgentEventRepository:
             .order_by(AgentEventRecord.created_at.asc(), AgentEventRecord.id.asc())
         )
         return list(self.db.scalars(stmt))
+
+    def list_for_job(self, job_id: str) -> list[AgentEventRecord]:
+        # 按时间顺序列出任务事件
+        stmt = (
+            select(AgentEventRecord)
+            .where(AgentEventRecord.job_id == job_id)
+            .order_by(AgentEventRecord.created_at.asc(), AgentEventRecord.id.asc())
+        )
+        return list(self.db.scalars(stmt))

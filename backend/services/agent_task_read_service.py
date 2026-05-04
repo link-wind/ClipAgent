@@ -20,10 +20,9 @@ class AgentTaskReadService:
         # 读取最近任务摘要
         with self.session_factory() as db:
             session_repo = AgentSessionRepository(db)
-            return [
-                self._build_task_summary(job, session_repo.get(job.session_id) if job.session_id else None)
-                for job in AgentJobRepository(db).list_recent(limit=limit)
-            ]
+            jobs = AgentJobRepository(db).list_recent(limit=limit)
+            session_by_id = self._load_sessions_for_jobs(session_repo, jobs)
+            return [self._build_task_summary(job, session_by_id.get(job.session_id)) for job in jobs]
 
     def read_task(self, job_id: str) -> AgentTaskDetail:
         # 读取任务详情
@@ -33,20 +32,14 @@ class AgentTaskReadService:
                 raise KeyError(job_id)
 
             session = AgentSessionRepository(db).get(job.session_id) if job.session_id else None
-            artifacts = AgentArtifactRepository(db).list_for_session(job.session_id) if job.session_id else []
-            events = AgentEventRepository(db).list_for_session(job.session_id) if job.session_id else []
+            artifacts = AgentArtifactRepository(db).list_for_job(job.id)
+            events = AgentEventRepository(db).list_for_job(job.id)
             clip_rows = [row for row in artifacts if row.artifact_type == "clip"]
             summary = self._build_task_summary(job, session)
             return AgentTaskDetail(
                 **summary.model_dump(),
-                events=self.read_service.build_event_response(
-                    row for row in events if row.job_id == job.id
-                ),
-                clips=[
-                    self.read_service._build_clip_info(row)
-                    for row in clip_rows
-                    if row.job_id == job.id
-                ],
+                events=self.read_service.build_event_response(events),
+                clips=[self.read_service._build_clip_info(row) for row in clip_rows],
                 error=(
                     AgentError(
                         message=job.error_message,
@@ -62,20 +55,16 @@ class AgentTaskReadService:
         # 汇总仪表盘计数和最近任务
         with self.session_factory() as db:
             session_repo = AgentSessionRepository(db)
-            jobs = AgentJobRepository(db).list_recent(limit=50)
-            recent_sessions = session_repo.list_recent(limit=20)
-            session_by_id = {session.id: session for session in recent_sessions}
+            job_repo = AgentJobRepository(db)
+            jobs = job_repo.list_recent(limit=50)
+            session_by_id = self._load_sessions_for_jobs(session_repo, jobs)
             return AgentDashboardSummary(
-                totalSessions=len(recent_sessions),
-                activeTasks=sum(1 for job in jobs if job.status in RUNNING_JOB_STATUSES),
-                completedTasks=sum(1 for job in jobs if job.status == "done"),
-                failedTasks=sum(1 for job in jobs if job.status == "failed"),
+                totalSessions=session_repo.count_all(),
+                activeTasks=job_repo.count_by_statuses(RUNNING_JOB_STATUSES),
+                completedTasks=job_repo.count_by_status("done"),
+                failedTasks=job_repo.count_by_status("failed"),
                 recentTasks=[
-                    self._build_task_summary(
-                        job,
-                        session_by_id.get(job.session_id)
-                        or (session_repo.get(job.session_id) if job.session_id else None),
-                    )
+                    self._build_task_summary(job, session_by_id.get(job.session_id))
                     for job in jobs
                 ],
             )
@@ -92,3 +81,7 @@ class AgentTaskReadService:
             createdAt=job.created_at.isoformat(),
             updatedAt=job.updated_at.isoformat(),
         )
+
+    def _load_sessions_for_jobs(self, session_repo, jobs) -> dict[str, object]:
+        session_ids = [job.session_id for job in jobs if job.session_id]
+        return {session.id: session for session in session_repo.get_many(session_ids)}
