@@ -98,6 +98,38 @@ class AgentApiP0ContractTests(unittest.TestCase):
         self.assertIn("/sessions/{session_id}/confirm", paths)
         self.assertIn("/sessions/{session_id}/events", paths)
 
+    def test_agent_dashboard_and_task_response_models_can_be_instantiated(self):
+        from backend.models.agent import AgentDashboardSummary, AgentTaskDetail, AgentTaskSummary
+
+        task = AgentTaskSummary(
+            id="job-1",
+            sessionId="session-1",
+            title="AI 笔记产品宣传片",
+            status="queued",
+            progress=25,
+            currentStep="任务已入队",
+            createdAt="2026-05-04T12:00:00",
+            updatedAt="2026-05-04T12:01:00",
+        )
+        detail = AgentTaskDetail(
+            **task.model_dump(),
+            events=[],
+            clips=[],
+            error=None,
+            videoUrl=None,
+        )
+        dashboard = AgentDashboardSummary(
+            totalSessions=1,
+            activeTasks=1,
+            completedTasks=0,
+            failedTasks=0,
+            recentTasks=[task],
+        )
+
+        self.assertEqual(task.title, "AI 笔记产品宣传片")
+        self.assertEqual(detail.id, "job-1")
+        self.assertEqual(dashboard.activeTasks, 1)
+
     def test_agent_api_create_get_and_add_message_round_trip_uses_db_backed_services(self):
         async def _run():
             transport = httpx.ASGITransport(app=app)

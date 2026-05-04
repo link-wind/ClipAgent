@@ -78,3 +78,29 @@ class AgentSession(BaseModel):
     error: Optional[AgentError] = None
     progress: float = 0.0
     currentStep: str = ""
+
+
+class AgentTaskSummary(BaseModel):
+    id: str
+    sessionId: str
+    title: str
+    status: str
+    progress: float = 0.0
+    currentStep: str = ""
+    createdAt: str
+    updatedAt: str
+
+
+class AgentTaskDetail(AgentTaskSummary):
+    events: List[AgentEvent] = Field(default_factory=list)
+    clips: List[ClipInfo] = Field(default_factory=list)
+    error: Optional[AgentError] = None
+    videoUrl: Optional[str] = None
+
+
+class AgentDashboardSummary(BaseModel):
+    totalSessions: int = 0
+    activeTasks: int = 0
+    completedTasks: int = 0
+    failedTasks: int = 0
+    recentTasks: List[AgentTaskSummary] = Field(default_factory=list)
