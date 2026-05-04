@@ -22,7 +22,10 @@ export default function ProductShell({ children }: { children: ReactNode }) {
         </Link>
         <nav className={styles.nav}>
           {NAV_ITEMS.map((item) => {
-            const isActive = item.href === '/' ? pathname === '/' : pathname.startsWith(item.href);
+            const isActive =
+              item.href === '/'
+                ? pathname === '/'
+                : pathname === item.href || pathname.startsWith(`${item.href}/`);
 
             return (
               <Link
@@ -30,6 +33,7 @@ export default function ProductShell({ children }: { children: ReactNode }) {
                 href={item.href}
                 className={`${styles.navItem} ${isActive ? styles.active : ''}`}
                 title={item.label}
+                aria-label={item.label}
               >
                 <span>{item.shortLabel}</span>
               </Link>
