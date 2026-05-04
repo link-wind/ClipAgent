@@ -93,9 +93,8 @@ export default function AgentChat() {
       <div className={styles.messages}>
         {!session ? (
           <div className={styles.empty}>
-            <span>NEW PROJECT</span>
-            <h2>描述你想生成的视频</h2>
-            <p>告诉 Agent 主题、风格、时长和素材偏好，它会先生成剪辑计划，并把结果预览放到上方画布。</p>
+            <h2>描述你想完成的视频</h2>
+            <p>直接说你的想法即可，目标、格式、风格和执行拆分会由 AI 在后续步骤里提炼。</p>
           </div>
         ) : (
           session.messages.map((item) => (
