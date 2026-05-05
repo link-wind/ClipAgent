@@ -598,6 +598,32 @@ class FrontendClientContractTests(unittest.TestCase):
         self.assertIn("session?.events", progress_source)
         self.assertIn("activeJobId", result_source)
 
+    def test_workspace_page_is_tailwind_based(self):
+        workspace_source = (ROOT / "src" / "components" / "workspace" / "BriefWorkspacePage.tsx").read_text(
+            encoding="utf-8"
+        )
+
+        self.assertNotIn("BriefWorkspacePage.module.css", workspace_source)
+        self.assertNotIn("styles.", workspace_source)
+        self.assertIn("className=\"min-h-full", workspace_source)
+        self.assertIn("grid w-full max-w-[980px]", workspace_source)
+
+    def test_workspace_handoff_renders_execution_steps_and_result_states(self):
+        workspace_source = (ROOT / "src" / "components" / "workspace" / "BriefWorkspacePage.tsx").read_text(
+            encoding="utf-8"
+        )
+
+        self.assertIn("EXECUTION_STEP_IDS", workspace_source)
+        self.assertIn("create_task", workspace_source)
+        self.assertIn("search_assets", workspace_source)
+        self.assertIn("prepare_assets", workspace_source)
+        self.assertIn("render_video", workspace_source)
+        self.assertIn("执行交接", workspace_source)
+        self.assertIn("activeJobId", workspace_source)
+        self.assertIn("查看任务详情", workspace_source)
+        self.assertIn("结果预览", workspace_source)
+        self.assertIn("失败步骤", workspace_source)
+
     def test_agent_chat_resets_stale_session_on_missing_backend_session(self):
         content = (ROOT / "src" / "components" / "agent" / "AgentChat.tsx").read_text(encoding="utf-8")
 
