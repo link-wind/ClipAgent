@@ -16,6 +16,13 @@ import { useAgentStore } from '@/stores/useAgentStore';
 import styles from './BriefWorkspacePage.module.css';
 
 const RUNNING_STATUSES = new Set(['queued', 'searching', 'downloading', 'rendering']);
+const WORKSPACE_STEP_IDS = ['understand_request', 'extract_requirements', 'generate_options', 'finalize_plan'] as const;
+const WORKSPACE_STEP_TITLES: Record<(typeof WORKSPACE_STEP_IDS)[number], string> = {
+  understand_request: '步骤 1：理解原始需求',
+  extract_requirements: '步骤 2：提炼目标与限制',
+  generate_options: '步骤 3：生成多个方案方向',
+  finalize_plan: '步骤 4：输出最终执行方案',
+} as const;
 
 const DIRECTION_OPTIONS = [
   {
@@ -38,38 +45,70 @@ const DIRECTION_OPTIONS = [
   },
 ] as const;
 
-const STEP_DEFINITIONS = [
+const FALLBACK_WORKSPACE_STEPS = [
   {
-    id: 'understand',
+    id: 'understand_request',
     title: '步骤 1：理解原始需求',
-    progress: 100,
-    buildResult: (session: AgentSession | null) => [
-      { label: '原始诉求', value: session?.messages.find((item) => item.role === 'user')?.content || '等待输入' },
-      { label: '推断目标', value: session?.plan ? `${session.plan.title} 的宣传表达` : '待分析' },
-      { label: '基调判断', value: session?.plan?.style || '专业可信' },
-    ],
+    status: 'pending',
+    progress: 0,
+    summary: '等待后端返回需求分析结果。',
+    error: null,
+    result: null,
+    startedAt: null,
+    finishedAt: null,
   },
   {
-    id: 'constraints',
-    title: '步骤 2：提炼目标与限制条件',
-    progress: 100,
-    buildResult: (session: AgentSession | null) => [
-      { label: '建议时长', value: session?.plan ? `${session.plan.targetDuration} 秒` : '待分析' },
-      { label: '执行结构', value: session?.plan ? `${session.plan.scenes.length} 个段落` : '待分析' },
-      { label: '当前状态', value: session?.currentStep || '等待需求进入系统' },
-    ],
+    id: 'extract_requirements',
+    title: '步骤 2：提炼目标与限制',
+    status: 'pending',
+    progress: 0,
+    summary: '等待后端返回约束分析结果。',
+    error: null,
+    result: null,
+    startedAt: null,
+    finishedAt: null,
   },
   {
-    id: 'directions',
+    id: 'generate_options',
     title: '步骤 3：生成多个方案方向',
-    progress: 100,
+    status: 'pending',
+    progress: 0,
+    summary: '等待后端返回方案方向。',
+    error: null,
+    result: null,
+    startedAt: null,
+    finishedAt: null,
   },
   {
-    id: 'final',
+    id: 'finalize_plan',
     title: '步骤 4：输出最终执行方案',
-    progress: 100,
+    status: 'pending',
+    progress: 0,
+    summary: '等待后端返回最终方案。',
+    error: null,
+    result: null,
+    startedAt: null,
+    finishedAt: null,
   },
 ] as const;
+
+function asRecord(value: unknown): Record<string, unknown> {
+  return value && typeof value === 'object' && !Array.isArray(value) ? (value as Record<string, unknown>) : {};
+}
+
+function asString(value: unknown): string {
+  return typeof value === 'string' ? value : '';
+}
+
+function asNumber(value: unknown): number {
+  return typeof value === 'number' && Number.isFinite(value) ? value : 0;
+}
+
+function asArray(value: unknown): unknown[] {
+  return Array.isArray(value) ? value : [];
+}
+
+type WorkspaceStep = (typeof FALLBACK_WORKSPACE_STEPS)[number] | AgentSession['steps'][number];
 
 function formatTime(value: string) {
   return new Intl.DateTimeFormat('zh-CN', {
@@ -110,6 +149,86 @@ function buildFinalPlanSummary(session: AgentSession | null, selectedDirection: 
     { label: '风格方向', value: session?.plan?.style || '专业可信' },
     { label: '输出目标', value: session?.status === 'done' ? '已输出结果' : '确认后生成任务' },
   ];
+}
+
+function buildWorkspaceStepResult(step: WorkspaceStep) {
+  const result = asRecord(step.result);
+
+  if (step.id === 'understand_request' || step.id === 'extract_requirements') {
+    return [
+      { label: '原始诉求', value: asString(result.originalPrompt) || '等待后端返回结果。' },
+      { label: '建议时长', value: asNumber(result.targetDuration) ? `${asNumber(result.targetDuration)} 秒` : '待分析' },
+      { label: '风格方向', value: asString(result.style) || '待分析' },
+    ];
+  }
+
+  if (step.id === 'generate_options') {
+    const options = asArray(result.options).map((option) => {
+      const optionRecord = asRecord(option);
+      return {
+        id: asString(optionRecord.id) || asString(optionRecord.sceneId),
+        title: asString(optionRecord.title) || asString(optionRecord.name) || `方案 ${asString(optionRecord.sceneId) || ''}`,
+        description: asString(optionRecord.description) || asString(optionRecord.summary) || '等待后端返回方案方向。',
+      };
+    });
+
+    return options.length
+      ? options
+      : [
+          {
+            id: 'empty',
+            title: '等待后端返回方案方向',
+            description: '等待后端返回方案方向。',
+          },
+        ];
+  }
+
+  if (step.id === 'finalize_plan') {
+    const scenes = asArray(result.scenes).map((scene) => {
+      const sceneRecord = asRecord(scene);
+      return {
+        id: asString(sceneRecord.id) || '',
+        description: asString(sceneRecord.description) || '',
+        searchQuery: asString(sceneRecord.searchQuery) || '',
+        duration: asNumber(sceneRecord.duration),
+      };
+    });
+
+    return [
+      { label: '方案标题', value: asString(result.title) || '等待后端返回最终方案。' },
+      { label: '风格', value: asString(result.style) || '待确认' },
+      { label: '时长', value: asNumber(result.targetDuration) ? `${asNumber(result.targetDuration)} 秒` : '待确认' },
+      { label: '镜头数', value: scenes.length ? `${scenes.length} 个` : '待确认' },
+    ];
+  }
+
+  return [];
+}
+
+function buildFinalPlanSummaryItems(step: WorkspaceStep) {
+  const result = asRecord(step.result);
+  const scenes = asArray(result.scenes);
+  return [
+    { label: '方案标题', value: asString(result.title) || '等待后端返回最终方案。' },
+    { label: '风格', value: asString(result.style) || '待确认' },
+    { label: '时长', value: asNumber(result.targetDuration) ? `${asNumber(result.targetDuration)} 秒` : '待确认' },
+    { label: '镜头数', value: scenes.length ? `${scenes.length} 个` : '待确认' },
+  ];
+}
+
+function buildFinalPlanScenes(step: WorkspaceStep) {
+  const result = asRecord(step.result);
+  const scenes = asArray(result.scenes);
+  return scenes.map((scene) => {
+    const sceneRecord = asRecord(scene);
+    return {
+      id: asNumber(sceneRecord.id),
+      description: asString(sceneRecord.description),
+      keywords: asArray(sceneRecord.keywords).map((keyword) => asString(keyword)).filter(Boolean),
+      searchQuery: asString(sceneRecord.searchQuery),
+      duration: asNumber(sceneRecord.duration),
+    };
+  });
 }
 
 export default function BriefWorkspacePage() {
@@ -249,8 +368,16 @@ export default function BriefWorkspacePage() {
   const userMessages = sessionMessages.filter((item) => item.role === 'user');
   const assistantMessages = sessionMessages.filter((item) => item.role === 'assistant');
   const latestAssistantMessage = assistantMessages.at(-1)?.content ?? '我会按步骤处理你的需求，每一步先显示进度，再展示结果。';
-  const finalPlanSummary = useMemo(() => buildFinalPlanSummary(session, selectedDirection), [selectedDirection, session]);
   const scenes = session?.plan?.scenes ?? [];
+  const workspaceSteps = useMemo(() => {
+    if (!session?.steps?.length) {
+      return FALLBACK_WORKSPACE_STEPS;
+    }
+
+    return WORKSPACE_STEP_IDS
+      .map((stepId) => session.steps.find((step) => step.id === stepId))
+      .filter((step): step is AgentSession['steps'][number] => Boolean(step));
+  }, [session?.steps]);
 
   return (
     <ProductShell>
@@ -317,118 +444,143 @@ export default function BriefWorkspacePage() {
             </div>
 
             <section className={styles.stepFlow} aria-label="AI 分析步骤流">
-              {STEP_DEFINITIONS.map((step) => (
-                <article key={step.id} className={styles.stepBlock}>
-                  <div className={styles.stepHead}>
-                    <strong>{step.title}</strong>
-                    <span>{session ? `${step.progress}%` : '等待中'}</span>
-                  </div>
-                  <div className={styles.track} aria-hidden="true">
-                    <span style={{ width: session ? `${step.progress}%` : '14%' }} />
-                  </div>
+              {workspaceSteps.map((step, index) => {
+                const result = asRecord(step.result);
+                const progress = step.status === 'pending' ? (session ? 12 + index * 5 : 14) : step.progress;
+                const statusText =
+                  step.status === 'succeeded' ? '完成' : step.status === 'running' ? '进行中' : step.status === 'failed' ? '失败' : '等待中';
+                const stepTitle = WORKSPACE_STEP_TITLES[step.id as (typeof WORKSPACE_STEP_IDS)[number]];
 
-                  {step.id === 'directions' ? (
-                    <div className={styles.resultBox}>
-                      <div className={styles.sectionHead}>
-                        <div>
-                          <span className={styles.sectionEyebrow}>方案方向</span>
-                          <h3>从多个方向里确认一个主方向</h3>
-                        </div>
-                        <span className={styles.sectionMeta}>一次只确认一个</span>
-                      </div>
-
-                      <div className={styles.optionSet}>
-                        {DIRECTION_OPTIONS.map((option) => {
-                          const isSelected = option.id === selectedDirection;
-                          return (
-                            <button
-                              key={option.id}
-                              type="button"
-                              className={`${styles.optionCard} ${isSelected ? styles.optionCardSelected : ''}`}
-                              onClick={() => setSelectedDirection(option.id)}
-                              aria-pressed={isSelected}
-                            >
-                              <span className={styles.optionLetter}>{option.id}</span>
-                              <span className={styles.optionBody}>
-                                <strong>{option.name}</strong>
-                                <span>{option.summary}</span>
-                                <span className={styles.tags}>
-                                  {option.tags.map((tag) => (
-                                    <span key={tag} className={styles.tag}>
-                                      {tag}
-                                    </span>
-                                  ))}
-                                </span>
-                              </span>
-                              <span className={styles.optionState}>{isSelected ? '已选择' : '可选'}</span>
-                            </button>
-                          );
-                        })}
-                      </div>
+                return (
+                  <article key={step.id} className={styles.stepBlock}>
+                    <div className={styles.stepHead}>
+                      <strong>{stepTitle}</strong>
+                      <span>{statusText}</span>
                     </div>
-                  ) : step.id === 'final' ? (
-                    <div className={styles.resultBox}>
-                      <div className={styles.sectionHead}>
-                        <div>
-                          <span className={styles.sectionEyebrow}>最终执行方案</span>
-                          <h3>最终方案继续显示在对话流中</h3>
-                        </div>
-                        <span className={styles.sectionMeta}>{session?.status === 'plan_ready' ? '可确认' : '持续更新'}</span>
-                      </div>
+                    <div className={styles.track} aria-hidden="true">
+                      <span style={{ width: `${Math.max(0, Math.min(100, progress))}%` }} />
+                    </div>
 
-                      <div className={styles.finalPlan}>
-                        <div className={styles.finalSummary}>
-                          {finalPlanSummary.map((item) => (
-                            <div key={item.label} className={styles.summaryItem}>
-                              <span>{item.label}</span>
-                              <strong>{item.value}</strong>
-                            </div>
-                          ))}
+                    {step.id === 'generate_options' ? (
+                      <div className={styles.resultBox}>
+                        <div className={styles.sectionHead}>
+                          <div>
+                            <span className={styles.sectionEyebrow}>方案方向</span>
+                            <h3>{step.status === 'succeeded' ? '从后端返回的多个方向里确认一个主方向' : '等待后端返回方案方向。'}</h3>
+                          </div>
+                          <span className={styles.sectionMeta}>一次只确认一个</span>
                         </div>
 
-                        <div className={styles.sceneList}>
-                          {scenes.length > 0 ? (
-                            scenes.map((scene) => (
-                              <div key={scene.id} className={styles.scene}>
-                                <div className={styles.sceneNo}>{String(scene.id).padStart(2, '0')}</div>
-                                <div>
-                                  <strong>{scene.description}</strong>
-                                  <p>关键词：{scene.keywords.join(' / ') || '待补充'} · 检索方向：{scene.searchQuery}</p>
-                                </div>
-                                <div className={styles.duration}>{scene.duration}s</div>
-                              </div>
-                            ))
+                        <div className={styles.optionSet}>
+                          {asArray(result.options).length ? (
+                            asArray(result.options).map((option, optionIndex) => {
+                              const optionRecord = asRecord(option);
+                              const title = asString(optionRecord.title) || asString(optionRecord.name) || `方案 ${optionIndex + 1}`;
+                              const description = asString(optionRecord.description) || asString(optionRecord.summary) || '等待后端返回方案方向。';
+                              const tags = asArray(optionRecord.tags).map((tag) => asString(tag)).filter(Boolean);
+                              const isSelected = asString(result.selectedOptionId) === asString(optionRecord.id);
+
+                              return (
+                                <button
+                                  key={`${step.id}-${optionIndex}`}
+                                  type="button"
+                                  className={`${styles.optionCard} ${isSelected ? styles.optionCardSelected : ''}`}
+                                  onClick={() => setSelectedDirection((DIRECTION_OPTIONS[optionIndex]?.id ?? selectedDirection) as 'A' | 'B' | 'C')}
+                                  aria-pressed={isSelected}
+                                >
+                                  <span className={styles.optionLetter}>{optionIndex + 1}</span>
+                                  <span className={styles.optionBody}>
+                                    <strong>{title}</strong>
+                                    <span>{description}</span>
+                                    {tags.length ? (
+                                      <span className={styles.tags}>
+                                        {tags.map((tag) => (
+                                          <span key={tag} className={styles.tag}>
+                                            {tag}
+                                          </span>
+                                        ))}
+                                      </span>
+                                    ) : null}
+                                  </span>
+                                  <span className={styles.optionState}>{isSelected ? '已选择' : '可选'}</span>
+                                </button>
+                              );
+                            })
                           ) : (
-                            <div className={styles.pendingPlan}>
-                              <p>待 AI 生成最终方案后，这里会展示结构化段落拆分。</p>
-                            </div>
+                            <div className={styles.emptyInline}>等待后端返回方案方向。</div>
                           )}
                         </div>
+                      </div>
+                    ) : step.id === 'finalize_plan' ? (
+                      <div className={styles.resultBox}>
+                        <div className={styles.sectionHead}>
+                          <div>
+                            <span className={styles.sectionEyebrow}>最终执行方案</span>
+                            <h3>{step.status === 'succeeded' ? '后端返回的最终执行方案' : '等待后端返回最终方案。'}</h3>
+                          </div>
+                          <span className={styles.sectionMeta}>{session?.status === 'plan_ready' ? '可确认' : '持续更新'}</span>
+                        </div>
 
-                        <div className={styles.approval}>
-                          <Button type="button" variant="secondary" disabled={!session}>
-                            继续修改
-                          </Button>
-                          <Button type="button" onClick={confirmPlan} disabled={!canConfirm}>
-                            确认方案并生成任务
-                          </Button>
+                        <div className={styles.finalPlan}>
+                          <div className={styles.finalSummary}>
+                            {buildFinalPlanSummaryItems(step).map((item) => (
+                              <div key={item.label} className={styles.summaryItem}>
+                                <span>{item.label}</span>
+                                <strong>{item.value}</strong>
+                              </div>
+                            ))}
+                          </div>
+
+                          <div className={styles.sceneList}>
+                            {asArray(result.scenes).length ? (
+                              asArray(result.scenes).map((scene) => {
+                                const sceneRecord = asRecord(scene);
+                                return (
+                                  <div key={asString(sceneRecord.id) || asString(sceneRecord.searchQuery)} className={styles.scene}>
+                                    <div className={styles.sceneNo}>{String(asString(sceneRecord.id) || '0').padStart(2, '0')}</div>
+                                    <div>
+                                      <strong>{asString(sceneRecord.description) || '等待后端返回计划。'}</strong>
+                                      <p>关键词：{asArray(sceneRecord.keywords).map((keyword) => asString(keyword)).filter(Boolean).join(' / ') || '待补充'} · 检索方向：{asString(sceneRecord.searchQuery)}</p>
+                                    </div>
+                                    <div className={styles.duration}>{asNumber(sceneRecord.duration)}s</div>
+                                  </div>
+                                );
+                              })
+                            ) : (
+                              <div className={styles.pendingPlan}>
+                                <p>等待后端返回最终方案。</p>
+                              </div>
+                            )}
+                          </div>
+
+                          <div className={styles.approval}>
+                            <Button type="button" variant="secondary" disabled={!session}>
+                              继续修改
+                            </Button>
+                            <Button type="button" onClick={confirmPlan} disabled={!canConfirm}>
+                              确认方案并生成任务
+                            </Button>
+                          </div>
                         </div>
                       </div>
-                    </div>
-                  ) : (
-                    <div className={styles.resultBox}>
-                      <div className={styles.analysisGrid}>
-                        {step.buildResult(session).map((item) => (
-                          <div key={item.label} className={styles.analysisItem}>
-                            <span>{item.label}</span>
-                            <strong>{item.value}</strong>
-                          </div>
-                        ))}
+                    ) : (
+                      <div className={styles.resultBox}>
+                        <div className={styles.analysisGrid}>
+                          {(() => {
+                            const items = buildWorkspaceStepResult(step) as Array<{ label: string; value: string }>;
+                            return items.map((item) => (
+                              <div key={item.label} className={styles.analysisItem}>
+                                <span>{item.label}</span>
+                                <strong>{item.value}</strong>
+                              </div>
+                            ));
+                          })()}
+                        </div>
                       </div>
-                    </div>
-                  )}
-                </article>
-              ))}
+                    )}
+                  </article>
+                );
+              })}
             </section>
 
             {errorText ? <div className={styles.error}>{errorText}</div> : null}

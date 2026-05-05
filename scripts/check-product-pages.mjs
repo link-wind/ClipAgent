@@ -22,8 +22,10 @@ function assertExcludes(html, needle, message) {
 
 async function main() {
   const workspaceHtml = await fetchHtml('/workspace');
-  assertIncludes(workspaceHtml, '方案方向', 'workspace 页面缺少方案方向区块');
-  assertIncludes(workspaceHtml, '最终执行方案', 'workspace 页面缺少最终执行方案区块');
+  assertIncludes(workspaceHtml, '步骤 1：理解原始需求', 'workspace 页面缺少后端步骤 1 标题');
+  assertIncludes(workspaceHtml, '步骤 2：提炼目标与限制', 'workspace 页面缺少后端步骤 2 标题');
+  assertIncludes(workspaceHtml, '步骤 3：生成多个方案方向', 'workspace 页面缺少后端步骤 3 标题');
+  assertIncludes(workspaceHtml, '步骤 4：输出最终执行方案', 'workspace 页面缺少后端步骤 4 标题');
   assertIncludes(workspaceHtml, '确认方案并生成任务', 'workspace 页面缺少确认方案主动作');
 
   const tasksHtml = await fetchHtml('/tasks');
