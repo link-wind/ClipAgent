@@ -212,6 +212,8 @@ export default function BriefWorkspacePage() {
 
   const [message, setMessage] = useState('');
   const [errorText, setErrorText] = useState('');
+  const [selectedDirection, setSelectedDirection] = useState('');
+
   useEffect(() => {
     if (!activeSessionId || session) {
       return;
@@ -239,6 +241,10 @@ export default function BriefWorkspacePage() {
       isActive = false;
     };
   }, [activeSessionId, session, setSession]);
+
+  useEffect(() => {
+    setSelectedDirection('');
+  }, [session?.id]);
 
   useEffect(() => {
     const sessionId = session?.id;
@@ -420,6 +426,8 @@ export default function BriefWorkspacePage() {
                 const statusText =
                   step.status === 'succeeded' ? '完成' : step.status === 'running' ? '进行中' : step.status === 'failed' ? '失败' : '等待中';
                 const stepTitle = WORKSPACE_STEP_TITLES[step.id as (typeof WORKSPACE_STEP_IDS)[number]];
+                const backendSelectedOptionId = step.id === 'generate_options' ? asString(result.selectedOptionId) : '';
+                const displayedSelectedOptionId = backendSelectedOptionId || selectedDirection || optionCards[0]?.id || '';
 
                 return (
                   <article key={step.id} className={styles.stepBlock}>
@@ -438,23 +446,30 @@ export default function BriefWorkspacePage() {
                             <span className={styles.sectionEyebrow}>方案方向</span>
                             <h3>{step.status === 'succeeded' ? '后端返回的方案方向卡片' : '等待后端返回方案方向。'}</h3>
                           </div>
-                          <span className={styles.sectionMeta}>纯展示</span>
+                          <span className={styles.sectionMeta}>{displayedSelectedOptionId ? '当前查看' : '等待选择'}</span>
                         </div>
 
                         <div className={styles.optionSet}>
                           {optionCards.length ? (
                             optionCards.map((option) => (
-                              <article key={option.id} className={styles.optionPreviewCard}>
+                              <button
+                                key={option.id}
+                                type="button"
+                                className={`${styles.optionPreviewCard} ${displayedSelectedOptionId === option.id ? styles.optionPreviewCardSelected : ''}`}
+                                onClick={() => setSelectedDirection(option.id)}
+                                aria-pressed={displayedSelectedOptionId === option.id}
+                              >
                                 <div className={styles.optionPreviewHead}>
                                   <strong>{option.title}</strong>
-                                  <span>{option.duration ? `${option.duration} 秒` : '时长待定'}</span>
+                                  <span>{displayedSelectedOptionId === option.id ? '当前查看' : '点击查看'}</span>
                                 </div>
                                 <p>{option.description}</p>
                                 <div className={styles.optionPreviewMeta}>
                                   <span>检索方向：{option.searchQuery || '待补充'}</span>
                                   <span>关键词：{option.keywords.length ? option.keywords.join(' / ') : '待补充'}</span>
+                                  <span>时长：{option.duration ? `${option.duration} 秒` : '待补充'}</span>
                                 </div>
-                              </article>
+                              </button>
                             ))
                           ) : (
                             <div className={styles.emptyInline}>等待后端返回方案方向。</div>
