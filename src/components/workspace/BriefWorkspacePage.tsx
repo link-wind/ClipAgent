@@ -429,14 +429,14 @@ export default function BriefWorkspacePage() {
               <span aria-hidden="true">/</span>
               <span>方案沟通</span>
             </nav>
-            <div className="mt-3.5 flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
+            <div className="mt-3.5 flex flex-col gap-4 min-[861px]:flex-row min-[861px]:items-end min-[861px]:justify-between">
               <div className="min-w-0">
                 <h1 className="text-[28px] font-semibold leading-[1.12] text-ink">方案沟通页面</h1>
                 <p className="mt-2 max-w-[68ch] text-sm leading-6 text-secondary sm:text-base">
                   单栏推进需求理解、方向选择和最终确认，AI 的每一步都先给进度，再展示结果。
                 </p>
               </div>
-              <div className="w-full rounded-full border border-[rgba(168,198,108,0.38)] bg-[#e3efd4] px-3.5 py-2.5 text-left md:w-auto md:min-w-[130px] md:text-right">
+              <div className="w-full rounded-full border border-[rgba(168,198,108,0.38)] bg-[#e3efd4] px-3.5 py-2.5 text-left min-[861px]:w-auto min-[861px]:min-w-[130px] min-[861px]:text-right">
                 <span className="block text-xs text-secondary">当前状态</span>
                 <strong className="mt-1 block text-sm font-semibold text-accentink">{getWorkspaceStatus(session)}</strong>
               </div>
@@ -446,14 +446,14 @@ export default function BriefWorkspacePage() {
 
         <main className="mx-auto mt-5 grid w-full max-w-[980px] gap-4" aria-label="方案工作区">
           <section className="overflow-hidden rounded-lg border border-border bg-white shadow-soft" aria-label="方案沟通">
-            <div className="flex flex-col gap-3 border-b border-bordersoft px-5 py-4 md:flex-row md:items-start md:justify-between">
+            <div className="flex flex-col gap-3 border-b border-bordersoft px-5 py-4 min-[861px]:flex-row min-[861px]:items-start min-[861px]:justify-between">
               <div>
                 <h2 className="text-lg font-semibold leading-tight text-ink">方案沟通</h2>
                 <p className="mt-1 text-[13px] leading-5 text-secondary">
                   用户原始输入保留原样，目标和结构化信息由 AI 在后续步骤提炼。
                 </p>
               </div>
-              <span className="text-[13px] font-bold text-secondary md:whitespace-nowrap">每一步先显示进度，再给出结果</span>
+              <span className="text-[13px] font-bold text-secondary min-[861px]:whitespace-nowrap">每一步先显示进度，再给出结果</span>
             </div>
 
             <div className="grid gap-3.5 bg-[linear-gradient(180deg,rgba(168,198,108,0.05),transparent_280px),#ffffff] p-5">
@@ -467,7 +467,7 @@ export default function BriefWorkspacePage() {
               ) : (
                 <>
                   {userMessages.map((item) => (
-                    <article key={item.id} className="ml-auto grid w-full gap-2 sm:max-w-[84%]">
+                    <article key={item.id} className="ml-auto grid w-full gap-2 min-[861px]:max-w-[84%]">
                       <div className="flex items-center justify-between gap-3 text-xs font-extrabold text-secondary">
                         <span>你</span>
                         <time dateTime={item.createdAt}>{formatTime(item.createdAt)}</time>
@@ -478,7 +478,7 @@ export default function BriefWorkspacePage() {
                     </article>
                   ))}
 
-                  <article className="mr-auto grid w-full gap-2 sm:max-w-[84%]">
+                  <article className="mr-auto grid w-full gap-2 min-[861px]:max-w-[84%]">
                     <div className="flex items-center justify-between gap-3 text-xs font-extrabold text-secondary">
                       <span>ClipForge Agent</span>
                       <span>{session ? formatTime(sessionMessages.at(-1)?.createdAt ?? new Date().toISOString()) : ''}</span>
@@ -519,14 +519,14 @@ export default function BriefWorkspacePage() {
 
                     {step.id === 'generate_options' ? (
                       <div className="rounded-lg border border-[#e4e8e3] bg-[#fbfcfa] p-3">
-                        <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+                        <div className="flex flex-col gap-3 min-[861px]:flex-row min-[861px]:items-start min-[861px]:justify-between">
                           <div>
                             <span className="mb-1.5 block text-xs font-extrabold text-secondary">方案方向</span>
                             <h3 className="text-[15px] font-semibold leading-snug text-ink">
                               {step.status === 'succeeded' ? '后端返回的方案方向卡片' : '等待后端返回方案方向。'}
                             </h3>
                           </div>
-                          <span className="text-xs font-extrabold text-secondary md:whitespace-nowrap">
+                          <span className="text-xs font-extrabold text-secondary min-[861px]:whitespace-nowrap">
                             {displayedSelectedOptionId ? '当前查看' : '等待选择'}
                           </span>
                         </div>
@@ -568,20 +568,20 @@ export default function BriefWorkspacePage() {
                       </div>
                     ) : step.id === 'finalize_plan' ? (
                       <div className="rounded-lg border border-[#e4e8e3] bg-[#fbfcfa] p-3">
-                        <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+                        <div className="flex flex-col gap-3 min-[861px]:flex-row min-[861px]:items-start min-[861px]:justify-between">
                           <div>
                             <span className="mb-1.5 block text-xs font-extrabold text-secondary">最终执行方案</span>
                             <h3 className="text-[15px] font-semibold leading-snug text-ink">
                               {step.status === 'succeeded' ? '后端返回的最终执行方案' : '等待后端返回最终方案。'}
                             </h3>
                           </div>
-                          <span className="text-xs font-extrabold text-secondary md:whitespace-nowrap">
+                          <span className="text-xs font-extrabold text-secondary min-[861px]:whitespace-nowrap">
                             {session?.status === 'plan_ready' ? '可确认' : '持续更新'}
                           </span>
                         </div>
 
                         <div className="mt-3 grid gap-3">
-                          <div className="grid gap-2 md:grid-cols-3">
+                          <div className="grid gap-2 min-[861px]:grid-cols-3">
                             {buildFinalPlanSummaryItems(step).map((item) => (
                               <div key={item.label} className="rounded-lg border border-[#e4e8e3] bg-white p-2.5">
                                 <span className="mb-1 block text-xs font-extrabold text-secondary">{item.label}</span>
@@ -599,7 +599,7 @@ export default function BriefWorkspacePage() {
                                 return (
                                   <div
                                     key={asString(sceneRecord.id) || asString(sceneRecord.searchQuery)}
-                                    className="grid gap-2.5 rounded-lg border border-[#e4e8e3] bg-white p-2.5 md:grid-cols-[40px_minmax(0,1fr)_56px] md:items-start"
+                                    className="grid grid-cols-[40px_minmax(0,1fr)] gap-2.5 rounded-lg border border-[#e4e8e3] bg-white p-2.5 min-[861px]:grid-cols-[40px_minmax(0,1fr)_56px] min-[861px]:items-start"
                                   >
                                     <div className="grid h-10 w-10 shrink-0 place-items-center rounded-lg bg-[#e3efd4] text-sm font-semibold text-accentink">
                                       {String(asString(sceneRecord.id) || '0').padStart(2, '0')}
@@ -617,7 +617,7 @@ export default function BriefWorkspacePage() {
                                         · 检索方向：{asString(sceneRecord.searchQuery)}
                                       </p>
                                     </div>
-                                    <div className="text-left text-xs font-extrabold text-[#758078] md:text-right">
+                                    <div className="col-start-2 text-left text-xs font-extrabold text-[#758078] min-[861px]:col-auto min-[861px]:text-right">
                                       {asNumber(sceneRecord.duration)}s
                                     </div>
                                   </div>
@@ -642,7 +642,7 @@ export default function BriefWorkspacePage() {
                       </div>
                     ) : (
                       <div className="rounded-lg border border-[#e4e8e3] bg-[#fbfcfa] p-3">
-                        <div className="grid gap-2 md:grid-cols-3">
+                        <div className="grid gap-2 min-[861px]:grid-cols-3">
                           {(() => {
                             const items = buildWorkspaceStepResult(step) as Array<{ label: string; value: string }>;
                             return items.map((item) => (
@@ -678,7 +678,7 @@ export default function BriefWorkspacePage() {
                 disabled={isSubmitting}
                 className="min-h-[92px] w-full resize-y rounded-lg border border-border bg-white p-3 text-sm text-ink outline-none [font:inherit] placeholder:text-secondary focus:border-slate-400 focus:ring-2 focus:ring-slate-200"
               />
-              <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+              <div className="flex flex-col gap-3 min-[861px]:flex-row min-[861px]:items-center min-[861px]:justify-between">
                 <span className="text-xs text-secondary">底部输入区用于继续补充信息、修改方案，或推动下一轮细化。</span>
                 <div className="flex flex-wrap gap-2.5">
                   <Button type="button" variant="secondary" onClick={confirmPlan} disabled={!canConfirm}>
