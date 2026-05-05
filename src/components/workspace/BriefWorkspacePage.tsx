@@ -23,6 +23,21 @@ const WORKSPACE_STEP_TITLES: Record<(typeof WORKSPACE_STEP_IDS)[number], string>
   generate_options: '步骤 3：生成多个方案方向',
   finalize_plan: '步骤 4：输出最终执行方案',
 } as const;
+const EXECUTION_STEP_IDS = ['create_task', 'search_assets', 'prepare_assets', 'render_video'] as const;
+const EXECUTION_STEP_TITLES: Record<(typeof EXECUTION_STEP_IDS)[number], string> = {
+  create_task: '创建执行任务',
+  search_assets: '搜索素材',
+  prepare_assets: '准备素材',
+  render_video: '渲染视频',
+} as const;
+
+const STEP_STATUS_LABELS: Record<string, string> = {
+  pending: '等待中',
+  running: '进行中',
+  succeeded: '已完成',
+  failed: '失败',
+  skipped: '已跳过',
+};
 
 const FALLBACK_WORKSPACE_STEPS = [
   {
@@ -119,6 +134,19 @@ function getWorkspaceStatus(session: AgentSession | null) {
     return '需处理';
   }
   return '处理中';
+}
+
+function getStepStatusText(status: string) {
+  return STEP_STATUS_LABELS[status] ?? status;
+}
+
+function getStepProgress(step: WorkspaceStep, fallbackProgress: number) {
+  const value = step.status === 'pending' ? fallbackProgress : step.progress;
+  return Math.max(0, Math.min(100, value));
+}
+
+function findFailedStep(session: AgentSession | null) {
+  return session?.steps?.find((step) => step.status === 'failed') ?? null;
 }
 
 function buildWorkspaceStepResult(step: WorkspaceStep) {
@@ -353,6 +381,19 @@ export default function BriefWorkspacePage() {
       .map((stepId) => session.steps.find((step) => step.id === stepId))
       .filter((step): step is AgentSession['steps'][number] => Boolean(step));
   }, [session?.steps]);
+  const executionSteps = useMemo(() => {
+    if (!session?.steps?.length) {
+      return [];
+    }
+
+    return EXECUTION_STEP_IDS
+      .map((stepId) => session.steps.find((step) => step.id === stepId))
+      .filter((step): step is AgentSession['steps'][number] => Boolean(step));
+  }, [session?.steps]);
+
+  const failedStep = findFailedStep(session);
+  const showExecutionHandoff = Boolean(session?.activeJobId || executionSteps.some((step) => step.status !== 'pending'));
+  const resultUrl = session?.videoUrl || '';
   const generateOptionsStep = workspaceSteps.find((step) => step.id === 'generate_options');
   const generateOptionsStateSignature = useMemo(() => {
     if (!generateOptionsStep) {
