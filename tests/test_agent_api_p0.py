@@ -204,6 +204,50 @@ class AgentApiP0ContractTests(unittest.TestCase):
         ):
             asyncio.run(_run())
 
+    def test_agent_session_response_includes_standard_steps_from_prompt_and_plan(self):
+        async def _run():
+            transport = httpx.ASGITransport(app=app)
+            async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as client:
+                response = await client.post(
+                    "/api/agent/sessions",
+                    json={"message": "做一个 30 秒 AI 笔记产品宣传片"},
+                )
+                self.assertEqual(response.status_code, 200)
+                payload = response.json()
+
+                self.assertEqual(
+                    [step["id"] for step in payload["steps"]],
+                    [
+                        "understand_request",
+                        "extract_requirements",
+                        "generate_options",
+                        "finalize_plan",
+                        "create_task",
+                        "search_assets",
+                        "prepare_assets",
+                        "render_video",
+                    ],
+                )
+                understand_step = payload["steps"][0]
+                self.assertEqual(understand_step["status"], "succeeded")
+                self.assertEqual(understand_step["result"]["originalPrompt"], "做一个 30 秒 AI 笔记产品宣传片")
+
+                finalize_step = payload["steps"][3]
+                self.assertEqual(finalize_step["status"], "succeeded")
+                self.assertEqual(finalize_step["result"]["title"], payload["plan"]["title"])
+                self.assertEqual(len(finalize_step["result"]["scenes"]), len(payload["plan"]["scenes"]))
+
+                self.assertEqual(payload["steps"][4]["status"], "pending")
+
+        import asyncio
+
+        with patch.object(agent_api_module, "session_service", self.session_service), patch.object(
+            agent_api_module,
+            "read_service",
+            self.read_service,
+        ):
+            asyncio.run(_run())
+
     def test_agent_event_history_endpoint_returns_persisted_events(self):
         async def _run():
             session = self.session_service.create_session("做一个可恢复的智能剪辑任务")

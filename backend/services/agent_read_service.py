@@ -6,11 +6,13 @@ from backend.db.repositories import (
     AgentSessionRepository,
 )
 from backend.models.agent import AgentError, AgentEvent, AgentMessage, AgentSession, AgentStatus, ClipInfo, EditPlan
+from backend.services.agent_step_snapshot_service import AgentStepSnapshotService
 
 
 class AgentReadService:
     def __init__(self, session_factory):
         self.session_factory = session_factory
+        self.step_snapshot_service = AgentStepSnapshotService()
 
     def read_session(self, session_id: str) -> AgentSession:
         # 读取并组装会话响应
@@ -74,6 +76,11 @@ class AgentReadService:
                 event
                 for event in self.build_event_response(event_rows)
             ],
+            steps=self.step_snapshot_service.build_session_steps(
+                message_rows=message_rows,
+                plan_row=plan_row,
+                session_record=session_record,
+            ),
             videoUrl=session_record.video_url,
             activeJobId=session_record.active_job_id,
             error=(
