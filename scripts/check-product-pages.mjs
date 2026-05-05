@@ -5,7 +5,17 @@ const repoRoot = process.cwd();
 
 async function readText(relativePath) {
   const filePath = path.join(repoRoot, relativePath);
-  return readFile(filePath, 'utf8');
+  try {
+    return await readFile(filePath, 'utf8');
+  } catch (error) {
+    if (
+      error?.code === 'ENOENT' &&
+      relativePath === '.next/server/app/page.html'
+    ) {
+      return readFile(path.join(repoRoot, '.next/server/app/index.html'), 'utf8');
+    }
+    throw error;
+  }
 }
 
 function assertIncludes(html, needle, message) {
@@ -21,6 +31,19 @@ function assertExcludes(html, needle, message) {
 }
 
 async function main() {
+  const dashboardHtml = await readText('.next/server/app/page.html');
+  assertIncludes(dashboardHtml, 'ClipForge', 'dashboard 页面缺少产品标题');
+  assertIncludes(
+    dashboardHtml,
+    '对话式短视频制作工作台，把创意 brief 推进成可执行方案、任务流程和最终产出。',
+    'dashboard 页面缺少产品定位文案',
+  );
+  assertIncludes(dashboardHtml, '运行概况', 'dashboard 页面缺少运行概况区块');
+  assertIncludes(dashboardHtml, '关键指标', 'dashboard 页面缺少关键指标区块');
+  assertIncludes(dashboardHtml, '运行证明', 'dashboard 页面缺少运行证明区块');
+  assertIncludes(dashboardHtml, '最近工作', 'dashboard 页面缺少最近工作区块');
+  assertExcludes(dashboardHtml, 'Dashboard Home', 'dashboard 页面仍保留旧首页标题');
+
   const workspaceHtml = await readText('.next/server/app/workspace.html');
   assertIncludes(workspaceHtml, '步骤 1：理解原始需求', 'workspace 页面缺少后端步骤 1 标题');
   assertIncludes(workspaceHtml, '步骤 2：提炼目标与限制', 'workspace 页面缺少后端步骤 2 标题');
