@@ -720,6 +720,56 @@ class AgentApiP0ContractTests(unittest.TestCase):
         ):
             asyncio.run(_run())
 
+    def test_agent_task_failed_retryable_step_maps_to_standard_step_error(self):
+        async def _run():
+            session = self.session_service.create_session("做一个失败可恢复的短片")
+
+            with self.session_factory() as db:
+                job_repo = AgentJobRepository(db)
+                event_repo = AgentEventRepository(db)
+                job_record = job_repo.create(
+                    session_id=session.id,
+                    plan_id=None,
+                    job_type="generate_video",
+                    status="failed",
+                    progress=60,
+                    current_step="处理失败：下载素材失败",
+                    error_message="下载素材失败",
+                )
+                event_repo.create(
+                    session_id=session.id,
+                    job_id=job_record.id,
+                    event_type="job_failed",
+                    step="failed",
+                    progress=60,
+                    message="下载素材失败",
+                    payload_json={"retryableStep": "downloading"},
+                )
+                job_id = job_record.id
+                db.commit()
+
+            transport = httpx.ASGITransport(app=app)
+            async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as client:
+                response = await client.get(f"/api/agent/tasks/{job_id}")
+                self.assertEqual(response.status_code, 200)
+                payload = response.json()
+
+                failed_steps = [step for step in payload["steps"] if step["status"] == "failed"]
+                self.assertEqual(len(failed_steps), 1)
+                self.assertEqual(failed_steps[0]["id"], "prepare_assets")
+                self.assertEqual(failed_steps[0]["error"]["message"], "下载素材失败")
+                self.assertTrue(failed_steps[0]["error"]["retryable"])
+                self.assertEqual(failed_steps[0]["error"]["retryableStep"], "prepare_assets")
+                self.assertEqual(payload["steps"][7]["status"], "pending")
+
+        import asyncio
+
+        task_read_service = AgentTaskReadService(session_factory=self.session_factory)
+        with patch.object(agent_api_module, "session_service", self.session_service), patch.object(
+            agent_api_module, "task_read_service", task_read_service
+        ):
+            asyncio.run(_run())
+
     def test_agent_task_steps_are_isolated_from_other_jobs_in_same_session(self):
         async def _run():
             session = self.session_service.create_session("做一个多阶段短片")
