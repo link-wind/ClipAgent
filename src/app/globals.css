@@ -1,3 +1,7 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
 :root {
   --page-bg: #f4f5f3;
   --surface: #ffffff;
@@ -37,6 +41,10 @@
   padding: 0;
 }
 
+html {
+  background: var(--page-bg);
+}
+
 body {
   background: var(--page-bg);
   color: var(--text-primary);
@@ -47,17 +55,24 @@ body {
   overflow: auto;
 }
 
+a {
+  color: inherit;
+}
+
 ::-webkit-scrollbar {
   width: 6px;
   height: 6px;
 }
+
 ::-webkit-scrollbar-track {
   background: var(--bg-secondary);
 }
+
 ::-webkit-scrollbar-thumb {
   background: var(--border-strong);
   border-radius: 3px;
 }
+
 ::-webkit-scrollbar-thumb:hover {
   background: var(--text-muted);
 }
