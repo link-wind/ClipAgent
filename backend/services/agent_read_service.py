@@ -77,9 +77,10 @@ class AgentReadService:
                 for event in self.build_event_response(event_rows)
             ],
             steps=self.step_snapshot_service.build_session_steps(
+                session_record=session_record,
                 message_rows=message_rows,
                 plan_row=plan_row,
-                session_record=session_record,
+                event_rows=event_rows,
             ),
             videoUrl=session_record.video_url,
             activeJobId=session_record.active_job_id,
