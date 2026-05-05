@@ -93,6 +93,24 @@ function asString(value: unknown): string {
   return typeof value === 'string' ? value : '';
 }
 
+function getSafeResultUrl(value: string | null | undefined) {
+  const candidate = value?.trim() ?? '';
+  if (!candidate) {
+    return '';
+  }
+
+  if (candidate.startsWith('/') && !candidate.startsWith('//')) {
+    return candidate;
+  }
+
+  try {
+    const url = new URL(candidate);
+    return url.protocol === 'http:' || url.protocol === 'https:' ? candidate : '';
+  } catch {
+    return '';
+  }
+}
+
 function asNumber(value: unknown): number {
   return typeof value === 'number' && Number.isFinite(value) ? value : 0;
 }
@@ -392,7 +410,7 @@ export default function BriefWorkspacePage() {
 
   const failedStep = findFailedStep(session);
   const showExecutionHandoff = Boolean(session?.activeJobId || executionSteps.some((step) => step.status !== 'pending'));
-  const resultUrl = session?.videoUrl || '';
+  const resultUrl = getSafeResultUrl(session?.videoUrl);
   const generateOptionsStep = workspaceSteps.find((step) => step.id === 'generate_options');
   const generateOptionsStateSignature = useMemo(() => {
     if (!generateOptionsStep) {
@@ -682,14 +700,14 @@ export default function BriefWorkspacePage() {
 
                 <div className="rounded-lg border border-[#e4e8e3] bg-white p-3 text-sm text-secondary">
                   <span className="font-bold text-ink">Job ID：</span>
-                  <span>{session?.activeJobId || '等待后端返回任务编号'}</span>
+                  <span className="[overflow-wrap:anywhere]">{session?.activeJobId || '等待后端返回任务编号'}</span>
                 </div>
 
                 <div className="grid gap-3 sm:grid-cols-2">
                   {executionSteps.map((step, index) => (
                     <article key={step.id} className="grid gap-3 rounded-lg border border-[#e4e8e3] bg-white p-3">
                       <div className="flex items-start justify-between gap-3">
-                        <strong className="text-sm text-ink">
+                        <strong className="[overflow-wrap:anywhere] text-sm text-ink">
                           {EXECUTION_STEP_TITLES[step.id as (typeof EXECUTION_STEP_IDS)[number]]}
                         </strong>
                         <span className="whitespace-nowrap text-xs font-bold text-secondary">{getStepStatusText(step.status)}</span>
@@ -700,7 +718,7 @@ export default function BriefWorkspacePage() {
                           style={{ width: `${getStepProgress(step, 10 + index * 8)}%` }}
                         />
                       </div>
-                      <p className="text-sm leading-6 text-secondary">{step.summary || step.description}</p>
+                      <p className="[overflow-wrap:anywhere] text-sm leading-6 text-secondary">{step.summary || step.description}</p>
                     </article>
                   ))}
                 </div>
