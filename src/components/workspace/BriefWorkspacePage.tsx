@@ -353,6 +353,29 @@ export default function BriefWorkspacePage() {
       .map((stepId) => session.steps.find((step) => step.id === stepId))
       .filter((step): step is AgentSession['steps'][number] => Boolean(step));
   }, [session?.steps]);
+  const generateOptionsStep = workspaceSteps.find((step) => step.id === 'generate_options');
+  const generateOptionsStateSignature = useMemo(() => {
+    if (!generateOptionsStep) {
+      return '';
+    }
+
+    const result = asRecord(generateOptionsStep.result);
+    const optionIds = asArray(result.options)
+      .map((option) => {
+        const optionRecord = asRecord(option);
+        return asString(optionRecord.id) || asString(optionRecord.sceneId);
+      })
+      .filter(Boolean);
+
+    return JSON.stringify({
+      selectedOptionId: asString(result.selectedOptionId),
+      optionIds,
+    });
+  }, [generateOptionsStep]);
+
+  useEffect(() => {
+    setSelectedDirection('');
+  }, [session?.id, generateOptionsStateSignature]);
 
   return (
     <ProductShell>
@@ -427,7 +450,9 @@ export default function BriefWorkspacePage() {
                   step.status === 'succeeded' ? '完成' : step.status === 'running' ? '进行中' : step.status === 'failed' ? '失败' : '等待中';
                 const stepTitle = WORKSPACE_STEP_TITLES[step.id as (typeof WORKSPACE_STEP_IDS)[number]];
                 const backendSelectedOptionId = step.id === 'generate_options' ? asString(result.selectedOptionId) : '';
-                const displayedSelectedOptionId = selectedDirection || backendSelectedOptionId || optionCards[0]?.id || '';
+                const localSelectedOptionId =
+                  selectedDirection && optionCards.some((option) => option.id === selectedDirection) ? selectedDirection : '';
+                const displayedSelectedOptionId = localSelectedOptionId || backendSelectedOptionId || optionCards[0]?.id || '';
 
                 return (
                   <article key={step.id} className={styles.stepBlock}>
