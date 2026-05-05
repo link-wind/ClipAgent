@@ -427,7 +427,7 @@ export default function BriefWorkspacePage() {
                   step.status === 'succeeded' ? '完成' : step.status === 'running' ? '进行中' : step.status === 'failed' ? '失败' : '等待中';
                 const stepTitle = WORKSPACE_STEP_TITLES[step.id as (typeof WORKSPACE_STEP_IDS)[number]];
                 const backendSelectedOptionId = step.id === 'generate_options' ? asString(result.selectedOptionId) : '';
-                const displayedSelectedOptionId = backendSelectedOptionId || selectedDirection || optionCards[0]?.id || '';
+                const displayedSelectedOptionId = selectedDirection || backendSelectedOptionId || optionCards[0]?.id || '';
 
                 return (
                   <article key={step.id} className={styles.stepBlock}>
