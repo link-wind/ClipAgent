@@ -254,12 +254,12 @@ export default function DashboardPage() {
                   总览
                 </Link>
                 <span aria-hidden="true">/</span>
-                <span>ClipForge Home</span>
+                <span>ClipForge 首页</span>
               </nav>
 
               <div className="space-y-3">
                 <span className="inline-flex items-center rounded-full bg-slate-100 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.02em] text-secondary">
-                  Product Home
+                  产品总览
                 </span>
                 <h1 className="text-3xl font-semibold tracking-tight text-ink sm:text-4xl">ClipForge</h1>
                 <p className="max-w-2xl text-sm leading-6 text-secondary sm:text-base">
@@ -342,7 +342,7 @@ export default function DashboardPage() {
               <h2 className="mt-1 text-xl font-semibold text-ink">正在推进的整体规模</h2>
             </div>
             <p className="max-w-xl text-sm leading-6 text-secondary">
-              保留现有 dashboard 数据契约，用更产品化的方式表达系统状态。
+              用会话、任务与产出节奏，快速判断当前创作工作台的推进状态和可交付能力。
             </p>
           </div>
 
@@ -371,7 +371,7 @@ export default function DashboardPage() {
                   <span className="text-xs font-semibold text-secondary">{item.value}</span>
                   <div className="flex h-44 w-full items-end justify-center rounded-lg bg-slate-100">
                     <span
-                      className="block w-6 rounded-t-lg bg-gradient-to-b from-slate-700 via-slate-600 to-emerald-500"
+                      className="block w-full max-w-6 rounded-t-lg bg-gradient-to-b from-slate-700 via-slate-600 to-emerald-500"
                       style={{ height: `${item.height}%` }}
                     />
                   </div>
@@ -455,7 +455,7 @@ export default function DashboardPage() {
                 >
                   <div className="flex items-start justify-between gap-3">
                     <div className="min-w-0">
-                      <h3 className="truncate text-base font-semibold text-ink">{task.title}</h3>
+                      <h3 className="text-base font-semibold leading-6 text-ink">{task.title}</h3>
                       <p className="mt-1 text-sm leading-6 text-secondary">
                         {task.currentStep || '等待下一步推进'}
                       </p>
