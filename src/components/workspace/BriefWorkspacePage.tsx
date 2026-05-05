@@ -13,7 +13,6 @@ import {
   type AgentSession,
 } from '@/lib/agentApi';
 import { useAgentStore } from '@/stores/useAgentStore';
-import styles from './BriefWorkspacePage.module.css';
 
 const RUNNING_STATUSES = new Set(['queued', 'searching', 'downloading', 'rendering']);
 const WORKSPACE_STEP_IDS = ['understand_request', 'extract_requirements', 'generate_options', 'finalize_plan'] as const;
@@ -420,61 +419,71 @@ export default function BriefWorkspacePage() {
 
   return (
     <ProductShell>
-      <div className={styles.page}>
-        <header className={styles.header}>
+      <div className="min-h-full px-4 py-4 sm:px-5">
+        <header className="mx-auto w-full max-w-[980px] rounded-lg border border-border bg-white p-5 shadow-soft sm:p-6">
           <div>
-            <nav className={styles.crumb} aria-label="面包屑">
-              <Link href="/">ClipForge</Link>
+            <nav className="flex items-center gap-2 text-[13px] font-bold text-secondary" aria-label="面包屑">
+              <Link href="/" className="text-ink no-underline">
+                ClipForge
+              </Link>
               <span aria-hidden="true">/</span>
               <span>方案沟通</span>
             </nav>
-            <div className={styles.titleRow}>
-              <div className={styles.titleCopy}>
-                <h1>方案沟通页面</h1>
-                <p>单栏推进需求理解、方向选择和最终确认，AI 的每一步都先给进度，再展示结果。</p>
+            <div className="mt-3.5 flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+              <div className="min-w-0">
+                <h1 className="text-[28px] font-semibold leading-[1.12] text-ink">方案沟通页面</h1>
+                <p className="mt-2 max-w-[68ch] text-sm leading-6 text-secondary sm:text-base">
+                  单栏推进需求理解、方向选择和最终确认，AI 的每一步都先给进度，再展示结果。
+                </p>
               </div>
-              <div className={styles.status}>
-                <span>当前状态</span>
-                <strong>{getWorkspaceStatus(session)}</strong>
+              <div className="w-full rounded-full border border-[rgba(168,198,108,0.38)] bg-[#e3efd4] px-3.5 py-2.5 text-left sm:w-auto sm:min-w-[130px] sm:text-right">
+                <span className="block text-xs text-secondary">当前状态</span>
+                <strong className="mt-1 block text-sm font-semibold text-accentink">{getWorkspaceStatus(session)}</strong>
               </div>
             </div>
           </div>
         </header>
 
-        <main className={styles.workspace} aria-label="方案工作区">
-          <section className={styles.chatCard} aria-label="方案沟通">
-            <div className={styles.chatHead}>
+        <main className="mx-auto mt-5 grid w-full max-w-[980px] gap-4" aria-label="方案工作区">
+          <section className="overflow-hidden rounded-lg border border-border bg-white shadow-soft" aria-label="方案沟通">
+            <div className="flex flex-col gap-3 border-b border-bordersoft px-5 py-4 sm:flex-row sm:items-start sm:justify-between">
               <div>
-                <h2>方案沟通</h2>
-                <p>用户原始输入保留原样，目标和结构化信息由 AI 在后续步骤提炼。</p>
+                <h2 className="text-lg font-semibold leading-tight text-ink">方案沟通</h2>
+                <p className="mt-1 text-[13px] leading-5 text-secondary">
+                  用户原始输入保留原样，目标和结构化信息由 AI 在后续步骤提炼。
+                </p>
               </div>
-              <span className={styles.chatMeta}>每一步先显示进度，再给出结果</span>
+              <span className="text-[13px] font-bold text-secondary sm:whitespace-nowrap">每一步先显示进度，再给出结果</span>
             </div>
 
-            <div className={styles.thread}>
+            <div className="grid gap-3.5 bg-[linear-gradient(180deg,rgba(168,198,108,0.05),transparent_280px),#ffffff] p-5">
               {!session ? (
-                <div className={styles.emptyState}>
-                  <h3>描述你想完成的视频</h3>
-                  <p>直接说你的想法即可，目标、格式、风格和执行拆分会由 AI 在后续步骤里提炼。</p>
+                <div className="max-w-[620px] px-0 pb-2.5 pt-6">
+                  <h3 className="text-[22px] font-semibold leading-tight text-ink">描述你想完成的视频</h3>
+                  <p className="mt-2 leading-6 text-secondary">
+                    直接说你的想法即可，目标、格式、风格和执行拆分会由 AI 在后续步骤里提炼。
+                  </p>
                 </div>
               ) : (
                 <>
                   {userMessages.map((item) => (
-                    <article key={item.id} className={`${styles.message} ${styles.userMessage}`}>
-                      <div className={styles.messageMeta}>
+                    <article key={item.id} className="ml-auto grid w-full gap-2 sm:max-w-[84%]">
+                      <div className="flex items-center justify-between gap-3 text-xs font-extrabold text-secondary">
                         <span>你</span>
                         <time dateTime={item.createdAt}>{formatTime(item.createdAt)}</time>
                       </div>
-                      <div className={styles.bubble}>{item.content}</div>
+                      <div className="rounded-lg border border-[#1f2522] bg-[#1f2522] p-3.5 leading-[1.58] text-white">
+                        {item.content}
+                      </div>
                     </article>
                   ))}
 
-                  <article className={`${styles.message} ${styles.agentMessage}`}>
-                    <div className={styles.messageMeta}>
+                  <article className="mr-auto grid w-full gap-2 sm:max-w-[84%]">
+                    <div className="flex items-center justify-between gap-3 text-xs font-extrabold text-secondary">
                       <span>ClipForge Agent</span>
                       <span>{session ? formatTime(sessionMessages.at(-1)?.createdAt ?? new Date().toISOString()) : ''}</span>
                     </div>
-                    <div className={styles.bubble}>
+                    <div className="rounded-lg border border-[#e2e7e1] bg-[#f7f9f6] p-3.5 leading-[1.58] text-[#303a34]">
                       <p>{latestAssistantMessage}</p>
                     </div>
                   </article>
@@ -482,7 +491,7 @@ export default function BriefWorkspacePage() {
               )}
             </div>
 
-            <section className={styles.stepFlow} aria-label="AI 分析步骤流">
+            <section className="grid gap-3 px-5 pb-5" aria-label="AI 分析步骤流">
               {workspaceSteps.map((step, index) => {
                 const result = asRecord(step.result);
                 const optionCards = step.id === 'generate_options' ? buildGenerateOptionsCards(step) : [];
@@ -496,41 +505,54 @@ export default function BriefWorkspacePage() {
                 const displayedSelectedOptionId = localSelectedOptionId || backendSelectedOptionId || optionCards[0]?.id || '';
 
                 return (
-                  <article key={step.id} className={styles.stepBlock}>
-                    <div className={styles.stepHead}>
-                      <strong>{stepTitle}</strong>
-                      <span>{statusText}</span>
+                  <article key={step.id} className="grid gap-2.5 rounded-lg border border-[#e1e6df] bg-white p-3">
+                    <div className="flex items-center justify-between gap-3">
+                      <strong className="[overflow-wrap:anywhere] text-sm font-semibold text-ink">{stepTitle}</strong>
+                      <span className="whitespace-nowrap text-xs font-extrabold text-secondary">{statusText}</span>
                     </div>
-                    <div className={styles.track} aria-hidden="true">
-                      <span style={{ width: `${Math.max(0, Math.min(100, progress))}%` }} />
+                    <div className="h-2 overflow-hidden rounded-full bg-[#edf1ed]" aria-hidden="true">
+                      <span
+                        className="block h-full rounded-full bg-gradient-to-r from-accentstrong to-accent"
+                        style={{ width: `${Math.max(0, Math.min(100, progress))}%` }}
+                      />
                     </div>
 
                     {step.id === 'generate_options' ? (
-                      <div className={styles.resultBox}>
-                        <div className={styles.sectionHead}>
+                      <div className="rounded-lg border border-[#e4e8e3] bg-[#fbfcfa] p-3">
+                        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                           <div>
-                            <span className={styles.sectionEyebrow}>方案方向</span>
-                            <h3>{step.status === 'succeeded' ? '后端返回的方案方向卡片' : '等待后端返回方案方向。'}</h3>
+                            <span className="mb-1.5 block text-xs font-extrabold text-secondary">方案方向</span>
+                            <h3 className="text-[15px] font-semibold leading-snug text-ink">
+                              {step.status === 'succeeded' ? '后端返回的方案方向卡片' : '等待后端返回方案方向。'}
+                            </h3>
                           </div>
-                          <span className={styles.sectionMeta}>{displayedSelectedOptionId ? '当前查看' : '等待选择'}</span>
+                          <span className="text-xs font-extrabold text-secondary sm:whitespace-nowrap">
+                            {displayedSelectedOptionId ? '当前查看' : '等待选择'}
+                          </span>
                         </div>
 
-                        <div className={styles.optionSet}>
+                        <div className="mt-3 grid gap-2.5">
                           {optionCards.length ? (
                             optionCards.map((option) => (
                               <button
                                 key={option.id}
                                 type="button"
-                                className={`${styles.optionPreviewCard} ${displayedSelectedOptionId === option.id ? styles.optionPreviewCardSelected : ''}`}
+                                className={`grid w-full appearance-none gap-2.5 rounded-lg border border-[#e4e8e3] bg-white p-3 text-left text-inherit outline-none transition hover:border-[#c7d3bf] hover:bg-[#fbfdf8] focus-visible:shadow-[inset_0_0_0_1px_rgba(168,198,108,0.55),0_0_0_3px_rgba(168,198,108,0.18)] ${
+                                  displayedSelectedOptionId === option.id
+                                    ? 'border-accent bg-[#f6faef] shadow-[inset_0_0_0_1px_rgba(168,198,108,0.55)]'
+                                    : ''
+                                }`}
                                 onClick={() => setSelectedDirection(option.id)}
                                 aria-pressed={displayedSelectedOptionId === option.id}
                               >
-                                <div className={styles.optionPreviewHead}>
-                                  <strong>{option.title}</strong>
-                                  <span>{displayedSelectedOptionId === option.id ? '当前查看' : '点击查看'}</span>
+                                <div className="flex items-start justify-between gap-3">
+                                  <strong className="text-sm font-semibold leading-snug text-ink">{option.title}</strong>
+                                  <span className="whitespace-nowrap text-xs leading-5 text-secondary">
+                                    {displayedSelectedOptionId === option.id ? '当前查看' : '点击查看'}
+                                  </span>
                                 </div>
-                                <p>{option.description}</p>
-                                <div className={styles.optionPreviewMeta}>
+                                <p className="[overflow-wrap:anywhere] text-[13px] leading-5 text-[#344039]">{option.description}</p>
+                                <div className="grid gap-1.5 text-xs leading-5 text-secondary [overflow-wrap:anywhere]">
                                   <span>检索方向：{option.searchQuery || '待补充'}</span>
                                   <span>关键词：{option.keywords.length ? option.keywords.join(' / ') : '待补充'}</span>
                                   <span>时长：{option.duration ? `${option.duration} 秒` : '待补充'}</span>
@@ -538,53 +560,77 @@ export default function BriefWorkspacePage() {
                               </button>
                             ))
                           ) : (
-                            <div className={styles.emptyInline}>等待后端返回方案方向。</div>
+                            <div className="rounded-lg border border-dashed border-border bg-[rgba(247,249,246,0.8)] px-3.5 py-3 leading-6 text-secondary">
+                              等待后端返回方案方向。
+                            </div>
                           )}
                         </div>
                       </div>
                     ) : step.id === 'finalize_plan' ? (
-                      <div className={styles.resultBox}>
-                        <div className={styles.sectionHead}>
+                      <div className="rounded-lg border border-[#e4e8e3] bg-[#fbfcfa] p-3">
+                        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                           <div>
-                            <span className={styles.sectionEyebrow}>最终执行方案</span>
-                            <h3>{step.status === 'succeeded' ? '后端返回的最终执行方案' : '等待后端返回最终方案。'}</h3>
+                            <span className="mb-1.5 block text-xs font-extrabold text-secondary">最终执行方案</span>
+                            <h3 className="text-[15px] font-semibold leading-snug text-ink">
+                              {step.status === 'succeeded' ? '后端返回的最终执行方案' : '等待后端返回最终方案。'}
+                            </h3>
                           </div>
-                          <span className={styles.sectionMeta}>{session?.status === 'plan_ready' ? '可确认' : '持续更新'}</span>
+                          <span className="text-xs font-extrabold text-secondary sm:whitespace-nowrap">
+                            {session?.status === 'plan_ready' ? '可确认' : '持续更新'}
+                          </span>
                         </div>
 
-                        <div className={styles.finalPlan}>
-                          <div className={styles.finalSummary}>
+                        <div className="mt-3 grid gap-3">
+                          <div className="grid gap-2 sm:grid-cols-3">
                             {buildFinalPlanSummaryItems(step).map((item) => (
-                              <div key={item.label} className={styles.summaryItem}>
-                                <span>{item.label}</span>
-                                <strong>{item.value}</strong>
+                              <div key={item.label} className="rounded-lg border border-[#e4e8e3] bg-white p-2.5">
+                                <span className="mb-1 block text-xs font-extrabold text-secondary">{item.label}</span>
+                                <strong className="[overflow-wrap:anywhere] text-[13px] font-semibold leading-5 text-ink">
+                                  {item.value}
+                                </strong>
                               </div>
                             ))}
                           </div>
 
-                          <div className={styles.sceneList}>
+                          <div className="grid gap-2">
                             {asArray(result.scenes).length ? (
                               asArray(result.scenes).map((scene) => {
                                 const sceneRecord = asRecord(scene);
                                 return (
-                                  <div key={asString(sceneRecord.id) || asString(sceneRecord.searchQuery)} className={styles.scene}>
-                                    <div className={styles.sceneNo}>{String(asString(sceneRecord.id) || '0').padStart(2, '0')}</div>
-                                    <div>
-                                      <strong>{asString(sceneRecord.description) || '等待后端返回计划。'}</strong>
-                                      <p>关键词：{asArray(sceneRecord.keywords).map((keyword) => asString(keyword)).filter(Boolean).join(' / ') || '待补充'} · 检索方向：{asString(sceneRecord.searchQuery)}</p>
+                                  <div
+                                    key={asString(sceneRecord.id) || asString(sceneRecord.searchQuery)}
+                                    className="grid gap-2.5 rounded-lg border border-[#e4e8e3] bg-white p-2.5 sm:grid-cols-[40px_minmax(0,1fr)_56px] sm:items-start"
+                                  >
+                                    <div className="grid h-10 w-10 shrink-0 place-items-center rounded-lg bg-[#e3efd4] text-sm font-semibold text-accentink">
+                                      {String(asString(sceneRecord.id) || '0').padStart(2, '0')}
                                     </div>
-                                    <div className={styles.duration}>{asNumber(sceneRecord.duration)}s</div>
+                                    <div>
+                                      <strong className="mb-1 block text-[13px] font-semibold text-ink">
+                                        {asString(sceneRecord.description) || '等待后端返回计划。'}
+                                      </strong>
+                                      <p className="text-xs leading-5 text-secondary">
+                                        关键词：
+                                        {asArray(sceneRecord.keywords)
+                                          .map((keyword) => asString(keyword))
+                                          .filter(Boolean)
+                                          .join(' / ') || '待补充'}{' '}
+                                        · 检索方向：{asString(sceneRecord.searchQuery)}
+                                      </p>
+                                    </div>
+                                    <div className="text-left text-xs font-extrabold text-[#758078] sm:text-right">
+                                      {asNumber(sceneRecord.duration)}s
+                                    </div>
                                   </div>
                                 );
                               })
                             ) : (
-                              <div className={styles.pendingPlan}>
+                              <div className="rounded-lg border border-dashed border-border bg-[rgba(247,249,246,0.8)] p-3.5 text-secondary">
                                 <p>等待后端返回最终方案。</p>
                               </div>
                             )}
                           </div>
 
-                          <div className={styles.approval}>
+                          <div className="flex flex-wrap gap-2.5">
                             <Button type="button" variant="secondary" disabled={!session}>
                               继续修改
                             </Button>
@@ -595,14 +641,16 @@ export default function BriefWorkspacePage() {
                         </div>
                       </div>
                     ) : (
-                      <div className={styles.resultBox}>
-                        <div className={styles.analysisGrid}>
+                      <div className="rounded-lg border border-[#e4e8e3] bg-[#fbfcfa] p-3">
+                        <div className="grid gap-2 sm:grid-cols-3">
                           {(() => {
                             const items = buildWorkspaceStepResult(step) as Array<{ label: string; value: string }>;
                             return items.map((item) => (
-                              <div key={item.label} className={styles.analysisItem}>
-                                <span>{item.label}</span>
-                                <strong>{item.value}</strong>
+                              <div key={item.label} className="rounded-lg border border-[#e4e8e3] bg-white p-2.5">
+                                <span className="mb-1 block text-xs font-extrabold text-secondary">{item.label}</span>
+                                <strong className="[overflow-wrap:anywhere] text-[13px] font-semibold leading-5 text-ink">
+                                  {item.value}
+                                </strong>
                               </div>
                             ));
                           })()}
@@ -614,9 +662,13 @@ export default function BriefWorkspacePage() {
               })}
             </section>
 
-            {errorText ? <div className={styles.error}>{errorText}</div> : null}
+            {errorText ? (
+              <div className="mx-5 mb-4 rounded-lg border border-[#f5c2c7] bg-[#fff7f7] px-4 py-3 text-sm text-[#8b1f2d]">
+                {errorText}
+              </div>
+            ) : null}
 
-            <form className={styles.composer} onSubmit={submitMessage}>
+            <form className="grid gap-3 border-t border-bordersoft bg-[#fcfdfb] p-4" onSubmit={submitMessage}>
               <textarea
                 value={message}
                 onChange={(event) => setMessage(event.target.value)}
@@ -624,10 +676,11 @@ export default function BriefWorkspacePage() {
                 placeholder="继续补充你的修改意见，或直接确认最终方案。"
                 rows={4}
                 disabled={isSubmitting}
+                className="min-h-[92px] w-full resize-y rounded-lg border border-border bg-white p-3 text-sm text-ink outline-none [font:inherit] placeholder:text-secondary focus:border-slate-400 focus:ring-2 focus:ring-slate-200"
               />
-              <div className={styles.composeActions}>
-                <span className={styles.hint}>底部输入区用于继续补充信息、修改方案，或推动下一轮细化。</span>
-                <div className={styles.composeButtons}>
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                <span className="text-xs text-secondary">底部输入区用于继续补充信息、修改方案，或推动下一轮细化。</span>
+                <div className="flex flex-wrap gap-2.5">
                   <Button type="button" variant="secondary" onClick={confirmPlan} disabled={!canConfirm}>
                     确认方案并生成任务
                   </Button>
