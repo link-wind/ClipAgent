@@ -537,6 +537,91 @@ class AgentApiP0ContractTests(unittest.TestCase):
         with patch.object(agent_api_module, "task_read_service", task_read_service):
             asyncio.run(_run())
 
+    def test_agent_task_detail_response_includes_standard_steps_and_current_step_id(self):
+        async def _run():
+            session = self.session_service.create_session("做一个产品宣传片")
+
+            with self.session_factory() as db:
+                job_repo = AgentJobRepository(db)
+                event_repo = AgentEventRepository(db)
+                artifact_repo = AgentArtifactRepository(db)
+                job_record = job_repo.create(
+                    session_id=session.id,
+                    plan_id=None,
+                    job_type="generate_video",
+                    status="running",
+                    progress=80,
+                    current_step="正在合成视频",
+                )
+                event_repo.create(
+                    session_id=session.id,
+                    job_id=job_record.id,
+                    event_type="job_started",
+                    step="searching",
+                    progress=35,
+                    message="任务开始执行",
+                    payload_json={"jobId": job_record.id},
+                )
+                event_repo.create(
+                    session_id=session.id,
+                    job_id=job_record.id,
+                    event_type="clips_ready",
+                    step="downloading",
+                    progress=60,
+                    message="素材已准备完成，共 1 段",
+                    payload_json={"clipCount": 1},
+                )
+                event_repo.create(
+                    session_id=session.id,
+                    job_id=job_record.id,
+                    event_type="render_started",
+                    step="rendering",
+                    progress=80,
+                    message="开始合成视频",
+                    payload_json={},
+                )
+                artifact_repo.create(
+                    session_id=session.id,
+                    job_id=job_record.id,
+                    artifact_type="clip",
+                    scene_id="1",
+                    source_url="https://example.com/source.mp4",
+                    local_path="/tmp/clip.mp4",
+                    public_url="https://cdn.example.com/clip.mp4",
+                    duration=6.0,
+                    metadata_json={"caption": "clip", "trimStart": 1.0, "trimDuration": 5.0},
+                )
+                job_id = job_record.id
+                db.commit()
+
+            transport = httpx.ASGITransport(app=app)
+            async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as client:
+                tasks_response = await client.get("/api/agent/tasks")
+                self.assertEqual(tasks_response.status_code, 200)
+                task_summary = tasks_response.json()[0]
+                self.assertEqual(task_summary["currentStepId"], "render_video")
+
+                detail_response = await client.get(f"/api/agent/tasks/{job_id}")
+                self.assertEqual(detail_response.status_code, 200)
+                detail = detail_response.json()
+
+                self.assertEqual(len(detail["steps"]), 8)
+                self.assertEqual(detail["steps"][4]["id"], "create_task")
+                self.assertEqual(detail["steps"][4]["status"], "succeeded")
+                self.assertEqual(detail["steps"][6]["id"], "prepare_assets")
+                self.assertEqual(detail["steps"][6]["status"], "succeeded")
+                self.assertEqual(detail["steps"][6]["result"]["clips"][0]["publicUrl"], "https://cdn.example.com/clip.mp4")
+                self.assertEqual(detail["steps"][7]["id"], "render_video")
+                self.assertEqual(detail["steps"][7]["status"], "running")
+
+        import asyncio
+
+        task_read_service = AgentTaskReadService(session_factory=self.session_factory)
+        with patch.object(agent_api_module, "session_service", self.session_service), patch.object(
+            agent_api_module, "task_read_service", task_read_service
+        ):
+            asyncio.run(_run())
+
     def test_agent_dashboard_counts_are_not_limited_by_recent_tasks_window(self):
         async def _run():
             sessions: list[str] = []

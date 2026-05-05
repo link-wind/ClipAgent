@@ -106,6 +106,27 @@ class AgentStepSnapshotService:
 
         return [steps_by_id[meta.id] for meta in STANDARD_STEPS]
 
+    def build_task_steps(self, session_record, job_record, plan_row, artifact_rows, event_rows) -> list[AgentStep]:
+        steps = self.build_session_steps(session_record, [], plan_row, event_rows)
+        current_step_id = self.resolve_current_step_id(job_record.status, job_record.current_step or "")
+        self._apply_task_artifacts(steps, artifact_rows, current_step_id)
+        return steps
+
+    def resolve_current_step_id(self, job_status: str, current_step: str) -> Optional[AgentStepId]:
+        if job_status == "queued" or "入队" in current_step:
+            return "create_task"
+        if job_status == "rendering" or "合成视频" in current_step:
+            return "render_video"
+        if job_status == "downloading" or "准备渲染" in current_step:
+            return "prepare_assets"
+        if job_status == "searching" or "搜索素材" in current_step or job_status == "running":
+            return "search_assets"
+        if job_status == "succeeded" or "完成" in current_step:
+            return "render_video"
+        if job_status == "failed" or "失败" in current_step:
+            return "render_video"
+        return None
+
     def _build_understand_request_step(self, prompt: str) -> AgentStep:
         return self._build_succeeded_step(
             self._meta("understand_request"),
@@ -371,6 +392,66 @@ class AgentStepSnapshotService:
         if video_url:
             result["videoUrl"] = video_url
         return result
+
+    def _apply_task_artifacts(self, steps_by_id: list[AgentStep], artifact_rows, current_step_id: Optional[AgentStepId]) -> None:
+        if current_step_id is None:
+            return
+
+        if current_step_id not in {"search_assets", "prepare_assets", "render_video"}:
+            return
+
+        if current_step_id in {"prepare_assets", "render_video"}:
+            self._set_step_succeeded(steps_by_id, "create_task")
+
+        if current_step_id == "prepare_assets":
+            self._set_step_succeeded(steps_by_id, "search_assets")
+
+        if current_step_id == "render_video":
+            self._set_step_succeeded(steps_by_id, "search_assets")
+            self._set_step_succeeded(steps_by_id, "prepare_assets", self._build_task_clips_result(artifact_rows))
+            self._set_step_running(steps_by_id, "render_video")
+
+    def _set_step_succeeded(self, steps: list[AgentStep], step_id: AgentStepId, result: Optional[dict[str, Any]] = None) -> None:
+        for index, step in enumerate(steps):
+            if step.id == step_id:
+                steps[index] = self._build_succeeded_step(self._meta(step_id), result or {}, summary="已完成")
+                return
+
+    def _set_step_running(self, steps: list[AgentStep], step_id: AgentStepId) -> None:
+        for index, step in enumerate(steps):
+            if step.id == step_id:
+                meta = self._meta(step_id)
+                steps[index] = AgentStep(
+                    id=meta.id,
+                    title=meta.title,
+                    description=meta.description,
+                    status="running",
+                    progress=50.0,
+                    summary="执行中",
+                )
+                return
+
+    def _build_task_clips_result(self, artifact_rows) -> dict[str, Any]:
+        clips: list[dict[str, Any]] = []
+        for row in artifact_rows:
+            if getattr(row, "artifact_type", None) != "clip":
+                continue
+            metadata = getattr(row, "metadata_json", None) or {}
+            clips.append(
+                {
+                    "sceneId": int(row.scene_id) if row.scene_id is not None and str(row.scene_id).isdigit() else 0,
+                    "sourceUrl": row.source_url or "",
+                    "localPath": row.local_path or "",
+                    "publicUrl": row.public_url or "",
+                    "caption": metadata.get("caption", "") or "",
+                    "startTime": 0.0,
+                    "duration": row.duration or 0.0,
+                    "sourceDuration": float(metadata.get("sourceDuration", 0.0) or 0.0),
+                    "trimStart": float(metadata.get("trimStart", 0.0) or 0.0),
+                    "trimDuration": float(metadata.get("trimDuration", row.duration or 0.0) or 0.0),
+                }
+            )
+        return {"clips": clips}
 
     def _build_execution_result(
         self,
