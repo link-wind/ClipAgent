@@ -66,6 +66,9 @@ async function main() {
   assertIncludes(workspaceHtml, '方案方向', 'workspace 页面缺少方案方向区块标题');
   assertIncludes(workspaceHtml, '等待后端返回方案方向。', 'workspace 页面缺少方案方向空态文案');
   assertIncludes(workspaceHtml, '确认方案并生成任务', 'workspace 页面缺少确认方案主动作');
+  assertIncludes(workspaceHtml, '方案工作区', 'workspace 页面缺少主工作区 aria 标签');
+  assertIncludes(workspaceHtml, '描述你想完成的视频', 'workspace 页面缺少空态标题');
+  assertIncludes(workspaceHtml, '底部输入区用于继续补充信息', 'workspace 页面缺少输入区说明');
 
   const tasksHtml = await readText('.next/server/app/tasks.html');
   assertIncludes(tasksHtml, '当前阶段', 'tasks 页面缺少当前阶段列');
