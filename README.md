@@ -63,6 +63,35 @@ $env:CLIPFORGE_CELERY_QUEUE='clipforge-agent-wt1'
 .\.venv\Scripts\python.exe -m celery -A backend.tasks.celery_app:celery_app worker --pool solo --loglevel INFO -Q $env:CLIPFORGE_CELERY_QUEUE
 ```
 
+### 真实外部素材联调
+
+`/workspace` 到 `/tasks` 的真实联调必须启动 PostgreSQL、Redis、FastAPI、Celery worker 和 Next.js，并使用同一个 Celery 队列名。下面示例使用独立队列，避免多个 worker 抢任务：
+
+```bash
+docker compose up -d postgres redis
+./.venv/bin/python -m alembic -c backend/alembic.ini upgrade head
+
+export CLIPFORGE_CELERY_QUEUE=clipforge-agent-ws
+export CELERY_BROKER_URL=redis://localhost:6379/1
+export CELERY_RESULT_BACKEND=redis://localhost:6379/1
+
+./.venv/bin/python -m uvicorn backend.main:app --reload --host 127.0.0.1 --port 8010
+./.venv/bin/python -m celery -A backend.tasks.celery_app:celery_app worker --pool solo --loglevel INFO -Q clipforge-agent-ws
+npm run dev
+```
+
+联调验收路径：
+
+1. 打开 `http://localhost:3000/workspace`。
+2. 输入真实短视频 brief。
+3. 等待 Agent 返回方案和前四个标准步骤。
+4. 点击“确认方案并生成任务”。
+5. 确认 `/workspace` 展示执行交接和 Job ID。
+6. 打开 `/tasks`，确认同一个任务出现。
+7. 等待 worker 执行真实外部素材搜索、下载和渲染。
+8. 如果生成 MP4，确认 `/workspace` 或 `/tasks` 能打开结果。
+9. 如果外部素材失败，记录任务详情里的失败步骤、事件日志和 worker 错误，不把该次联调记为成功。
+
 ### 启动前端
 
 ```bash
