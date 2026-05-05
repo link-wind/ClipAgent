@@ -24,27 +24,6 @@ const WORKSPACE_STEP_TITLES: Record<(typeof WORKSPACE_STEP_IDS)[number], string>
   finalize_plan: '步骤 4：输出最终执行方案',
 } as const;
 
-const DIRECTION_OPTIONS = [
-  {
-    id: 'A',
-    name: '高效团队叙事',
-    summary: '从团队会议后的自然工作场景切入，强调信息被自动整理、沉淀和复用。',
-    tags: ['专业可信', '官网首屏', '低风险'],
-  },
-  {
-    id: 'B',
-    name: '问题到结果转化',
-    summary: '先展示轻量问题，再转向 AI 自动总结、行动项同步和团队知识沉淀。',
-    tags: ['转化强', '销售演示', '结构清晰'],
-  },
-  {
-    id: 'C',
-    name: '产品能力展示',
-    summary: '更直接地展示界面和能力点，适合功能说明或产品更新场景。',
-    tags: ['功能清晰', '偏说明', '信息密度高'],
-  },
-] as const;
-
 const FALLBACK_WORKSPACE_STEPS = [
   {
     id: 'understand_request',
@@ -142,15 +121,6 @@ function getWorkspaceStatus(session: AgentSession | null) {
   return '处理中';
 }
 
-function buildFinalPlanSummary(session: AgentSession | null, selectedDirection: string) {
-  return [
-    { label: '方案方向', value: `${selectedDirection} / ${DIRECTION_OPTIONS.find((item) => item.id === selectedDirection)?.name ?? '待选择'}` },
-    { label: '时长节奏', value: session?.plan ? `${session.plan.targetDuration} 秒` : '待确认' },
-    { label: '风格方向', value: session?.plan?.style || '专业可信' },
-    { label: '输出目标', value: session?.status === 'done' ? '已输出结果' : '确认后生成任务' },
-  ];
-}
-
 function buildWorkspaceStepResult(step: WorkspaceStep) {
   const result = asRecord(step.result);
 
@@ -160,27 +130,6 @@ function buildWorkspaceStepResult(step: WorkspaceStep) {
       { label: '建议时长', value: asNumber(result.targetDuration) ? `${asNumber(result.targetDuration)} 秒` : '待分析' },
       { label: '风格方向', value: asString(result.style) || '待分析' },
     ];
-  }
-
-  if (step.id === 'generate_options') {
-    const options = asArray(result.options).map((option) => {
-      const optionRecord = asRecord(option);
-      return {
-        id: asString(optionRecord.id) || asString(optionRecord.sceneId),
-        title: asString(optionRecord.title) || asString(optionRecord.name) || `方案 ${asString(optionRecord.sceneId) || ''}`,
-        description: asString(optionRecord.description) || asString(optionRecord.summary) || '等待后端返回方案方向。',
-      };
-    });
-
-    return options.length
-      ? options
-      : [
-          {
-            id: 'empty',
-            title: '等待后端返回方案方向',
-            description: '等待后端返回方案方向。',
-          },
-        ];
   }
 
   if (step.id === 'finalize_plan') {
@@ -203,6 +152,28 @@ function buildWorkspaceStepResult(step: WorkspaceStep) {
   }
 
   return [];
+}
+
+function buildGenerateOptionsCards(step: WorkspaceStep) {
+  const result = asRecord(step.result);
+  return asArray(result.options).map((option, index) => {
+    const optionRecord = asRecord(option);
+    const keywords = asArray(optionRecord.keywords).map((keyword) => asString(keyword)).filter(Boolean);
+    const sceneId = asNumber(optionRecord.sceneId);
+    const title = sceneId > 0 ? `场景 ${sceneId}` : `场景 ${index + 1}`;
+    const description = asString(optionRecord.description) || '等待后端返回方案方向。';
+    const searchQuery = asString(optionRecord.searchQuery);
+    const duration = asNumber(optionRecord.duration);
+
+    return {
+      id: asString(optionRecord.id) || asString(optionRecord.sceneId) || String(index + 1),
+      title,
+      description,
+      keywords,
+      searchQuery,
+      duration,
+    };
+  });
 }
 
 function buildFinalPlanSummaryItems(step: WorkspaceStep) {
@@ -241,8 +212,6 @@ export default function BriefWorkspacePage() {
 
   const [message, setMessage] = useState('');
   const [errorText, setErrorText] = useState('');
-  const [selectedDirection, setSelectedDirection] = useState<'A' | 'B' | 'C'>('B');
-
   useEffect(() => {
     if (!activeSessionId || session) {
       return;
@@ -446,6 +415,7 @@ export default function BriefWorkspacePage() {
             <section className={styles.stepFlow} aria-label="AI 分析步骤流">
               {workspaceSteps.map((step, index) => {
                 const result = asRecord(step.result);
+                const optionCards = step.id === 'generate_options' ? buildGenerateOptionsCards(step) : [];
                 const progress = step.status === 'pending' ? (session ? 12 + index * 5 : 14) : step.progress;
                 const statusText =
                   step.status === 'succeeded' ? '完成' : step.status === 'running' ? '进行中' : step.status === 'failed' ? '失败' : '等待中';
@@ -466,46 +436,26 @@ export default function BriefWorkspacePage() {
                         <div className={styles.sectionHead}>
                           <div>
                             <span className={styles.sectionEyebrow}>方案方向</span>
-                            <h3>{step.status === 'succeeded' ? '从后端返回的多个方向里确认一个主方向' : '等待后端返回方案方向。'}</h3>
+                            <h3>{step.status === 'succeeded' ? '后端返回的方案方向卡片' : '等待后端返回方案方向。'}</h3>
                           </div>
-                          <span className={styles.sectionMeta}>一次只确认一个</span>
+                          <span className={styles.sectionMeta}>纯展示</span>
                         </div>
 
                         <div className={styles.optionSet}>
-                          {asArray(result.options).length ? (
-                            asArray(result.options).map((option, optionIndex) => {
-                              const optionRecord = asRecord(option);
-                              const title = asString(optionRecord.title) || asString(optionRecord.name) || `方案 ${optionIndex + 1}`;
-                              const description = asString(optionRecord.description) || asString(optionRecord.summary) || '等待后端返回方案方向。';
-                              const tags = asArray(optionRecord.tags).map((tag) => asString(tag)).filter(Boolean);
-                              const isSelected = asString(result.selectedOptionId) === asString(optionRecord.id);
-
-                              return (
-                                <button
-                                  key={`${step.id}-${optionIndex}`}
-                                  type="button"
-                                  className={`${styles.optionCard} ${isSelected ? styles.optionCardSelected : ''}`}
-                                  onClick={() => setSelectedDirection((DIRECTION_OPTIONS[optionIndex]?.id ?? selectedDirection) as 'A' | 'B' | 'C')}
-                                  aria-pressed={isSelected}
-                                >
-                                  <span className={styles.optionLetter}>{optionIndex + 1}</span>
-                                  <span className={styles.optionBody}>
-                                    <strong>{title}</strong>
-                                    <span>{description}</span>
-                                    {tags.length ? (
-                                      <span className={styles.tags}>
-                                        {tags.map((tag) => (
-                                          <span key={tag} className={styles.tag}>
-                                            {tag}
-                                          </span>
-                                        ))}
-                                      </span>
-                                    ) : null}
-                                  </span>
-                                  <span className={styles.optionState}>{isSelected ? '已选择' : '可选'}</span>
-                                </button>
-                              );
-                            })
+                          {optionCards.length ? (
+                            optionCards.map((option) => (
+                              <article key={option.id} className={styles.optionPreviewCard}>
+                                <div className={styles.optionPreviewHead}>
+                                  <strong>{option.title}</strong>
+                                  <span>{option.duration ? `${option.duration} 秒` : '时长待定'}</span>
+                                </div>
+                                <p>{option.description}</p>
+                                <div className={styles.optionPreviewMeta}>
+                                  <span>检索方向：{option.searchQuery || '待补充'}</span>
+                                  <span>关键词：{option.keywords.length ? option.keywords.join(' / ') : '待补充'}</span>
+                                </div>
+                              </article>
+                            ))
                           ) : (
                             <div className={styles.emptyInline}>等待后端返回方案方向。</div>
                           )}
