@@ -67,16 +67,36 @@ $env:CLIPFORGE_CELERY_QUEUE='clipforge-agent-wt1'
 
 `/workspace` 到 `/tasks` 的真实联调必须启动 PostgreSQL、Redis、FastAPI、Celery worker 和 Next.js，并使用同一个 Celery 队列名。下面示例使用独立队列，避免多个 worker 抢任务：
 
+先准备 PostgreSQL、Redis 和数据库迁移：
+
 ```bash
 docker compose up -d postgres redis
 ./.venv/bin/python -m alembic -c backend/alembic.ini upgrade head
+```
 
+在 FastAPI 和 Celery worker 终端都设置同一组 Celery 环境变量，确保 API 发出的任务和 worker 监听的队列一致：
+
+```bash
 export CLIPFORGE_CELERY_QUEUE=clipforge-agent-ws
 export CELERY_BROKER_URL=redis://localhost:6379/1
 export CELERY_RESULT_BACKEND=redis://localhost:6379/1
+```
 
+终端 A：启动 FastAPI：
+
+```bash
 ./.venv/bin/python -m uvicorn backend.main:app --reload --host 127.0.0.1 --port 8010
-./.venv/bin/python -m celery -A backend.tasks.celery_app:celery_app worker --pool solo --loglevel INFO -Q clipforge-agent-ws
+```
+
+终端 B：启动 Celery worker：
+
+```bash
+./.venv/bin/python -m celery -A backend.tasks.celery_app:celery_app worker --pool solo --loglevel INFO -Q "$CLIPFORGE_CELERY_QUEUE"
+```
+
+终端 C：启动 Next.js：
+
+```bash
 npm run dev
 ```
 
