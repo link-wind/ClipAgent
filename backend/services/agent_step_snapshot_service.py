@@ -107,24 +107,41 @@ class AgentStepSnapshotService:
         return [steps_by_id[meta.id] for meta in STANDARD_STEPS]
 
     def build_task_steps(self, session_record, job_record, plan_row, artifact_rows, event_rows) -> list[AgentStep]:
-        steps = self.build_session_steps(session_record, [], plan_row, event_rows)
-        current_step_id = self.resolve_current_step_id(job_record.status, job_record.current_step or "")
-        self._apply_task_artifacts(steps, artifact_rows, current_step_id)
-        return steps
+        steps_by_id = {meta.id: self._build_pending_step(meta) for meta in STANDARD_STEPS}
+        plan = self._extract_plan(plan_row)
+        first_prompt = None
+        if plan is not None:
+            requirements_result = self._build_requirements_result(first_prompt, plan)
+            steps_by_id["extract_requirements"] = self._build_succeeded_step(
+                self._meta("extract_requirements"),
+                requirements_result,
+                summary="已提炼需求",
+            )
+            steps_by_id["generate_options"] = self._build_succeeded_step(
+                self._meta("generate_options"),
+                self._build_generate_options_result(plan),
+                summary="已生成方案",
+            )
+            steps_by_id["finalize_plan"] = self._build_succeeded_step(
+                self._meta("finalize_plan"),
+                self._build_finalize_plan_result(plan),
+                summary="已确认计划",
+            )
+        task_state = self._build_task_state(job_record, artifact_rows, event_rows)
+        self._apply_task_state(steps_by_id, task_state)
+        return [steps_by_id[meta.id] for meta in STANDARD_STEPS]
 
     def resolve_current_step_id(self, job_status: str, current_step: str) -> Optional[AgentStepId]:
         if job_status == "queued" or "入队" in current_step:
             return "create_task"
+        if job_status in {"succeeded", "failed"}:
+            return "render_video"
         if job_status == "rendering" or "合成视频" in current_step:
             return "render_video"
         if job_status == "downloading" or "准备渲染" in current_step:
             return "prepare_assets"
         if job_status == "searching" or "搜索素材" in current_step or job_status == "running":
             return "search_assets"
-        if job_status == "succeeded" or "完成" in current_step:
-            return "render_video"
-        if job_status == "failed" or "失败" in current_step:
-            return "render_video"
         return None
 
     def _build_understand_request_step(self, prompt: str) -> AgentStep:
@@ -393,42 +410,130 @@ class AgentStepSnapshotService:
             result["videoUrl"] = video_url
         return result
 
-    def _apply_task_artifacts(self, steps_by_id: list[AgentStep], artifact_rows, current_step_id: Optional[AgentStepId]) -> None:
-        if current_step_id is None:
+    def _build_task_state(self, job_record, artifact_rows, event_rows) -> dict[str, Any]:
+        status = getattr(job_record, "status", "")
+        current_step_id = self.resolve_current_step_id(status, getattr(job_record, "current_step", "") or "")
+        latest_job_event = self._latest_job_event(event_rows)
+        video_url = self._resolve_task_video_url(job_record, artifact_rows, event_rows)
+        retryable_step = self._resolve_task_retryable_step(job_record, latest_job_event)
+        return {
+            "status": status,
+            "progress": getattr(job_record, "progress", 0.0) or 0.0,
+            "current_step_id": current_step_id,
+            "current_step": getattr(job_record, "current_step", "") or "",
+            "latest_job_event": latest_job_event,
+            "video_url": video_url,
+            "retryable_step": retryable_step,
+            "artifact_rows": artifact_rows,
+            "job_record": job_record,
+        }
+
+    def _apply_task_state(self, steps_by_id: list[AgentStep], task_state: dict[str, Any]) -> None:
+        status = task_state["status"]
+        current_step_id = task_state["current_step_id"]
+        artifact_rows = task_state["artifact_rows"]
+        video_url = task_state["video_url"]
+        retryable_step = task_state["retryable_step"]
+
+        self._mark_step_succeeded(steps_by_id, "create_task", self._build_create_task_result_from_task_state(task_state))
+
+        if status == "queued":
             return
 
-        if current_step_id not in {"search_assets", "prepare_assets", "render_video"}:
+        if status == "searching":
+            self._mark_step_running(steps_by_id, "search_assets")
             return
 
-        if current_step_id in {"prepare_assets", "render_video"}:
-            self._set_step_succeeded(steps_by_id, "create_task")
+        if status == "running" and current_step_id == "search_assets":
+            self._mark_step_running(steps_by_id, "search_assets")
+            return
 
-        if current_step_id == "prepare_assets":
-            self._set_step_succeeded(steps_by_id, "search_assets")
+        if status == "downloading":
+            self._mark_step_succeeded(steps_by_id, "search_assets", self._build_search_assets_result_from_task_state(task_state))
+            self._mark_step_running(steps_by_id, "prepare_assets")
+            return
 
-        if current_step_id == "render_video":
-            self._set_step_succeeded(steps_by_id, "search_assets")
-            self._set_step_succeeded(steps_by_id, "prepare_assets", self._build_task_clips_result(artifact_rows))
-            self._set_step_running(steps_by_id, "render_video")
+        if status == "running" and current_step_id == "prepare_assets":
+            self._mark_step_succeeded(steps_by_id, "search_assets", self._build_search_assets_result_from_task_state(task_state))
+            self._mark_step_running(steps_by_id, "prepare_assets")
+            return
+
+        if status == "rendering":
+            self._mark_step_succeeded(steps_by_id, "search_assets", self._build_search_assets_result_from_task_state(task_state))
+            self._mark_step_succeeded(
+                steps_by_id,
+                "prepare_assets",
+                self._build_prepare_assets_result_from_task_state(task_state),
+            )
+            self._mark_step_running(steps_by_id, "render_video")
+            return
+
+        if status == "running" and current_step_id == "render_video":
+            self._mark_step_succeeded(steps_by_id, "search_assets", self._build_search_assets_result_from_task_state(task_state))
+            self._mark_step_succeeded(
+                steps_by_id,
+                "prepare_assets",
+                self._build_prepare_assets_result_from_task_state(task_state),
+            )
+            self._mark_step_running(steps_by_id, "render_video")
+            return
+
+        if status == "succeeded":
+            self._mark_step_succeeded(steps_by_id, "search_assets", self._build_search_assets_result_from_task_state(task_state))
+            self._mark_step_succeeded(
+                steps_by_id,
+                "prepare_assets",
+                self._build_prepare_assets_result_from_task_state(task_state),
+            )
+            self._mark_step_succeeded(
+                steps_by_id,
+                "render_video",
+                self._build_task_render_result(video_url, artifact_rows, task_state["latest_job_event"]),
+            )
+            return
+
+        if status == "failed":
+            self._apply_failed_task_state(
+                steps_by_id,
+                retryable_step or "render_video",
+                task_state,
+            )
+
+    def _apply_failed_task_state(
+        self,
+        steps_by_id: list[AgentStep],
+        failed_step_id: AgentStepId,
+        task_state: dict[str, Any],
+    ) -> None:
+        failed_step = failed_step_id if failed_step_id in {"create_task", "search_assets", "prepare_assets", "render_video"} else "render_video"
+        execution_order: list[AgentStepId] = ["create_task", "search_assets", "prepare_assets", "render_video"]
+        if failed_step == "render_video":
+            self._mark_step_succeeded(steps_by_id, "search_assets", self._build_task_step_result("search_assets", task_state))
+            self._mark_step_succeeded(
+                steps_by_id,
+                "prepare_assets",
+                self._build_task_step_result("prepare_assets", task_state),
+            )
+        failed_index = execution_order.index(failed_step)
+        for index, step_id in enumerate(execution_order):
+            if index < failed_index:
+                self._mark_step_succeeded(
+                    steps_by_id,
+                    step_id,
+                    self._build_task_step_result(step_id, task_state),
+                )
+            elif index == failed_index:
+                self._mark_step_failed(
+                    steps_by_id,
+                    step_id,
+                    message=self._resolve_task_failure_message(task_state),
+                    retryable_step=failed_step,
+                )
 
     def _set_step_succeeded(self, steps: list[AgentStep], step_id: AgentStepId, result: Optional[dict[str, Any]] = None) -> None:
         for index, step in enumerate(steps):
             if step.id == step_id:
                 steps[index] = self._build_succeeded_step(self._meta(step_id), result or {}, summary="已完成")
-                return
-
-    def _set_step_running(self, steps: list[AgentStep], step_id: AgentStepId) -> None:
-        for index, step in enumerate(steps):
-            if step.id == step_id:
-                meta = self._meta(step_id)
-                steps[index] = AgentStep(
-                    id=meta.id,
-                    title=meta.title,
-                    description=meta.description,
-                    status="running",
-                    progress=50.0,
-                    summary="执行中",
-                )
                 return
 
     def _build_task_clips_result(self, artifact_rows) -> dict[str, Any]:
@@ -452,6 +557,87 @@ class AgentStepSnapshotService:
                 }
             )
         return {"clips": clips}
+
+    def _build_create_task_result_from_task_state(self, task_state: dict[str, Any]) -> dict[str, Any]:
+        result: dict[str, Any] = {
+            "status": task_state["status"],
+            "progress": task_state["progress"],
+        }
+        if task_state["current_step"]:
+            result["currentStep"] = task_state["current_step"]
+        return result
+
+    def _build_search_assets_result_from_task_state(self, task_state: dict[str, Any]) -> dict[str, Any]:
+        result: dict[str, Any] = {
+            "status": task_state["status"],
+            "progress": task_state["progress"],
+        }
+        return result
+
+    def _build_prepare_assets_result_from_task_state(self, task_state: dict[str, Any]) -> dict[str, Any]:
+        return self._build_task_clips_result(task_state["artifact_rows"])
+
+    def _build_task_render_result(self, video_url: str, artifact_rows, latest_job_event) -> dict[str, Any]:
+        result: dict[str, Any] = {}
+        if video_url:
+            result["videoUrl"] = video_url
+        clips = self._build_task_clips_result(artifact_rows)["clips"]
+        if clips:
+            result["clips"] = clips
+        if latest_job_event:
+            result["eventType"] = getattr(latest_job_event, "event_type", "")
+        return result
+
+    def _build_task_step_result(self, step_id: AgentStepId, task_state: dict[str, Any]) -> dict[str, Any]:
+        if step_id == "create_task":
+            return self._build_create_task_result_from_task_state(task_state)
+        if step_id == "search_assets":
+            return self._build_search_assets_result_from_task_state(task_state)
+        if step_id == "prepare_assets":
+            return self._build_prepare_assets_result_from_task_state(task_state)
+        if step_id == "render_video":
+            if task_state["status"] == "failed":
+                return {}
+            return self._build_task_render_result(task_state["video_url"], task_state["artifact_rows"], task_state["latest_job_event"])
+        return {}
+
+    def _latest_job_event(self, event_rows):
+        for row in reversed(event_rows):
+            if getattr(row, "job_id", None):
+                return row
+        return None
+
+    def _resolve_task_video_url(self, job_record, artifact_rows, event_rows) -> str:
+        for row in reversed(artifact_rows):
+            if row.artifact_type == "video" and row.public_url:
+                return row.public_url
+        for row in reversed(event_rows):
+            payload = row.payload_json or {}
+            if payload.get("videoUrl"):
+                return str(payload["videoUrl"])
+        return getattr(job_record, "video_url", "") or ""
+
+    def _resolve_task_retryable_step(self, job_record, latest_job_event) -> Optional[AgentStepId]:
+        if getattr(job_record, "error_message", None):
+            payload = getattr(latest_job_event, "payload_json", None) or {}
+            retryable_step = payload.get("retryableStep") if isinstance(payload, dict) else None
+            if retryable_step in {"create_task", "search_assets", "prepare_assets", "render_video"}:
+                return retryable_step
+            if retryable_step:
+                return self._normalize_retryable_step(str(retryable_step))
+            return self._normalize_retryable_step(getattr(job_record, "current_step", "") or "")
+        return None
+
+    def _resolve_task_failure_message(self, task_state: dict[str, Any]) -> str:
+        job_record = task_state.get("job_record")
+        if job_record is not None and getattr(job_record, "error_message", None):
+            return job_record.error_message
+        latest_job_event = task_state["latest_job_event"]
+        if latest_job_event is not None:
+            message = getattr(latest_job_event, "message", None)
+            if message:
+                return message
+        return "执行失败"
 
     def _build_execution_result(
         self,

@@ -622,6 +622,179 @@ class AgentApiP0ContractTests(unittest.TestCase):
         ):
             asyncio.run(_run())
 
+    def test_agent_task_succeeded_detail_keeps_render_video_succeeded(self):
+        async def _run():
+            session = self.session_service.create_session("做一个产品宣传片")
+
+            with self.session_factory() as db:
+                job_repo = AgentJobRepository(db)
+                event_repo = AgentEventRepository(db)
+                artifact_repo = AgentArtifactRepository(db)
+                job_record = job_repo.create(
+                    session_id=session.id,
+                    plan_id=None,
+                    job_type="generate_video",
+                    status="succeeded",
+                    progress=100,
+                    current_step="完成",
+                )
+                event_repo.create(
+                    session_id=session.id,
+                    job_id=job_record.id,
+                    event_type="job_succeeded",
+                    step="done",
+                    progress=100,
+                    message="视频已经生成，可以预览或下载。",
+                    payload_json={"videoUrl": "https://cdn.example.com/final-video.mp4"},
+                )
+                artifact_repo.create(
+                    session_id=session.id,
+                    job_id=job_record.id,
+                    artifact_type="video",
+                    public_url="https://cdn.example.com/final-video.mp4",
+                )
+                job_id = job_record.id
+                db.commit()
+
+            transport = httpx.ASGITransport(app=app)
+            async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as client:
+                detail_response = await client.get(f"/api/agent/tasks/{job_id}")
+                self.assertEqual(detail_response.status_code, 200)
+                detail = detail_response.json()
+
+                self.assertEqual(detail["steps"][7]["id"], "render_video")
+                self.assertEqual(detail["steps"][7]["status"], "succeeded")
+                self.assertEqual(detail["steps"][7]["result"]["videoUrl"], "https://cdn.example.com/final-video.mp4")
+
+        import asyncio
+
+        task_read_service = AgentTaskReadService(session_factory=self.session_factory)
+        with patch.object(agent_api_module, "session_service", self.session_service), patch.object(
+            agent_api_module, "task_read_service", task_read_service
+        ):
+            asyncio.run(_run())
+
+    def test_agent_task_failed_detail_keeps_failed_render_video_step(self):
+        async def _run():
+            session = self.session_service.create_session("做一个产品宣传片")
+
+            with self.session_factory() as db:
+                job_repo = AgentJobRepository(db)
+                event_repo = AgentEventRepository(db)
+                job_record = job_repo.create(
+                    session_id=session.id,
+                    plan_id=None,
+                    job_type="generate_video",
+                    status="failed",
+                    progress=80,
+                    current_step="处理失败：渲染服务不可用",
+                    error_message="渲染服务不可用",
+                )
+                event_repo.create(
+                    session_id=session.id,
+                    job_id=job_record.id,
+                    event_type="job_failed",
+                    step="failed",
+                    progress=80,
+                    message="渲染服务不可用",
+                    payload_json={"retryableStep": "rendering"},
+                )
+                job_id = job_record.id
+                db.commit()
+
+            transport = httpx.ASGITransport(app=app)
+            async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as client:
+                detail_response = await client.get(f"/api/agent/tasks/{job_id}")
+                self.assertEqual(detail_response.status_code, 200)
+                detail = detail_response.json()
+
+                self.assertEqual(detail["steps"][7]["id"], "render_video")
+                self.assertEqual(detail["steps"][7]["status"], "failed")
+                self.assertEqual(detail["steps"][7]["error"]["retryableStep"], "render_video")
+
+        import asyncio
+
+        task_read_service = AgentTaskReadService(session_factory=self.session_factory)
+        with patch.object(agent_api_module, "session_service", self.session_service), patch.object(
+            agent_api_module, "task_read_service", task_read_service
+        ):
+            asyncio.run(_run())
+
+    def test_agent_task_steps_are_isolated_from_other_jobs_in_same_session(self):
+        async def _run():
+            session = self.session_service.create_session("做一个多阶段短片")
+
+            with self.session_factory() as db:
+                job_repo = AgentJobRepository(db)
+                artifact_repo = AgentArtifactRepository(db)
+                event_repo = AgentEventRepository(db)
+
+                first_job = job_repo.create(
+                    session_id=session.id,
+                    plan_id=None,
+                    job_type="generate_video",
+                    status="succeeded",
+                    progress=100,
+                    current_step="完成",
+                )
+                second_job = job_repo.create(
+                    session_id=session.id,
+                    plan_id=None,
+                    job_type="generate_video",
+                    status="rendering",
+                    progress=80,
+                    current_step="正在合成视频",
+                )
+                event_repo.create(
+                    session_id=session.id,
+                    job_id=first_job.id,
+                    event_type="job_succeeded",
+                    step="done",
+                    progress=100,
+                    message="首个任务完成",
+                    payload_json={"videoUrl": "https://cdn.example.com/first-job-video.mp4"},
+                )
+                artifact_repo.create(
+                    session_id=session.id,
+                    job_id=first_job.id,
+                    artifact_type="video",
+                    public_url="https://cdn.example.com/first-job-video.mp4",
+                )
+                event_repo.create(
+                    session_id=session.id,
+                    job_id=second_job.id,
+                    event_type="render_started",
+                    step="rendering",
+                    progress=80,
+                    message="开始合成视频",
+                    payload_json={},
+                )
+                artifact_repo.create(
+                    session_id=session.id,
+                    job_id=second_job.id,
+                    artifact_type="video",
+                    public_url="https://cdn.example.com/second-job-video.mp4",
+                )
+                db.commit()
+                first_job_id = first_job.id
+
+            transport = httpx.ASGITransport(app=app)
+            async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as client:
+                response = await client.get(f"/api/agent/tasks/{first_job_id}")
+                self.assertEqual(response.status_code, 200)
+                payload = response.json()
+
+                self.assertEqual(payload["steps"][7]["status"], "succeeded")
+                self.assertEqual(payload["steps"][7]["result"]["videoUrl"], "https://cdn.example.com/first-job-video.mp4")
+
+        import asyncio
+
+        task_read_service = AgentTaskReadService(session_factory=self.session_factory)
+        with patch.object(agent_api_module, "session_service", self.session_service), patch.object(
+            agent_api_module, "task_read_service", task_read_service
+        ):
+            asyncio.run(_run())
+
     def test_agent_dashboard_counts_are_not_limited_by_recent_tasks_window(self):
         async def _run():
             sessions: list[str] = []
