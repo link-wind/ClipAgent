@@ -662,6 +662,94 @@ export default function BriefWorkspacePage() {
               })}
             </section>
 
+            {showExecutionHandoff ? (
+              <section className="mx-5 mb-5 grid gap-3 rounded-lg border border-border bg-[#fbfcfa] p-4" aria-label="执行交接">
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                  <div>
+                    <span className="text-xs font-bold uppercase tracking-[0.02em] text-secondary">执行交接</span>
+                    <h2 className="mt-1 text-lg font-semibold text-ink">方案已进入任务执行</h2>
+                    <p className="mt-1 text-sm leading-6 text-secondary">
+                      后端会继续搜索素材、准备素材并渲染视频；更完整的事件时间线可以在任务页查看。
+                    </p>
+                  </div>
+                  <Link
+                    href="/tasks"
+                    className="inline-flex min-h-10 items-center justify-center rounded-lg border border-border bg-white px-4 text-sm font-semibold text-ink transition hover:bg-slate-50"
+                  >
+                    查看任务详情
+                  </Link>
+                </div>
+
+                <div className="rounded-lg border border-[#e4e8e3] bg-white p-3 text-sm text-secondary">
+                  <span className="font-bold text-ink">Job ID：</span>
+                  <span>{session?.activeJobId || '等待后端返回任务编号'}</span>
+                </div>
+
+                <div className="grid gap-3 sm:grid-cols-2">
+                  {executionSteps.map((step, index) => (
+                    <article key={step.id} className="grid gap-3 rounded-lg border border-[#e4e8e3] bg-white p-3">
+                      <div className="flex items-start justify-between gap-3">
+                        <strong className="text-sm text-ink">
+                          {EXECUTION_STEP_TITLES[step.id as (typeof EXECUTION_STEP_IDS)[number]]}
+                        </strong>
+                        <span className="whitespace-nowrap text-xs font-bold text-secondary">{getStepStatusText(step.status)}</span>
+                      </div>
+                      <div className="h-2 overflow-hidden rounded-full bg-[#edf1ed]" aria-hidden="true">
+                        <span
+                          className="block h-full rounded-full bg-gradient-to-r from-accentstrong to-accent"
+                          style={{ width: `${getStepProgress(step, 10 + index * 8)}%` }}
+                        />
+                      </div>
+                      <p className="text-sm leading-6 text-secondary">{step.summary || step.description}</p>
+                    </article>
+                  ))}
+                </div>
+              </section>
+            ) : null}
+
+            {resultUrl ? (
+              <section className="mx-5 mb-5 grid gap-3 rounded-lg border border-border bg-white p-4" aria-label="结果预览">
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                  <div>
+                    <span className="text-xs font-bold uppercase tracking-[0.02em] text-secondary">结果预览</span>
+                    <h2 className="mt-1 text-lg font-semibold text-ink">视频已经生成</h2>
+                    <p className="mt-1 text-sm leading-6 text-secondary">可以在这里预览结果，也可以进入任务页查看完整事件和素材信息。</p>
+                  </div>
+                  <a
+                    href={resultUrl}
+                    className="inline-flex min-h-10 items-center justify-center rounded-lg bg-ink px-4 text-sm font-semibold text-white transition hover:bg-slate-800"
+                  >
+                    打开视频
+                  </a>
+                </div>
+                <video className="aspect-video w-full rounded-lg border border-border bg-black" src={resultUrl} controls preload="metadata" />
+              </section>
+            ) : null}
+
+            {session?.error || failedStep ? (
+              <section
+                className="mx-5 mb-5 rounded-lg border border-[#f5c2c7] bg-[#fff7f7] p-4 text-sm text-[#8b1f2d]"
+                aria-label="失败步骤"
+              >
+                <span className="text-xs font-bold uppercase tracking-[0.02em]">失败步骤</span>
+                <h2 className="mt-1 text-base font-semibold">
+                  {failedStep
+                    ? WORKSPACE_STEP_TITLES[failedStep.id as (typeof WORKSPACE_STEP_IDS)[number]] ||
+                      EXECUTION_STEP_TITLES[failedStep.id as (typeof EXECUTION_STEP_IDS)[number]] ||
+                      failedStep.title
+                    : '执行失败'}
+                </h2>
+                <p className="mt-2 leading-6">
+                  {failedStep?.error?.message || session?.error?.message || '任务执行失败，请查看任务详情。'}
+                </p>
+                <p className="mt-2 leading-6">
+                  {failedStep?.error?.retryable || session?.error?.retryableStep
+                    ? '该问题可能可以重试，请先在任务页查看事件时间线。'
+                    : '请在任务页查看事件时间线和外部素材下载日志。'}
+                </p>
+              </section>
+            ) : null}
+
             {errorText ? (
               <div className="mx-5 mb-4 rounded-lg border border-[#f5c2c7] bg-[#fff7f7] px-4 py-3 text-sm text-[#8b1f2d]">
                 {errorText}
