@@ -301,6 +301,17 @@ class AgentStepSnapshotService:
         event_rows,
         event_state: dict[str, Any],
     ) -> None:
+        if failed_step_id == "finalize_plan":
+            self._mark_step_failed(
+                steps_by_id,
+                "finalize_plan",
+                message=getattr(session_record, "error_message", None)
+                or event_state["latest_failure_payload"].get("message")
+                or "执行失败",
+                retryable_step="finalize_plan",
+            )
+            return
+
         execution_order: list[AgentStepId] = [
             "create_task",
             "search_assets",

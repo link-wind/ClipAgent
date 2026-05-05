@@ -263,6 +263,21 @@ class AgentApiP0ContractTests(unittest.TestCase):
         self.assertEqual(confirmed_session.steps[4].status, "succeeded")
         self.assertEqual(confirmed_session.steps[5].status, "pending")
 
+    def test_confirm_without_plan_marks_finalize_plan_failed_in_session_steps(self):
+        session = self.session_service.create_session()
+        execution_service = AgentExecutionService(
+            session_factory=self.session_factory,
+            enqueue_job=lambda job_id: None,
+        )
+
+        confirmed_session = execution_service.confirm_session(session.id)
+
+        self.assertEqual(confirmed_session.status.value, "failed")
+        self.assertEqual(confirmed_session.steps[3].id, "finalize_plan")
+        self.assertEqual(confirmed_session.steps[3].status, "failed")
+        self.assertEqual(confirmed_session.steps[3].error.retryableStep, "finalize_plan")
+        self.assertEqual(confirmed_session.steps[4].status, "pending")
+
     def test_session_steps_follow_execution_progress_events(self):
         session = self.session_service.create_session("做一个 30 秒 AI 笔记产品宣传片")
 
