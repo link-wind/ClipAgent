@@ -1,5 +1,5 @@
 import { requestJson } from './agentApi'
-import type { AgentErrorInfo, AgentEvent, ClipInfo } from './agentApi'
+import type { AgentErrorInfo, AgentEvent, AgentStep, AgentStepId, ClipInfo } from './agentApi'
 
 export interface AgentTaskSummary {
   id: string
@@ -8,6 +8,7 @@ export interface AgentTaskSummary {
   status: string
   progress: number
   currentStep: string
+  currentStepId: AgentStepId | null
   createdAt: string
   updatedAt: string
 }
@@ -15,6 +16,7 @@ export interface AgentTaskSummary {
 export interface AgentTaskDetail extends AgentTaskSummary {
   events: AgentEvent[]
   clips: ClipInfo[]
+  steps: AgentStep[]
   error: AgentErrorInfo | null
   videoUrl: string | null
 }

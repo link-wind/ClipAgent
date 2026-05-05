@@ -59,6 +59,37 @@ export interface AgentErrorInfo {
   retryableStep?: string | null
 }
 
+export type AgentStepId =
+  | 'understand_request'
+  | 'extract_requirements'
+  | 'generate_options'
+  | 'finalize_plan'
+  | 'create_task'
+  | 'search_assets'
+  | 'prepare_assets'
+  | 'render_video'
+
+export type AgentStepStatus = 'pending' | 'running' | 'succeeded' | 'failed' | 'skipped'
+
+export interface AgentStepError {
+  message: string
+  retryable: boolean
+  retryableStep?: AgentStepId | null
+}
+
+export interface AgentStep {
+  id: AgentStepId
+  title: string
+  description: string
+  status: AgentStepStatus
+  progress: number
+  summary: string
+  result: Record<string, unknown> | null
+  error: AgentStepError | null
+  startedAt: string | null
+  finishedAt: string | null
+}
+
 export interface AgentSession {
   id: string
   status: AgentStatus
@@ -66,6 +97,7 @@ export interface AgentSession {
   plan: EditPlan | null
   clips: ClipInfo[]
   events: AgentEvent[]
+  steps: AgentStep[]
   videoUrl: string | null
   activeJobId: string | null
   progress: number
