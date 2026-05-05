@@ -293,9 +293,9 @@ class AgentExecutionContractTests(unittest.TestCase):
 
         self.assertEqual(build_render_inputs(clips), ["/downloads/legacy.mp4"])
 
-    def test_concat_agent_clip_uses_local_path_as_ffmpeg_input(self):
+    def test_render_shortform_video_uses_agent_local_path_as_segment_input(self):
         from backend.models.agent import ClipInfo
-        from backend.services.render_service import concat_clips_simple
+        from backend.services.render_service import render_shortform_video
 
         clip = ClipInfo(
             sceneId=1,
@@ -305,13 +305,13 @@ class AgentExecutionContractTests(unittest.TestCase):
             duration=6,
         )
 
-        with patch("backend.services.render_service.ffmpeg.input") as mock_input:
-            with patch("backend.services.render_service.ffmpeg.output") as mock_output:
-                mock_output.return_value.run.return_value = None
+        with patch("backend.services.render_service._render_segment") as mock_render_segment:
+            with patch("backend.services.render_service._concat_segments"):
+                with patch("backend.services.render_service._mix_background_music"):
+                    result = render_shortform_video([clip], "out.mp4")
 
-                result = concat_clips_simple([clip], "out.mp4")
-
-        mock_input.assert_called_once_with("backend/downloads/agent.mp4")
+        segment = mock_render_segment.call_args.args[0]
+        self.assertEqual(segment["input"], "backend/downloads/agent.mp4")
         self.assertEqual(result, "/output/out.mp4")
 
     def test_confirm_session_with_plan_starts_searching(self):
@@ -594,8 +594,8 @@ class FrontendClientContractTests(unittest.TestCase):
         self.assertIn("getAgentSessionEvents", workspace_source)
         self.assertIn("activeSessionId", workspace_source)
         self.assertIn("queued", workspace_source)
-        self.assertIn("setEvents", workspace_source)
-        self.assertIn("session.events", progress_source)
+        self.assertIn("setSession({ ...nextSession, events: nextEvents })", workspace_source)
+        self.assertIn("session?.events", progress_source)
         self.assertIn("activeJobId", result_source)
 
     def test_agent_chat_resets_stale_session_on_missing_backend_session(self):
