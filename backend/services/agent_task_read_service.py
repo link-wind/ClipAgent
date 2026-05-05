@@ -2,6 +2,7 @@ from backend.db.repositories import (
     AgentArtifactRepository,
     AgentEventRepository,
     AgentJobRepository,
+    AgentPlanRepository,
     AgentSessionRepository,
 )
 from backend.models.agent import (
@@ -11,6 +12,7 @@ from backend.models.agent import (
     AgentTaskSummary,
 )
 from backend.services.agent_read_service import AgentReadService
+from backend.services.agent_step_snapshot_service import AgentStepSnapshotService
 
 
 RUNNING_JOB_STATUSES = {"queued", "pending", "running"}
@@ -20,6 +22,7 @@ class AgentTaskReadService:
     def __init__(self, session_factory):
         self.session_factory = session_factory
         self.read_service = AgentReadService(session_factory=session_factory)
+        self.step_snapshot_service = AgentStepSnapshotService()
 
     def list_tasks(self, limit: int = 50) -> list[AgentTaskSummary]:
         # 读取最近任务摘要
@@ -37,6 +40,7 @@ class AgentTaskReadService:
                 raise KeyError(job_id)
 
             session = AgentSessionRepository(db).get(job.session_id) if job.session_id else None
+            plan = AgentPlanRepository(db).get(job.plan_id) if job.plan_id else None
             artifacts = AgentArtifactRepository(db).list_for_job(job.id)
             events = AgentEventRepository(db).list_for_job(job.id)
             clip_rows = [row for row in artifacts if row.artifact_type == "clip"]
@@ -47,6 +51,13 @@ class AgentTaskReadService:
                 **summary.model_dump(),
                 events=self.read_service.build_event_response(events),
                 clips=[self.read_service._build_clip_info(row) for row in clip_rows],
+                steps=self.step_snapshot_service.build_task_steps(
+                    session_record=session,
+                    job_record=job,
+                    plan_row=plan,
+                    artifact_rows=artifacts,
+                    event_rows=events,
+                ),
                 error=(
                     AgentError(
                         message=job.error_message,
@@ -85,6 +96,10 @@ class AgentTaskReadService:
             status=job.status,
             progress=job.progress,
             currentStep=job.current_step or "",
+            currentStepId=self.step_snapshot_service.resolve_current_step_id(
+                job.status,
+                job.current_step or "",
+            ),
             createdAt=job.created_at.isoformat(),
             updatedAt=job.updated_at.isoformat(),
         )

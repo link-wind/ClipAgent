@@ -1,5 +1,5 @@
 from enum import Enum
-from typing import List, Literal, Optional
+from typing import Any, Dict, List, Literal, Optional
 
 from pydantic import BaseModel, Field
 
@@ -56,6 +56,39 @@ class AgentError(BaseModel):
     retryableStep: Optional[str] = None
 
 
+AgentStepId = Literal[
+    "understand_request",
+    "extract_requirements",
+    "generate_options",
+    "finalize_plan",
+    "create_task",
+    "search_assets",
+    "prepare_assets",
+    "render_video",
+]
+
+AgentStepStatus = Literal["pending", "running", "succeeded", "failed", "skipped"]
+
+
+class AgentStepError(BaseModel):
+    message: str
+    retryable: bool = False
+    retryableStep: Optional[AgentStepId] = None
+
+
+class AgentStep(BaseModel):
+    id: AgentStepId
+    title: str
+    description: str
+    status: AgentStepStatus = "pending"
+    progress: float = 0.0
+    summary: str = ""
+    result: Optional[Dict[str, Any]] = None
+    error: Optional[AgentStepError] = None
+    startedAt: Optional[str] = None
+    finishedAt: Optional[str] = None
+
+
 class AgentEvent(BaseModel):
     id: str
     eventType: str
@@ -73,6 +106,7 @@ class AgentSession(BaseModel):
     plan: Optional[EditPlan] = None
     clips: List[ClipInfo] = Field(default_factory=list)
     events: List[AgentEvent] = Field(default_factory=list)
+    steps: List[AgentStep] = Field(default_factory=list)
     videoUrl: Optional[str] = None
     activeJobId: Optional[str] = None
     error: Optional[AgentError] = None
@@ -87,6 +121,7 @@ class AgentTaskSummary(BaseModel):
     status: str
     progress: float = 0.0
     currentStep: str = ""
+    currentStepId: Optional[AgentStepId] = None
     createdAt: str
     updatedAt: str
 
@@ -94,6 +129,7 @@ class AgentTaskSummary(BaseModel):
 class AgentTaskDetail(AgentTaskSummary):
     events: List[AgentEvent] = Field(default_factory=list)
     clips: List[ClipInfo] = Field(default_factory=list)
+    steps: List[AgentStep] = Field(default_factory=list)
     error: Optional[AgentError] = None
     videoUrl: Optional[str] = None
 
