@@ -53,12 +53,29 @@ function getStatusLabel(status: string) {
   return STATUS_LABELS[status] ?? status;
 }
 
+function getStepStatusLabel(status: string) {
+  switch (status) {
+    case 'pending':
+      return '等待中';
+    case 'running':
+      return '进行中';
+    case 'succeeded':
+      return '已完成';
+    case 'failed':
+      return '失败';
+    case 'skipped':
+      return '已跳过';
+    default:
+      return status;
+  }
+}
+
 function getStatusTone(status: string) {
   return STATUS_TONES[status] ?? 'var(--task-accent-2)';
 }
 
 function getTaskSearchText(task: AgentTaskSummary) {
-  return `${task.title} ${task.status} ${task.currentStep} ${task.sessionId} ${task.id}`.toLowerCase();
+  return `${task.title} ${task.status} ${task.currentStep} ${task.currentStepId ?? ''} ${task.sessionId} ${task.id}`.toLowerCase();
 }
 
 function buildTaskSummary(task: AgentTaskDetail) {
@@ -451,6 +468,35 @@ export default function TaskManagerPage() {
               <section className={styles.modalSection}>
                 <h3>错误信息</h3>
                 <p>{activeTask.error ? activeTask.error.message ?? '任务存在错误信息，但未返回详细文案。' : '未检测到错误。'}</p>
+              </section>
+
+              <section className={styles.modalSection}>
+                <h3>标准步骤</h3>
+                <div className={styles.stepList}>
+                  {activeTask.steps.length > 0 ? (
+                    activeTask.steps.map((step) => (
+                      <article key={step.id} className={styles.stepCard}>
+                        <div className={styles.stepCardHeader}>
+                          <div>
+                            <strong>{step.title}</strong>
+                            <p>{step.description}</p>
+                          </div>
+                          <span className={styles.stepStatus}>{getStepStatusLabel(step.status)}</span>
+                        </div>
+                        <div className={styles.stepProgressRow}>
+                          <span className={styles.stepProgressText}>{formatProgress(step.progress)}</span>
+                          <div className={styles.stepProgressTrack} aria-hidden="true">
+                            <span style={{ width: formatProgress(step.progress) }} />
+                          </div>
+                        </div>
+                        <p className={styles.stepSummary}>{step.summary || '暂无步骤摘要。'}</p>
+                        {step.error ? <p className={styles.stepError}>{step.error.message}</p> : null}
+                      </article>
+                    ))
+                  ) : (
+                    <p>暂无标准步骤。</p>
+                  )}
+                </div>
               </section>
 
               <section className={styles.modalSection}>

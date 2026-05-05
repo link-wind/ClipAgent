@@ -432,6 +432,91 @@
   gap: 10px;
 }
 
+.stepList {
+  margin-top: 8px;
+  display: grid;
+  gap: 10px;
+}
+
+.stepCard {
+  padding: 12px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.84);
+  border: 1px solid rgba(79, 85, 99, 0.12);
+  display: grid;
+  gap: 10px;
+}
+
+.stepCardHeader {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.stepCardHeader strong {
+  display: block;
+  font-size: 14px;
+  line-height: 1.35;
+}
+
+.stepCardHeader p {
+  margin-top: 6px;
+  color: var(--text-secondary);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.stepStatus {
+  flex: 0 0 auto;
+  padding: 5px 9px;
+  border-radius: 999px;
+  background: rgba(247, 248, 251, 0.9);
+  color: var(--text-primary);
+  font-size: 12px;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+.stepProgressRow {
+  display: grid;
+  gap: 6px;
+}
+
+.stepProgressText {
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.stepProgressTrack {
+  height: 8px;
+  border-radius: 999px;
+  overflow: hidden;
+  background: #edf1ed;
+}
+
+.stepProgressTrack span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, #6da7a2, #a8c66c);
+}
+
+.stepSummary,
+.stepError {
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.stepSummary {
+  color: var(--text-primary);
+}
+
+.stepError {
+  color: #8b1f2d;
+}
+
 .eventList li {
   display: grid;
   gap: 4px;
