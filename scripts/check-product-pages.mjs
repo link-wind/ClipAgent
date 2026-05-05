@@ -5,17 +5,31 @@ const repoRoot = process.cwd();
 
 async function readText(relativePath) {
   const filePath = path.join(repoRoot, relativePath);
-  try {
-    return await readFile(filePath, 'utf8');
-  } catch (error) {
-    if (
-      error?.code === 'ENOENT' &&
-      relativePath === '.next/server/app/page.html'
-    ) {
-      return readFile(path.join(repoRoot, '.next/server/app/index.html'), 'utf8');
+  return readFile(filePath, 'utf8');
+}
+
+async function readFirstAvailable(relativePaths) {
+  const missingPaths = [];
+
+  for (const relativePath of relativePaths) {
+    try {
+      return await readText(relativePath);
+    } catch (error) {
+      if (error?.code !== 'ENOENT') {
+        throw error;
+      }
+      missingPaths.push(relativePath);
     }
-    throw error;
   }
+
+  throw new Error(`未找到可用文件，已检查: ${missingPaths.join(', ')}`);
+}
+
+function readDashboardHtml() {
+  return readFirstAvailable([
+    '.next/server/app/page.html',
+    '.next/server/app/index.html',
+  ]);
 }
 
 function assertIncludes(html, needle, message) {
@@ -31,7 +45,7 @@ function assertExcludes(html, needle, message) {
 }
 
 async function main() {
-  const dashboardHtml = await readText('.next/server/app/page.html');
+  const dashboardHtml = await readDashboardHtml();
   assertIncludes(dashboardHtml, 'ClipForge', 'dashboard 页面缺少产品标题');
   assertIncludes(
     dashboardHtml,
