@@ -16,6 +16,7 @@ from backend.db.repositories import (
     AgentSessionRepository,
 )
 from backend.main import app
+from backend.services.agent_execution_service import AgentExecutionService
 from backend.services.agent_read_service import AgentReadService
 from backend.services.agent_service import agent_service
 from backend.services.agent_session_service import AgentSessionService
@@ -247,6 +248,157 @@ class AgentApiP0ContractTests(unittest.TestCase):
             self.read_service,
         ):
             asyncio.run(_run())
+
+    def test_confirmed_session_steps_mark_create_task_succeeded(self):
+        session = self.session_service.create_session("做一个 30 秒 AI 笔记产品宣传片")
+        execution_service = AgentExecutionService(
+            session_factory=self.session_factory,
+            enqueue_job=lambda job_id: None,
+        )
+
+        confirmed_session = execution_service.confirm_session(session.id)
+
+        self.assertEqual(confirmed_session.status.value, "queued")
+        self.assertEqual(confirmed_session.steps[4].id, "create_task")
+        self.assertEqual(confirmed_session.steps[4].status, "succeeded")
+        self.assertEqual(confirmed_session.steps[5].status, "pending")
+
+    def test_session_steps_follow_execution_progress_events(self):
+        session = self.session_service.create_session("做一个 30 秒 AI 笔记产品宣传片")
+
+        with self.session_factory() as db:
+            session_repo = AgentSessionRepository(db)
+            event_repo = AgentEventRepository(db)
+            session_record = session_repo.get(session.id)
+            self.assertIsNotNone(session_record)
+            assert session_record is not None
+
+            session_record.status = "searching"
+            session_record.progress = 35
+            session_record.current_step = "正在搜索素材"
+            event_repo.create(
+                session_id=session.id,
+                job_id=None,
+                event_type="job_started",
+                step="searching",
+                progress=35,
+                message="任务开始执行",
+                payload_json={},
+            )
+            db.commit()
+
+        searching_session = self.read_service.read_session(session.id)
+        self.assertEqual(searching_session.steps[4].status, "succeeded")
+        self.assertEqual(searching_session.steps[5].status, "running")
+
+        with self.session_factory() as db:
+            session_repo = AgentSessionRepository(db)
+            event_repo = AgentEventRepository(db)
+            session_record = session_repo.get(session.id)
+            self.assertIsNotNone(session_record)
+            assert session_record is not None
+
+            session_record.status = "downloading"
+            session_record.progress = 60
+            session_record.current_step = "素材已下载，准备渲染"
+            event_repo.create(
+                session_id=session.id,
+                job_id=None,
+                event_type="clips_ready",
+                step="downloading",
+                progress=60,
+                message="素材已准备完成，共 4 段",
+                payload_json={"clipCount": 4},
+            )
+            db.commit()
+
+        downloading_session = self.read_service.read_session(session.id)
+        self.assertEqual(downloading_session.steps[5].status, "succeeded")
+        self.assertEqual(downloading_session.steps[6].status, "running")
+
+        with self.session_factory() as db:
+            session_repo = AgentSessionRepository(db)
+            event_repo = AgentEventRepository(db)
+            session_record = session_repo.get(session.id)
+            self.assertIsNotNone(session_record)
+            assert session_record is not None
+
+            session_record.status = "rendering"
+            session_record.progress = 80
+            session_record.current_step = "正在合成视频"
+            event_repo.create(
+                session_id=session.id,
+                job_id=None,
+                event_type="render_started",
+                step="rendering",
+                progress=80,
+                message="开始合成视频",
+                payload_json={},
+            )
+            db.commit()
+
+        rendering_session = self.read_service.read_session(session.id)
+        self.assertEqual(rendering_session.steps[6].status, "succeeded")
+        self.assertEqual(rendering_session.steps[7].status, "running")
+
+        with self.session_factory() as db:
+            session_repo = AgentSessionRepository(db)
+            event_repo = AgentEventRepository(db)
+            session_record = session_repo.get(session.id)
+            self.assertIsNotNone(session_record)
+            assert session_record is not None
+
+            session_record.status = "done"
+            session_record.progress = 100
+            session_record.current_step = "完成"
+            session_record.video_url = "https://cdn.example.com/final-video.mp4"
+            event_repo.create(
+                session_id=session.id,
+                job_id=None,
+                event_type="job_succeeded",
+                step="done",
+                progress=100,
+                message="视频已经生成，可以预览或下载。",
+                payload_json={"videoUrl": "https://cdn.example.com/final-video.mp4"},
+            )
+            db.commit()
+
+        done_session = self.read_service.read_session(session.id)
+        self.assertEqual(done_session.steps[7].status, "succeeded")
+        self.assertEqual(done_session.steps[7].result["videoUrl"], "https://cdn.example.com/final-video.mp4")
+
+    def test_failed_session_steps_map_retryable_standard_step(self):
+        session = self.session_service.create_session("做一个 30 秒 AI 笔记产品宣传片")
+
+        with self.session_factory() as db:
+            session_repo = AgentSessionRepository(db)
+            event_repo = AgentEventRepository(db)
+            session_record = session_repo.get(session.id)
+            self.assertIsNotNone(session_record)
+            assert session_record is not None
+
+            session_record.status = "failed"
+            session_record.progress = 35
+            session_record.current_step = "处理失败：素材搜索失败"
+            session_record.error_message = "素材搜索失败"
+            session_record.error_retryable_step = "searching"
+            event_repo.create(
+                session_id=session.id,
+                job_id=None,
+                event_type="job_failed",
+                step="failed",
+                progress=35,
+                message="素材搜索失败",
+                payload_json={"retryableStep": "searching"},
+            )
+            db.commit()
+
+        failed_session = self.read_service.read_session(session.id)
+        self.assertEqual(failed_session.steps[4].status, "succeeded")
+        self.assertEqual(failed_session.steps[5].status, "failed")
+        self.assertEqual(failed_session.steps[5].error.retryableStep, "search_assets")
+        self.assertEqual(failed_session.steps[6].status, "pending")
+        self.assertEqual(failed_session.steps[7].status, "pending")
 
     def test_agent_event_history_endpoint_returns_persisted_events(self):
         async def _run():

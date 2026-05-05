@@ -1,7 +1,7 @@
 from dataclasses import dataclass
 from typing import Any, Optional
 
-from backend.models.agent import AgentStep, AgentStepError, AgentStepId, AgentStepStatus, EditPlan
+from backend.models.agent import AgentStep, AgentStepError, AgentStepId, EditPlan
 
 
 @dataclass(frozen=True)
@@ -77,6 +77,7 @@ class AgentStepSnapshotService:
     def build_session_steps(self, session_record, message_rows, plan_row, event_rows) -> list[AgentStep]:
         first_prompt = self._extract_first_prompt(message_rows)
         plan = self._extract_plan(plan_row)
+        event_state = self._build_event_state(session_record, event_rows)
 
         steps_by_id = {meta.id: self._build_pending_step(meta) for meta in STANDARD_STEPS}
 
@@ -101,30 +102,7 @@ class AgentStepSnapshotService:
                 summary="已确认计划",
             )
 
-        if session_record is not None and getattr(session_record, "error_message", None):
-            retryable_step = getattr(session_record, "error_retryable_step", None)
-            mapped_step = RETRYABLE_STEP_TO_AGENT_STEP.get(retryable_step or "")
-            if mapped_step in steps_by_id:
-                steps_by_id[mapped_step] = self._build_failed_step(
-                    self._meta(mapped_step),
-                    message=session_record.error_message,
-                    retryable_step=mapped_step,
-                )
-
-        latest_event_step = self._latest_event_step(event_rows)
-        if latest_event_step in EVENT_STEP_TO_AGENT_STEP:
-            mapped_step = EVENT_STEP_TO_AGENT_STEP[latest_event_step]
-            if (
-                session_record is not None
-                and getattr(session_record, "status", None) == "failed"
-                and mapped_step in steps_by_id
-                and steps_by_id[mapped_step].status == "pending"
-            ):
-                steps_by_id[mapped_step] = self._build_failed_step(
-                    self._meta(mapped_step),
-                    message=session_record.error_message or "执行失败",
-                    retryable_step=RETRYABLE_STEP_TO_AGENT_STEP.get(latest_event_step),
-                )
+        self._apply_execution_state(steps_by_id, session_record, event_rows, event_state)
 
         return [steps_by_id[meta.id] for meta in STANDARD_STEPS]
 
@@ -215,11 +193,223 @@ class AgentStepSnapshotService:
             return None
         return EditPlan.model_validate(plan_row.plan_json)
 
-    def _latest_event_step(self, event_rows) -> str:
+    def _build_event_state(self, session_record, event_rows) -> dict[str, Any]:
+        latest_event_step = ""
+        latest_failure_payload: dict[str, Any] = {}
+        latest_job_id = ""
+        latest_video_url = ""
+
+        for row in event_rows:
+            step = getattr(row, "step", None)
+            if step:
+                latest_event_step = step
+            payload = getattr(row, "payload_json", None) or {}
+            if step == "failed" and isinstance(payload, dict):
+                latest_failure_payload = payload
+            if step == "queued" and isinstance(payload, dict) and payload.get("jobId"):
+                latest_job_id = payload["jobId"]
+            if step == "done" and isinstance(payload, dict) and payload.get("videoUrl"):
+                latest_video_url = payload["videoUrl"]
+
+        retryable_step = ""
+        if session_record is not None and getattr(session_record, "error_retryable_step", None):
+            retryable_step = session_record.error_retryable_step or ""
+        if not retryable_step and latest_failure_payload.get("retryableStep"):
+            retryable_step = latest_failure_payload["retryableStep"]
+        return {
+            "latest_event_step": latest_event_step,
+            "latest_failure_payload": latest_failure_payload,
+            "latest_job_id": latest_job_id,
+            "latest_video_url": latest_video_url,
+            "retryable_step": retryable_step,
+        }
+
+    def _apply_execution_state(
+        self,
+        steps_by_id: dict[AgentStepId, AgentStep],
+        session_record,
+        event_rows,
+        event_state: dict[str, Any],
+    ) -> None:
+        session_status = getattr(session_record, "status", "") if session_record is not None else ""
+        latest_event_step = event_state["latest_event_step"]
+        retryable_step = self._normalize_retryable_step(event_state["retryable_step"])
+
+        if session_status in {"queued", "searching", "downloading", "rendering", "done"} or latest_event_step == "queued":
+            self._mark_step_succeeded(
+                steps_by_id,
+                "create_task",
+                self._build_create_task_result(session_record, event_state),
+            )
+
+        if session_status == "searching":
+            self._mark_step_running(steps_by_id, "search_assets")
+        elif session_status == "downloading":
+            self._mark_step_succeeded(
+                steps_by_id,
+                "search_assets",
+                self._build_search_assets_result(event_rows),
+            )
+            self._mark_step_running(steps_by_id, "prepare_assets")
+        elif session_status == "rendering":
+            self._mark_step_succeeded(
+                steps_by_id,
+                "search_assets",
+                self._build_search_assets_result(event_rows),
+            )
+            self._mark_step_succeeded(
+                steps_by_id,
+                "prepare_assets",
+                self._build_prepare_assets_result(event_rows),
+            )
+            self._mark_step_running(steps_by_id, "render_video")
+        elif session_status == "done":
+            self._mark_step_succeeded(
+                steps_by_id,
+                "search_assets",
+                self._build_search_assets_result(event_rows),
+            )
+            self._mark_step_succeeded(
+                steps_by_id,
+                "prepare_assets",
+                self._build_prepare_assets_result(event_rows),
+            )
+            self._mark_step_succeeded(
+                steps_by_id,
+                "render_video",
+                self._build_render_result(session_record, event_rows, event_state),
+            )
+        elif session_status == "failed":
+            failed_step_id = retryable_step or self._normalize_retryable_step(
+                event_state["latest_failure_payload"].get("retryableStep")
+            )
+            if failed_step_id is None:
+                failed_step_id = "render_video"
+            self._apply_failed_execution_state(
+                steps_by_id,
+                failed_step_id,
+                session_record,
+                event_rows,
+                event_state,
+            )
+
+    def _apply_failed_execution_state(
+        self,
+        steps_by_id: dict[AgentStepId, AgentStep],
+        failed_step_id: AgentStepId,
+        session_record,
+        event_rows,
+        event_state: dict[str, Any],
+    ) -> None:
+        execution_order: list[AgentStepId] = [
+            "create_task",
+            "search_assets",
+            "prepare_assets",
+            "render_video",
+        ]
+        failed_index = execution_order.index(failed_step_id)
+        for index, step_id in enumerate(execution_order):
+            if index < failed_index:
+                self._mark_step_succeeded(steps_by_id, step_id, self._build_execution_result(step_id, session_record, event_rows, event_state))
+            elif index == failed_index:
+                self._mark_step_failed(
+                    steps_by_id,
+                    step_id,
+                    message=getattr(session_record, "error_message", None)
+                    or event_state["latest_failure_payload"].get("message")
+                    or "执行失败",
+                    retryable_step=failed_step_id,
+                )
+
+    def _normalize_retryable_step(self, retryable_step: str | None) -> Optional[AgentStepId]:
+        if retryable_step in {"create_task", "search_assets", "prepare_assets", "render_video"}:
+            return retryable_step
+        if retryable_step:
+            return RETRYABLE_STEP_TO_AGENT_STEP.get(retryable_step)
+        return None
+
+    def _build_create_task_result(self, session_record, event_state: dict[str, Any]) -> dict[str, Any]:
+        result: dict[str, Any] = {}
+        job_id = ""
+        if session_record is not None and getattr(session_record, "active_job_id", None):
+            job_id = session_record.active_job_id
+        elif event_state["latest_job_id"]:
+            job_id = event_state["latest_job_id"]
+        if job_id:
+            result["jobId"] = job_id
+        if session_record is not None and getattr(session_record, "status", None):
+            result["status"] = session_record.status
+        return result
+
+    def _build_search_assets_result(self, event_rows) -> dict[str, Any]:
+        payload = self._latest_event_payload(event_rows, "searching")
+        return dict(payload)
+
+    def _build_prepare_assets_result(self, event_rows) -> dict[str, Any]:
+        payload = self._latest_event_payload(event_rows, "downloading")
+        return dict(payload)
+
+    def _build_render_result(self, session_record, event_rows, event_state: dict[str, Any]) -> dict[str, Any]:
+        result: dict[str, Any] = {}
+        video_url = event_state["latest_video_url"]
+        if not video_url and session_record is not None and getattr(session_record, "video_url", None):
+            video_url = session_record.video_url
+        if not video_url:
+            payload = self._latest_event_payload(event_rows, "done")
+            video_url = payload.get("videoUrl", "")
+        if video_url:
+            result["videoUrl"] = video_url
+        return result
+
+    def _build_execution_result(
+        self,
+        step_id: AgentStepId,
+        session_record,
+        event_rows,
+        event_state: dict[str, Any],
+    ) -> dict[str, Any]:
+        if step_id == "create_task":
+            return self._build_create_task_result(session_record, event_state)
+        if step_id == "search_assets":
+            return self._build_search_assets_result(event_rows)
+        if step_id == "prepare_assets":
+            return self._build_prepare_assets_result(event_rows)
+        if step_id == "render_video":
+            return self._build_render_result(session_record, event_rows, event_state)
+        return {}
+
+    def _latest_event_payload(self, event_rows, target_step: str) -> dict[str, Any]:
         for row in reversed(event_rows):
-            if getattr(row, "step", None):
-                return row.step
-        return ""
+            if getattr(row, "step", None) != target_step:
+                continue
+            payload = getattr(row, "payload_json", None)
+            if isinstance(payload, dict):
+                return payload
+            return {}
+        return {}
+
+    def _mark_step_succeeded(self, steps_by_id: dict[AgentStepId, AgentStep], step_id: AgentStepId, result: dict[str, Any]) -> None:
+        steps_by_id[step_id] = self._build_succeeded_step(self._meta(step_id), result, summary="已完成")
+
+    def _mark_step_running(self, steps_by_id: dict[AgentStepId, AgentStep], step_id: AgentStepId) -> None:
+        meta = self._meta(step_id)
+        steps_by_id[step_id] = AgentStep(
+            id=meta.id,
+            title=meta.title,
+            description=meta.description,
+            status="running",
+            progress=50.0,
+            summary="执行中",
+        )
+
+    def _mark_step_failed(
+        self,
+        steps_by_id: dict[AgentStepId, AgentStep],
+        step_id: AgentStepId,
+        message: str,
+        retryable_step: AgentStepId,
+    ) -> None:
+        steps_by_id[step_id] = self._build_failed_step(self._meta(step_id), message=message, retryable_step=retryable_step)
 
     def _meta(self, step_id: AgentStepId) -> StepMeta:
         for meta in STANDARD_STEPS:
