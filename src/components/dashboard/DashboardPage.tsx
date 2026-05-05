@@ -336,7 +336,7 @@ export default function DashboardPage() {
         ) : null}
 
         <section className="rounded-lg border border-border bg-white/80 p-5 shadow-soft sm:p-6" aria-label="关键指标">
-          <div className="flex flex-col gap-2 border-b border-border/80 pb-4 sm:flex-row sm:items-end sm:justify-between">
+          <div className="flex flex-col gap-2 border-b border-border pb-4 sm:flex-row sm:items-end sm:justify-between">
             <div>
               <p className="text-[11px] font-semibold uppercase tracking-[0.02em] text-secondary">关键指标</p>
               <h2 className="mt-1 text-xl font-semibold text-ink">正在推进的整体规模</h2>
@@ -355,13 +355,13 @@ export default function DashboardPage() {
 
         <section className="grid gap-4 xl:grid-cols-[minmax(0,1.35fr)_minmax(0,0.95fr)]" aria-label="运行证明">
           <article className="rounded-lg border border-border bg-white/80 p-5 shadow-soft sm:p-6">
-            <div className="flex items-start justify-between gap-3 border-b border-border/80 pb-4">
+            <div className="flex items-start justify-between gap-3 border-b border-border pb-4">
               <div>
                 <p className="text-[11px] font-semibold uppercase tracking-[0.02em] text-secondary">运行证明</p>
                 <h2 className="mt-1 text-xl font-semibold text-ink">最近 7 个任务产出走势</h2>
               </div>
               <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-medium text-secondary">
-                {isLoading ? '加载中' : '持续更新'}
+                {isLoading ? '加载中' : '示意节奏'}
               </span>
             </div>
 
@@ -380,13 +380,13 @@ export default function DashboardPage() {
             </div>
 
             <p className="mt-4 text-sm leading-6 text-secondary">
-              这组趋势不是监控告警，而是首页上对“最近确实有产出发生”的直接证明。
+              这里先用示意节奏展示工作台的信息层级，帮助快速理解内容生产面板会如何承接真实趋势数据。
             </p>
           </article>
 
           <div className="grid gap-4">
             <article className="rounded-lg border border-border bg-white/80 p-5 shadow-soft">
-              <div className="border-b border-border/80 pb-4">
+              <div className="border-b border-border pb-4">
                 <p className="text-[11px] font-semibold uppercase tracking-[0.02em] text-secondary">健康快照</p>
                 <h2 className="mt-1 text-xl font-semibold text-ink">当前运行状态</h2>
               </div>
@@ -411,7 +411,7 @@ export default function DashboardPage() {
             </article>
 
             <article className="rounded-lg border border-border bg-white/80 p-5 shadow-soft">
-              <div className="border-b border-border/80 pb-4">
+              <div className="border-b border-border pb-4">
                 <p className="text-[11px] font-semibold uppercase tracking-[0.02em] text-secondary">资源构成</p>
                 <h2 className="mt-1 text-xl font-semibold text-ink">当前生产中的资源比例</h2>
               </div>
@@ -436,7 +436,7 @@ export default function DashboardPage() {
         </section>
 
         <section className="rounded-lg border border-border bg-white/80 p-5 shadow-soft sm:p-6" aria-label="最近工作">
-          <div className="flex flex-col gap-3 border-b border-border/80 pb-4 sm:flex-row sm:items-end sm:justify-between">
+          <div className="flex flex-col gap-3 border-b border-border pb-4 sm:flex-row sm:items-end sm:justify-between">
             <div>
               <p className="text-[11px] font-semibold uppercase tracking-[0.02em] text-secondary">最近工作</p>
               <h2 className="mt-1 text-xl font-semibold text-ink">最新接入的方案队列</h2>
