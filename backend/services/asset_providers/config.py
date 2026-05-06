@@ -3,6 +3,7 @@ from dataclasses import dataclass
 
 DEFAULT_YTDLP_FORMAT = "bestvideo[height<=720][ext=mp4]+bestaudio[ext=m4a]/best[height<=720][ext=mp4]/best[height<=720]"
 DEFAULT_ASSET_PROVIDER_ORDER = ["youtube", "pexels"]
+DEFAULT_FIXTURE_LIBRARY_PATH = "fixtures/videos.json"
 
 
 def env_flag(name: str, default: bool = False) -> bool:
@@ -52,6 +53,12 @@ class PexelsProviderConfig:
     api_key: str
 
 
+@dataclass(frozen=True)
+class FixtureProviderConfig:
+    enabled: bool
+    library_path: str
+
+
 def get_youtube_config() -> YoutubeProviderConfig:
     return YoutubeProviderConfig(
         enabled=env_flag("YTDLP_PROVIDER_ENABLED", default=True),
@@ -68,4 +75,12 @@ def get_pexels_config() -> PexelsProviderConfig:
     return PexelsProviderConfig(
         enabled=env_flag("PEXELS_PROVIDER_ENABLED", default=bool(api_key)),
         api_key=api_key,
+    )
+
+
+def get_fixture_config() -> FixtureProviderConfig:
+    library_path = os.environ.get("FIXTURE_LIBRARY_PATH", DEFAULT_FIXTURE_LIBRARY_PATH).strip()
+    return FixtureProviderConfig(
+        enabled=env_flag("FIXTURE_PROVIDER_ENABLED", default=True),
+        library_path=library_path or DEFAULT_FIXTURE_LIBRARY_PATH,
     )

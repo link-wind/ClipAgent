@@ -1036,6 +1036,28 @@ class AgentExecutionContractTests(unittest.TestCase):
             self.assertFalse(env_flag("YTDLP_PROVIDER_ENABLED", default=True))
             self.assertTrue(env_flag("PEXELS_PROVIDER_ENABLED", default=False))
 
+    def test_fixture_provider_config_uses_defaults(self):
+        from backend.services.asset_providers.config import get_fixture_config
+
+        with patch.dict("os.environ", {}, clear=True):
+            config = get_fixture_config()
+
+        self.assertTrue(config.enabled)
+        self.assertEqual(config.library_path, "fixtures/videos.json")
+
+    def test_fixture_library_loads_default_videos_json(self):
+        from backend.services.asset_providers.fixture import load_fixture_library
+
+        with patch.dict("os.environ", {}, clear=True):
+            library = load_fixture_library()
+
+        self.assertIsInstance(library, list)
+        self.assertGreater(len(library), 0)
+        self.assertIsInstance(library[0], dict)
+        self.assertIn("id", library[0])
+        self.assertIn("videoUrl", library[0])
+        self.assertIn("thumbnailUrl", library[0])
+
     def test_pexels_search_maps_api_response_to_candidates(self):
         import json
         from unittest.mock import MagicMock
