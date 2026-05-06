@@ -69,44 +69,49 @@ $env:CLIPFORGE_CELERY_QUEUE='clipforge-agent-wt1'
 
 如果你在 `.worktrees/` 下运行联调，通常会直接复用仓库根目录的虚拟环境 `/Users/linkwind/Code/ClipForge_v2/.venv`。新的 worktree 默认不会自带 `./.venv`，因此命令里的 Python 路径要么写成仓库根的绝对路径，要么先自行建立共享虚拟环境策略。
 
-另外，当前 `docker-compose.yml` 为 PostgreSQL 和 Redis 写死了 `container_name`。如果本机已经有 `clipforge-postgres` / `clipforge-redis` 在跑，新的 worktree 不必再强行起第二套容器，直接复用现有依赖即可；否则会遇到容器名冲突。
+另外，当前 `docker-compose.yml` 为 PostgreSQL 和 Redis 写死了 `container_name`。如果本机已经有 `clipforge-postgres` / `clipforge-redis` 在跑，新的 worktree 不必再强行起第二套容器，直接复用现有依赖即可；否则会遇到容器名冲突。2026-05-06 的 P0 hardening 真实联调就是复用本机已运行的这两个容器。
 
-先准备 PostgreSQL、Redis 和数据库迁移：
+先准备 PostgreSQL、Redis 和数据库迁移。如果容器已经在运行，可以跳过 `docker compose up`，但仍要确认数据库迁移已执行：
 
 ```bash
 docker compose up -d postgres redis
 /Users/linkwind/Code/ClipForge_v2/.venv/bin/python -m alembic -c backend/alembic.ini upgrade head
 ```
 
-在 FastAPI 和 Celery worker 终端都设置同一组 Celery 环境变量，确保 API 发出的任务和 worker 监听的队列一致：
+在 FastAPI 和 Celery worker 终端都设置同一组 Celery 环境变量，确保 API 发出的任务和 worker 监听的队列一致。P0 hardening 真实联调用到的队列和 provider 顺序如下：
 
 ```bash
-export CLIPFORGE_CELERY_QUEUE=clipforge-agent-ws
+export CLIPFORGE_CELERY_QUEUE=clipforge-agent-p0
+export CLIPFORGE_ASSET_PROVIDER_ORDER=pexels,youtube
 export CELERY_BROKER_URL=redis://localhost:6379/1
 export CELERY_RESULT_BACKEND=redis://localhost:6379/1
 ```
 
-终端 A：启动 FastAPI：
+终端 A：启动 FastAPI。P0 hardening 真实联调使用 `127.0.0.1:8011`，如果该端口被占用，可以换空闲端口，但要同步设置前端代理目标：
 
 ```bash
-/Users/linkwind/Code/ClipForge_v2/.venv/bin/python -m uvicorn backend.main:app --reload --host 127.0.0.1 --port 8010
+CLIPFORGE_CELERY_QUEUE="$CLIPFORGE_CELERY_QUEUE" \
+CLIPFORGE_ASSET_PROVIDER_ORDER="$CLIPFORGE_ASSET_PROVIDER_ORDER" \
+/Users/linkwind/Code/ClipForge_v2/.venv/bin/python -m uvicorn backend.main:app --reload --host 127.0.0.1 --port 8011
 ```
 
 终端 B：启动 Celery worker：
 
 ```bash
+CLIPFORGE_CELERY_QUEUE="$CLIPFORGE_CELERY_QUEUE" \
+CLIPFORGE_ASSET_PROVIDER_ORDER="$CLIPFORGE_ASSET_PROVIDER_ORDER" \
 /Users/linkwind/Code/ClipForge_v2/.venv/bin/python -m celery -A backend.tasks.celery_app:celery_app worker --pool solo --loglevel INFO -Q "$CLIPFORGE_CELERY_QUEUE"
 ```
 
-终端 C：启动 Next.js：
+终端 C：启动 Next.js。P0 hardening 真实联调使用 `127.0.0.1:3002`，并把前端代理指向 `127.0.0.1:8011`：
 
 ```bash
-npm run dev
+CLIPFORGE_API_ORIGIN=http://127.0.0.1:8011 npm run dev -- --hostname 127.0.0.1 --port 3002
 ```
 
 联调验收路径：
 
-1. 打开 `http://localhost:3000/workspace`。
+1. 打开 `http://127.0.0.1:3002/workspace`，或使用本次实际前端端口。
 2. 输入真实短视频 brief。
 3. 等待 Agent 返回方案和前四个标准步骤。
 4. 点击“确认方案并生成任务”。
@@ -116,14 +121,16 @@ npm run dev
 8. 如果生成 MP4，确认 `/workspace` 或 `/tasks` 能打开结果。
 9. 如果外部素材失败，记录任务详情里的失败步骤、事件日志和 worker 错误，不把该次联调记为成功。
 
-2026-05-06 的真实联调记录分成两次：
+2026-05-06 的 P0 hardening 真实联调记录：
 
-- 第一次联调里，`/workspace` 创建会话、确认方案、生成 `activeJobId`、跳转 `/tasks` 这一段是通的。
-- 当时的新任务 `d698878c-8f29-4411-9766-28abf77181c0` 成功进入独立队列 `clipforge-agent-ws-hardening`，但失败在 `search_assets`，错误为 `youtube: 素材搜索失败：ERROR: Unable to download API page: [Errno 54] Connection reset by peer`。
-- 根因不是 `/workspace -> /tasks` 交接断掉，而是 `search_and_download_agent_clips()` 会先把所有 provider 都搜索一遍；即便 `pexels,youtube` 顺序下 Pexels 已经拿到候选，也会继续触发 YouTube 搜索，于是被外部超时卡住。
-- 修复后，provider 搜索改为“前一个 provider 一旦返回候选，就直接进入下载，不再提前搜索后续 provider”。
-- 第二次联调在同样的独立队列 `clipforge-agent-ws-hardening` 下成功跑通：会话 `939b4573-187a-406e-9a64-220b8edc1b26`、任务 `97383060-838b-43c9-800c-162e6d69f86a` 完成了 Pexels 搜索、下载、渲染，最终输出 `/output/939b4573-187a-406e-9a64-220b8edc1b26.mp4`。
-- 因此这一阶段现在可以记为“前后端交接链路成功，Pexels-first 真实素材链路也已验证成功”。
+- 运行环境复用本机已运行的 `clipforge-postgres` / `clipforge-redis`，backend 为 `127.0.0.1:8011`，frontend 为 `127.0.0.1:3002`，queue 为 `clipforge-agent-p0`，provider order 为 `pexels,youtube`。
+- 本机未配置 `PEXELS_API_KEY`，因此 Pexels provider 不能完成真实素材搜索；这类 run 不能记为“稳定出片”成功。
+- 第一条真实联调 session 为 `34ad731d-b7d3-4095-96fa-1ae899481fd1`，job 为 `e27a7261-599d-4062-a6ef-2e1436474b76`。`/workspace -> confirm -> /tasks -> worker` 链路成功，最终失败在 `search_assets`。
+- 第一条失败原因是 Pexels 没有 API key，YouTube 搜索出现 connection reset / timeout。结论是产品交接链路已验证，但外部素材源不可用。
+- Task 3 后做过两次最小修补：`8e9ded4 fix: dedupe provider failure diagnostics` 去重 provider 失败诊断，`79e41f1 fix: collapse repeated scene provider failures` 折叠重复 scene provider 失败。
+- 第二条真实联调仍失败在 `search_assets`，但 provider failure 聚合已更清晰，不再无限累加同类 scene 错误。
+- 当前阶段尚未达到“稳定出片”标准。没有 `PEXELS_API_KEY` 时，`pexels,youtube` 会退到受外部网络和平台限制影响较大的 YouTube 路径；如果 YouTube connection reset 或 timeout，本次失败应归类为 asset search / provider availability failure，而不是 worker、任务交接或渲染失败。
+- 下一步更适合补 deterministic asset support / fixture fallback，让本地 P0 验证和演示不完全依赖实时外部素材平台。
 
 ### 启动前端
 

@@ -202,6 +202,25 @@ Documentation should explicitly cover:
 - common failure signatures
 - when to use real external providers versus deterministic local fixtures
 
+## Validated Findings
+
+2026-05-06 P0 hardening verification used the real local stack with existing `clipforge-postgres` / `clipforge-redis` containers, FastAPI on `127.0.0.1:8011`, Next.js on `127.0.0.1:3002`, Celery queue `clipforge-agent-p0`, and provider order `pexels,youtube`.
+
+Confirmed findings:
+
+- Task 1 baseline verification passed.
+- The first real integration session `34ad731d-b7d3-4095-96fa-1ae899481fd1` created job `e27a7261-599d-4062-a6ef-2e1436474b76`.
+- The `/workspace -> confirm -> /tasks -> worker` handoff worked in the real environment.
+- Execution failed at `search_assets`, not at task handoff, worker pickup, or render.
+- The actual failure was provider availability: local `PEXELS_API_KEY` was not configured, and YouTube search hit connection reset / timeout.
+- Two minimal Task 3 fixes were committed: `8e9ded4 fix: dedupe provider failure diagnostics` and `79e41f1 fix: collapse repeated scene provider failures`.
+- A second real integration run still failed at `search_assets`, but provider failure aggregation is now clearer and no longer grows without bound for repeated same-scene failures.
+- Automated backend verification still passes with `/Users/linkwind/Code/ClipForge_v2/.venv/bin/python -m unittest tests.test_agent_backend` reporting 68 tests OK. The remaining SQLAlchemy `datetime.utcnow()` deprecation warning is known and out of scope for this stage.
+
+The stage has therefore validated the product handoff and failure classification path, but it has not met the stable MP4 output bar. Without `PEXELS_API_KEY`, the run depends on the YouTube fallback path, which is externally volatile and can fail because of network or platform restrictions.
+
+The next engineering step should prioritize deterministic asset support or fixture fallback for local P0 verification and demos, while keeping real external providers available for production-shaped validation.
+
 ## Acceptance Criteria
 
 This stage is complete when all of the following are true:
