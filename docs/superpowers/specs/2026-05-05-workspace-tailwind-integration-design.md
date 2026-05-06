@@ -8,6 +8,12 @@ Today `/workspace` is still implemented with `BriefWorkspacePage.module.css`. It
 
 The project direction is to eventually use Tailwind CSS across the whole frontend. This stage should move one page at a time: Dashboard is done, `/workspace` is next, `/tasks` remains for a later stage.
 
+## Current Status
+
+As of May 6, 2026, the `/workspace` page-level Tailwind migration has already landed in code, including the execution handoff, result entry, and failed-step UI. The active work in this stage is no longer "do the migration from scratch", but "verify the real frontend-backend path, document the runbook, and record the exact external-provider outcome."
+
+This also means `/tasks` is no longer part of this stage's implementation scope. It is now a separate follow-on surface, and any further `/tasks` work should be planned independently.
+
 ## Goals
 
 1. Migrate `/workspace` from CSS Modules to Tailwind CSS.

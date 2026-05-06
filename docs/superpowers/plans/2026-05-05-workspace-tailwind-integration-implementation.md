@@ -10,6 +10,27 @@
 
 ---
 
+## Current Status Note
+
+This plan was originally written for the full `/workspace` Tailwind migration plus integration rollout. The page-level Tailwind migration, execution handoff, result preview entry, failed-step callout, and static structure checks have already landed in code.
+
+The active next step is therefore not to re-implement the migration tasks below from scratch. The practical next step is to:
+
+1. verify the current `/workspace` baseline in a fresh worktree,
+2. run the real local integration path,
+3. record the precise external-provider outcome,
+4. update the runbook and close the loop.
+
+On May 6, 2026, a fresh integration run confirmed:
+
+- `/workspace` can create a session and reach `plan_ready`,
+- confirming the plan creates a real queued job and returns `activeJobId`,
+- `/tasks` receives the same job,
+- the worker starts the job on an isolated queue,
+- the real failure point is currently in `search_assets`, where YouTube search returns `Connection reset by peer`.
+
+That outcome should be treated as a successful frontend-to-backend handoff with a real external asset failure, not as a full end-to-end success.
+
 ## File Structure
 
 - Modify `tests/test_agent_backend.py`

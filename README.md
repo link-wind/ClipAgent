@@ -65,13 +65,17 @@ $env:CLIPFORGE_CELERY_QUEUE='clipforge-agent-wt1'
 
 ### 真实外部素材联调
 
-`/workspace` 到 `/tasks` 的真实联调必须启动 PostgreSQL、Redis、FastAPI、Celery worker 和 Next.js，并使用同一个 Celery 队列名。下面示例使用独立队列，避免多个 worker 抢任务：
+`/workspace` 到 `/tasks` 的真实联调必须启动 PostgreSQL、Redis、FastAPI、Celery worker 和 Next.js，并使用同一个 Celery 队列名。下面示例使用独立队列，避免多个 worker 抢任务。
+
+如果你在 `.worktrees/` 下运行联调，通常会直接复用仓库根目录的虚拟环境 `/Users/linkwind/Code/ClipForge_v2/.venv`。新的 worktree 默认不会自带 `./.venv`，因此命令里的 Python 路径要么写成仓库根的绝对路径，要么先自行建立共享虚拟环境策略。
+
+另外，当前 `docker-compose.yml` 为 PostgreSQL 和 Redis 写死了 `container_name`。如果本机已经有 `clipforge-postgres` / `clipforge-redis` 在跑，新的 worktree 不必再强行起第二套容器，直接复用现有依赖即可；否则会遇到容器名冲突。
 
 先准备 PostgreSQL、Redis 和数据库迁移：
 
 ```bash
 docker compose up -d postgres redis
-./.venv/bin/python -m alembic -c backend/alembic.ini upgrade head
+/Users/linkwind/Code/ClipForge_v2/.venv/bin/python -m alembic -c backend/alembic.ini upgrade head
 ```
 
 在 FastAPI 和 Celery worker 终端都设置同一组 Celery 环境变量，确保 API 发出的任务和 worker 监听的队列一致：
@@ -85,13 +89,13 @@ export CELERY_RESULT_BACKEND=redis://localhost:6379/1
 终端 A：启动 FastAPI：
 
 ```bash
-./.venv/bin/python -m uvicorn backend.main:app --reload --host 127.0.0.1 --port 8010
+/Users/linkwind/Code/ClipForge_v2/.venv/bin/python -m uvicorn backend.main:app --reload --host 127.0.0.1 --port 8010
 ```
 
 终端 B：启动 Celery worker：
 
 ```bash
-./.venv/bin/python -m celery -A backend.tasks.celery_app:celery_app worker --pool solo --loglevel INFO -Q "$CLIPFORGE_CELERY_QUEUE"
+/Users/linkwind/Code/ClipForge_v2/.venv/bin/python -m celery -A backend.tasks.celery_app:celery_app worker --pool solo --loglevel INFO -Q "$CLIPFORGE_CELERY_QUEUE"
 ```
 
 终端 C：启动 Next.js：
@@ -111,6 +115,13 @@ npm run dev
 7. 等待 worker 执行真实外部素材搜索、下载和渲染。
 8. 如果生成 MP4，确认 `/workspace` 或 `/tasks` 能打开结果。
 9. 如果外部素材失败，记录任务详情里的失败步骤、事件日志和 worker 错误，不把该次联调记为成功。
+
+2026-05-06 的一条真实联调记录：
+
+- `/workspace` 创建会话、确认方案、生成 `activeJobId`、跳转 `/tasks` 这一段是通的。
+- 新任务 `d698878c-8f29-4411-9766-28abf77181c0` 成功进入独立队列 `clipforge-agent-ws-hardening`。
+- 实际失败点出现在 `search_assets`，错误为 `youtube: 素材搜索失败：ERROR: Unable to download API page: [Errno 54] Connection reset by peer`。
+- 这次结果应记为“前后端交接链路成功，真实外部素材搜索失败”，而不是“联调完全成功”。
 
 ### 启动前端
 
