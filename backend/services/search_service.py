@@ -4,7 +4,7 @@ from typing import Dict, List, Optional
 
 from backend.models.agent import ClipInfo as AgentClipInfo, PlanScene
 from backend.models.task import Scene
-from backend.services.asset_providers.config import get_pexels_config, get_youtube_config
+from backend.services.asset_providers.config import get_asset_provider_order, get_pexels_config, get_youtube_config
 from backend.services.asset_providers.metadata import remember_clip_metadata
 from backend.services.asset_providers.pexels import download_pexels_candidate, search_pexels_candidates
 from backend.services.asset_providers.types import AssetCandidate, AssetDownload
@@ -201,21 +201,25 @@ async def search_and_download_agent_clips(
 
         keywords = build_scene_keywords(scene)
         provider_candidates: list[tuple[str, list[AssetCandidate]]] = []
+        for provider_name in get_asset_provider_order():
+            if provider_name == "youtube":
+                if not get_youtube_config().enabled:
+                    continue
+                try:
+                    provider_candidates.append(("youtube", search_youtube_candidates(keywords, max_results=3)))
+                except Exception as exc:
+                    provider_errors.append(("youtube", summarize_download_error(exc)))
+                continue
 
-        if get_youtube_config().enabled:
-            try:
-                provider_candidates.append(("youtube", search_youtube_candidates(keywords, max_results=3)))
-            except Exception as exc:
-                provider_errors.append(("youtube", summarize_download_error(exc)))
-
-        pexels_config = get_pexels_config()
-        if pexels_config.enabled and pexels_config.api_key:
-            try:
-                provider_candidates.append(("pexels", search_pexels_candidates(keywords, max_results=3)))
-            except Exception as exc:
-                provider_errors.append(("pexels", str(exc)))
-        elif pexels_config.enabled:
-            provider_errors.append(("pexels", "缺少 PEXELS_API_KEY，已跳过 Pexels 素材源"))
+            if provider_name == "pexels":
+                pexels_config = get_pexels_config()
+                if pexels_config.enabled and pexels_config.api_key:
+                    try:
+                        provider_candidates.append(("pexels", search_pexels_candidates(keywords, max_results=3)))
+                    except Exception as exc:
+                        provider_errors.append(("pexels", str(exc)))
+                elif pexels_config.enabled:
+                    provider_errors.append(("pexels", "缺少 PEXELS_API_KEY，已跳过 Pexels 素材源"))
 
         for provider_name, candidates in provider_candidates:
             if not candidates:

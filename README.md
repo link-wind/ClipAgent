@@ -137,6 +137,7 @@ npm run dev
 - `YTDLP_PO_TOKEN`：可选，yt-dlp YouTube PO Token 配置字符串。只有在本机已经按 yt-dlp 文档配置好 token 流程时再使用。
 - `YTDLP_IMPERSONATE`：可选，浏览器 TLS 指纹模拟值，例如 `chrome`。
 - `YTDLP_FORMAT`：可选，覆盖 yt-dlp 下载格式选择；默认优先 720p 左右的 MP4。
+- `CLIPFORGE_ASSET_PROVIDER_ORDER`：可选，素材源搜索顺序，默认 `youtube,pexels`。联调环境如果 YouTube 经常超时或反爬，可改成 `pexels,youtube`。
 - `PEXELS_PROVIDER_ENABLED`：可选，是否启用 Pexels 素材源；当 `PEXELS_API_KEY` 存在时默认启用。
 - `PEXELS_API_KEY`：Pexels API key，用于稳定搜索和下载公开视频素材。
 
@@ -164,11 +165,12 @@ pip install -r backend/requirements.txt --upgrade
 排查 provider 顺序或单独验证时，可以临时设置：
 
 ```bash
+CLIPFORGE_ASSET_PROVIDER_ORDER=pexels,youtube
 YTDLP_PROVIDER_ENABLED=false
 PEXELS_PROVIDER_ENABLED=true
 ```
 
-这会跳过 YouTube，只验证 Pexels 搜索、下载和渲染链路。反过来设置 `PEXELS_PROVIDER_ENABLED=false` 可以只验证 YouTube/yt-dlp 链路。
+这会优先走 Pexels，并且在上面示例里直接跳过 YouTube，只验证 Pexels 搜索、下载和渲染链路。反过来设置 `PEXELS_PROVIDER_ENABLED=false` 可以只验证 YouTube/yt-dlp 链路。
 
 ## 当前工作流
 

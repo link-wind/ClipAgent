@@ -2,6 +2,7 @@ import os
 from dataclasses import dataclass
 
 DEFAULT_YTDLP_FORMAT = "bestvideo[height<=720][ext=mp4]+bestaudio[ext=m4a]/best[height<=720][ext=mp4]/best[height<=720]"
+DEFAULT_ASSET_PROVIDER_ORDER = ["youtube", "pexels"]
 
 
 def env_flag(name: str, default: bool = False) -> bool:
@@ -17,6 +18,22 @@ def env_csv(name: str, default: list[str]) -> list[str]:
         return list(default)
     values = [part.strip() for part in raw_value.split(",") if part.strip()]
     return values or list(default)
+
+
+def get_asset_provider_order() -> list[str]:
+    configured = env_csv("CLIPFORGE_ASSET_PROVIDER_ORDER", DEFAULT_ASSET_PROVIDER_ORDER)
+    allowed = {"youtube", "pexels"}
+    ordered: list[str] = []
+
+    for provider in configured:
+        if provider in allowed and provider not in ordered:
+            ordered.append(provider)
+
+    for provider in DEFAULT_ASSET_PROVIDER_ORDER:
+        if provider not in ordered:
+            ordered.append(provider)
+
+    return ordered
 
 
 @dataclass(frozen=True)

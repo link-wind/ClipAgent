@@ -648,6 +648,116 @@ class AgentExecutionContractTests(unittest.TestCase):
         self.assertEqual(clips[0].sourceUrl, "https://www.pexels.com/video/demo-101/")
         self.assertEqual(clips[0].publicUrl, "/downloads/session_3_pexels_1.mp4")
 
+    def test_agent_download_prefers_default_youtube_provider_order(self):
+        from backend.models.agent import PlanScene
+        from backend.services import search_service
+        from backend.services.asset_providers.types import AssetCandidate, AssetDownload
+
+        scene = PlanScene(
+            id=3,
+            description="产品使用场景",
+            keywords=["product", "workflow"],
+            duration=6,
+            searchQuery="product workflow",
+        )
+        youtube_candidate = AssetCandidate(
+            provider="youtube",
+            id="good-youtube",
+            title="Good Youtube",
+            source_url="https://www.youtube.com/watch?v=good-youtube",
+            download_url="https://www.youtube.com/watch?v=good-youtube",
+            duration=12,
+        )
+        pexels_candidate = AssetCandidate(
+            provider="pexels",
+            id="101",
+            title="Pexels video 101",
+            source_url="https://www.pexels.com/video/demo-101/",
+            download_url="https://videos.pexels.com/101.mp4",
+            duration=14,
+        )
+
+        with patch("backend.services.search_service.search_youtube_candidates", return_value=[youtube_candidate]), patch(
+            "backend.services.search_service.search_pexels_candidates",
+            return_value=[pexels_candidate],
+        ), patch(
+            "backend.services.search_service.download_video",
+            new_callable=AsyncMock,
+            return_value="backend/downloads/session_3.mp4",
+        ) as mock_download, patch(
+            "backend.services.search_service.download_pexels_candidate",
+        ) as mock_pexels_download, patch(
+            "backend.services.search_service.get_pexels_config",
+        ) as mock_pexels_config:
+            mock_pexels_config.return_value.enabled = True
+            mock_pexels_config.return_value.api_key = "pexels-key"
+
+            clips = asyncio.run(search_service.search_and_download_agent_clips("session", [scene]))
+
+        self.assertEqual(len(clips), 1)
+        self.assertEqual(clips[0].sourceUrl, "https://www.youtube.com/watch?v=good-youtube")
+        self.assertEqual(mock_download.call_count, 1)
+        self.assertEqual(mock_pexels_download.call_count, 0)
+
+    def test_agent_download_respects_configured_provider_order(self):
+        from backend.models.agent import PlanScene
+        from backend.services import search_service
+        from backend.services.asset_providers.types import AssetCandidate, AssetDownload
+
+        scene = PlanScene(
+            id=3,
+            description="产品使用场景",
+            keywords=["product", "workflow"],
+            duration=6,
+            searchQuery="product workflow",
+        )
+        youtube_candidate = AssetCandidate(
+            provider="youtube",
+            id="good-youtube",
+            title="Good Youtube",
+            source_url="https://www.youtube.com/watch?v=good-youtube",
+            download_url="https://www.youtube.com/watch?v=good-youtube",
+            duration=12,
+        )
+        pexels_candidate = AssetCandidate(
+            provider="pexels",
+            id="101",
+            title="Pexels video 101",
+            source_url="https://www.pexels.com/video/demo-101/",
+            download_url="https://videos.pexels.com/101.mp4",
+            duration=14,
+        )
+
+        with patch.dict("os.environ", {"CLIPFORGE_ASSET_PROVIDER_ORDER": "pexels,youtube"}, clear=False), patch(
+            "backend.services.search_service.search_youtube_candidates",
+            return_value=[youtube_candidate],
+        ), patch(
+            "backend.services.search_service.search_pexels_candidates",
+            return_value=[pexels_candidate],
+        ), patch(
+            "backend.services.search_service.download_video",
+            new_callable=AsyncMock,
+            return_value="backend/downloads/session_3.mp4",
+        ) as mock_download, patch(
+            "backend.services.search_service.download_pexels_candidate",
+            return_value=AssetDownload(
+                local_path="backend/downloads/session_3_pexels_1.mp4",
+                public_url="/downloads/session_3_pexels_1.mp4",
+                metadata=pexels_candidate.to_metadata(),
+            ),
+        ) as mock_pexels_download, patch(
+            "backend.services.search_service.get_pexels_config",
+        ) as mock_pexels_config:
+            mock_pexels_config.return_value.enabled = True
+            mock_pexels_config.return_value.api_key = "pexels-key"
+
+            clips = asyncio.run(search_service.search_and_download_agent_clips("session", [scene]))
+
+        self.assertEqual(len(clips), 1)
+        self.assertEqual(clips[0].sourceUrl, "https://www.pexels.com/video/demo-101/")
+        self.assertEqual(mock_pexels_download.call_count, 1)
+        self.assertEqual(mock_download.call_count, 0)
+
     def test_all_provider_failure_surfaces_safe_summaries(self):
         from backend.models.agent import PlanScene
         from backend.services import search_service
