@@ -1089,6 +1089,83 @@ class AgentExecutionContractTests(unittest.TestCase):
 
         self.assertEqual(candidates, [])
 
+    def test_fixture_download_copies_asset_into_backend_downloads(self):
+        import json
+        from pathlib import Path
+        from tempfile import TemporaryDirectory
+
+        from backend.services.asset_providers import fixture as fixture_provider
+        from backend.services.asset_providers.fixture import download_fixture_candidate, search_fixture_candidates
+
+        with TemporaryDirectory() as tmpdir:
+            temp_root = Path(tmpdir)
+            fixtures_dir = temp_root / "fixtures"
+            downloads_dir = temp_root / "backend" / "downloads"
+            fixtures_dir.mkdir(parents=True)
+            downloads_dir.mkdir(parents=True)
+            (fixtures_dir / "videos.json").write_text(
+                json.dumps(
+                    [
+                        {
+                            "id": "vid_001",
+                            "title": "城市黄昏车流",
+                            "description": "傍晚城市街道，车流穿梭，霓虹初上",
+                            "duration": 45,
+                            "tags": ["城市", "黄昏", "车流", "夜景"],
+                            "thumbnailUrl": "/fixtures/thumbnails/vid_001.jpg",
+                            "videoUrl": "/fixtures/vid_001.mp4",
+                        }
+                    ]
+                ),
+                encoding="utf-8",
+            )
+            source_path = fixtures_dir / "vid_001.mp4"
+            source_bytes = b"fixture-mp4-bytes"
+            source_path.write_bytes(source_bytes)
+
+            with patch.object(fixture_provider, "ROOT_DIR", temp_root), patch.object(
+                fixture_provider,
+                "DOWNLOADS_DIR",
+                str(downloads_dir),
+            ), patch.dict("os.environ", {}, clear=True):
+                candidate = search_fixture_candidates(["城市", "车流"], max_results=1)[0]
+                download = download_fixture_candidate("session", candidate, 1, "session_1_fixture_1.mp4")
+
+            self.assertTrue(download.local_path.endswith("backend/downloads/session_1_fixture_1.mp4"))
+            self.assertEqual(download.public_url, "/downloads/session_1_fixture_1.mp4")
+            self.assertIn("provider", download.metadata)
+            self.assertEqual(Path(download.local_path).read_bytes(), source_bytes)
+
+    def test_fixture_download_raises_clear_error_when_source_file_missing(self):
+        from pathlib import Path
+        from tempfile import TemporaryDirectory
+
+        from backend.services.asset_providers import fixture as fixture_provider
+        from backend.services.asset_providers.fixture import download_fixture_candidate
+        from backend.services.asset_providers.types import AssetCandidate
+
+        candidate = AssetCandidate(
+            provider="fixture",
+            id="missing",
+            title="missing",
+            source_url="/fixtures/missing.mp4",
+            download_url="/fixtures/missing.mp4",
+            duration=10,
+        )
+
+        with TemporaryDirectory() as tmpdir:
+            temp_root = Path(tmpdir)
+            downloads_dir = temp_root / "backend" / "downloads"
+            downloads_dir.mkdir(parents=True)
+
+            with patch.object(fixture_provider, "ROOT_DIR", temp_root), patch.object(
+                fixture_provider,
+                "DOWNLOADS_DIR",
+                str(downloads_dir),
+            ):
+                with self.assertRaisesRegex(RuntimeError, "本地素材文件不存在"):
+                    download_fixture_candidate("session", candidate, 1, "missing.mp4")
+
     def test_pexels_search_maps_api_response_to_candidates(self):
         import json
         from unittest.mock import MagicMock

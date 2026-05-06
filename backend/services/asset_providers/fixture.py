@@ -1,11 +1,14 @@
 import json
+import os
+import shutil
 from pathlib import Path
 
 from backend.services.asset_providers.config import get_fixture_config
-from backend.services.asset_providers.types import AssetCandidate
+from backend.services.asset_providers.types import AssetCandidate, AssetDownload
 
 
 ROOT_DIR = Path(__file__).resolve().parents[3]
+DOWNLOADS_DIR = "backend/downloads"
 
 
 def load_fixture_library() -> list[dict]:
@@ -76,3 +79,35 @@ def search_fixture_candidates(keywords, max_results=5) -> list[AssetCandidate]:
             )
         )
     return candidates
+
+
+def resolve_fixture_source_path(source_url: str) -> Path:
+    relative_path = source_url.lstrip("/")
+    return ROOT_DIR / relative_path
+
+
+def download_fixture_candidate(
+    session_id: str,
+    candidate: AssetCandidate,
+    scene_id: int,
+    output_filename: str,
+) -> AssetDownload:
+    del session_id, scene_id
+
+    source_url = candidate.download_url or candidate.source_url
+    if not source_url:
+        raise RuntimeError("Fixture 下载失败：候选素材缺少本地文件路径")
+
+    source_path = resolve_fixture_source_path(source_url)
+    if not source_path.is_file():
+        raise RuntimeError(f"Fixture 下载失败：本地素材文件不存在: {source_path}")
+
+    os.makedirs(DOWNLOADS_DIR, exist_ok=True)
+    output_path = os.path.join(DOWNLOADS_DIR, output_filename)
+    shutil.copyfile(source_path, output_path)
+
+    return AssetDownload(
+        local_path=output_path,
+        public_url=f"/downloads/{output_filename}",
+        metadata=candidate.to_metadata(),
+    )
