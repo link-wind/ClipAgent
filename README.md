@@ -131,6 +131,14 @@ npm run dev
 - `CELERY_BROKER_URL`：Celery Broker 地址。
 - `CELERY_RESULT_BACKEND`：Celery 结果后端地址。
 - `CLIPFORGE_CELERY_QUEUE`：Celery 默认队列名，默认 `clipforge-agent`。
+- `YTDLP_PROVIDER_ENABLED`：可选，是否启用 YouTube/yt-dlp 素材源，默认启用。
+- `YTDLP_COOKIES_FILE`：可选，Netscape cookies 文件路径，用于 YouTube 要求登录或验证时的本地联调。只配置路径，不提交 cookie 文件。
+- `YTDLP_PLAYER_CLIENTS`：可选，yt-dlp YouTube client 顺序，默认 `mweb,web_safari,web`。
+- `YTDLP_PO_TOKEN`：可选，yt-dlp YouTube PO Token 配置字符串。只有在本机已经按 yt-dlp 文档配置好 token 流程时再使用。
+- `YTDLP_IMPERSONATE`：可选，浏览器 TLS 指纹模拟值，例如 `chrome`。
+- `YTDLP_FORMAT`：可选，覆盖 yt-dlp 下载格式选择；默认优先 720p 左右的 MP4。
+- `PEXELS_PROVIDER_ENABLED`：可选，是否启用 Pexels 素材源；当 `PEXELS_API_KEY` 存在时默认启用。
+- `PEXELS_API_KEY`：Pexels API key，用于稳定搜索和下载公开视频素材。
 
 本机需要可执行的 FFmpeg，后端需要能访问公开视频平台，yt-dlp 才能完成真实素材搜索和下载。
 
@@ -142,7 +150,25 @@ pip install -r backend/requirements.txt --upgrade
 
 项目已加入 `yt-dlp-ejs` 和 `curl-cffi`，用于提升 YouTube JS 解析和网络客户端兼容性。
 
-本机还需要能在命令行运行 `node --version`。如果日志出现 `GVS PO Token` 或 `Only images are available for download`，说明 YouTube 对当前视频或当前网络环境要求额外 Cookie/PO Token；这种情况下 Agent 会尝试其它候选视频，但 YouTube 仍可能整体不可用。稳定生产链路建议再接入 Pexels/Pixabay/本地素材池作为备用素材源。
+本机还需要能在命令行运行 `node --version`。如果日志出现 `GVS PO Token`、`Only images are available for download` 或 `Sign in to confirm you’re not a bot`，说明 YouTube 对当前视频、账号、客户端或网络环境要求额外 Cookie/PO Token。可以先尝试：
+
+1. 升级后端依赖：`pip install -r backend/requirements.txt --upgrade`。
+2. 配置 `YTDLP_COOKIES_FILE` 指向本机导出的 Netscape cookies 文件。
+3. 按 yt-dlp 官方文档配置 PO Token 后填写 `YTDLP_PO_TOKEN`。
+4. 用 `YTDLP_PLAYER_CLIENTS` 或 `YTDLP_IMPERSONATE` 调整本地联调环境。
+
+这些配置只能降低 YouTube 失败概率，不能保证 YouTube 永久稳定。生产和稳定联调建议配置 `PEXELS_API_KEY`，让 worker 在 YouTube 失败后继续尝试 Pexels。Pexels 视频搜索使用官方 `https://api.pexels.com/v1/videos/search` endpoint，并通过 `Authorization` header 传入 API key。
+
+失败任务会保留素材源诊断信息。看到 `youtube: ...`、`pexels: ...` 这类错误时，先确认对应 provider 的环境变量和外部网络，再决定是否禁用某个 provider 做单独排查。
+
+排查 provider 顺序或单独验证时，可以临时设置：
+
+```bash
+YTDLP_PROVIDER_ENABLED=false
+PEXELS_PROVIDER_ENABLED=true
+```
+
+这会跳过 YouTube，只验证 Pexels 搜索、下载和渲染链路。反过来设置 `PEXELS_PROVIDER_ENABLED=false` 可以只验证 YouTube/yt-dlp 链路。
 
 ## 当前工作流
 
