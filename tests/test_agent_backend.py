@@ -1058,6 +1058,37 @@ class AgentExecutionContractTests(unittest.TestCase):
         self.assertIn("videoUrl", library[0])
         self.assertIn("thumbnailUrl", library[0])
 
+    def test_fixture_search_returns_normalized_candidates(self):
+        from backend.services.asset_providers.fixture import search_fixture_candidates
+
+        with patch.dict("os.environ", {}, clear=True):
+            candidates = search_fixture_candidates(["  城市 ", "夜景"], max_results=3)
+
+        self.assertEqual(len(candidates), 1)
+        candidate = candidates[0]
+        self.assertEqual(candidate.provider, "fixture")
+        self.assertEqual(candidate.id, "vid_001")
+        self.assertEqual(candidate.title, "城市黄昏车流")
+        self.assertEqual(candidate.source_url, "/fixtures/vid_001.mp4")
+        self.assertEqual(candidate.download_url, "/fixtures/vid_001.mp4")
+        self.assertEqual(candidate.thumbnail, "/fixtures/thumbnails/vid_001.jpg")
+        self.assertEqual(candidate.duration, 45)
+        self.assertEqual(
+            candidate.diagnostics,
+            {
+                "score": 2,
+                "matchedKeywords": ["城市", "夜景"],
+            },
+        )
+
+    def test_fixture_search_returns_empty_list_when_no_match(self):
+        from backend.services.asset_providers.fixture import search_fixture_candidates
+
+        with patch.dict("os.environ", {}, clear=True):
+            candidates = search_fixture_candidates(["沙漠", "极光"], max_results=5)
+
+        self.assertEqual(candidates, [])
+
     def test_pexels_search_maps_api_response_to_candidates(self):
         import json
         from unittest.mock import MagicMock
