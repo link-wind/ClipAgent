@@ -103,7 +103,9 @@ Expected:
 - `npm run build` 退出码 0；`node scripts/check-product-pages.mjs` 输出 `product page checks passed`。
 - 记录到的 warning/诊断：SQLAlchemy `datetime.utcnow()` DeprecationWarning；测试路径中出现 YouTube PO Token 下载跳过诊断。
 
-- [ ] **Step 5: 提交基线验证结论（仅当本任务实际修改了文档或测试时）**
+- [x] **Step 5: 提交基线验证结论（仅当本任务实际修改了文档或测试时）**
+
+执行结果：已提交 commit `6033a9c test: lock p0 workflow hardening baseline`。
 
 ```bash
 git add tests/test_agent_backend.py README.md docs/superpowers/specs/2026-05-06-p0-workflow-hardening-design.md docs/superpowers/plans/2026-05-06-p0-workflow-hardening.md
