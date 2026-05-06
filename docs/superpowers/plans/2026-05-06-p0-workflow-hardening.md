@@ -44,7 +44,7 @@
 - Verify: `backend/services/agent_step_snapshot_service.py`
 - Verify: `scripts/check-product-pages.mjs`
 
-- [ ] **Step 1: 运行 workspace 与 tasks 关键前端契约测试**
+- [x] **Step 1: 运行 workspace 与 tasks 关键前端契约测试**
 
 Run:
 
@@ -60,7 +60,7 @@ Run:
 
 Expected: PASS。
 
-- [ ] **Step 2: 运行后端 provider 与失败映射相关测试**
+- [x] **Step 2: 运行后端 provider 与失败映射相关测试**
 
 Run:
 
@@ -73,7 +73,7 @@ Run:
 
 Expected: PASS。
 
-- [ ] **Step 3: 运行完整测试、生产构建与结构检查**
+- [x] **Step 3: 运行完整测试、生产构建与结构检查**
 
 Run:
 
@@ -89,7 +89,7 @@ Expected:
 - build: exit code 0
 - structural check: `product page checks passed`
 
-- [ ] **Step 4: 记录当前基线结论**
+- [x] **Step 4: 记录当前基线结论**
 
 在执行笔记中明确记录：
 
@@ -97,6 +97,11 @@ Expected:
 - `/tasks` B1 列表 + 弹窗详情当前已具备
 - provider order 当前支持 `pexels,youtube`
 - 当前仍待验证的是“真实本地环境下是否稳定跑通”
+
+执行结果（2026-05-06）：
+- workspace/tasks 前端契约测试 6 项通过；provider/失败映射相关测试 3 项通过；完整 `tests.test_agent_backend` 66 项通过。
+- `npm run build` 退出码 0；`node scripts/check-product-pages.mjs` 输出 `product page checks passed`。
+- 记录到的 warning/诊断：SQLAlchemy `datetime.utcnow()` DeprecationWarning；测试路径中出现 YouTube PO Token 下载跳过诊断。
 
 - [ ] **Step 5: 提交基线验证结论（仅当本任务实际修改了文档或测试时）**
 
