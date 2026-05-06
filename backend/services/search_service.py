@@ -165,7 +165,17 @@ def build_scene_keywords(scene: PlanScene) -> List[str]:
 def provider_failure_message(provider_errors: list[tuple[str, str]]) -> str:
     if not provider_errors:
         return "没有下载到可用素材"
-    return "；".join(f"{provider}: {message}" for provider, message in provider_errors if message)
+    summaries: list[str] = []
+    seen: set[tuple[str, str]] = set()
+    for provider, message in provider_errors:
+        if not message:
+            continue
+        key = (provider, message)
+        if key in seen:
+            continue
+        seen.add(key)
+        summaries.append(f"{provider}: {message}")
+    return "；".join(summaries) if summaries else "没有下载到可用素材"
 
 
 async def download_asset_candidate(
@@ -219,6 +229,7 @@ async def search_and_download_agent_clips(
                         provider_errors.append(("pexels", str(exc)))
                 elif pexels_config.enabled:
                     provider_errors.append(("pexels", "缺少 PEXELS_API_KEY，已跳过 Pexels 素材源"))
+                    continue
             if not candidates:
                 provider_errors.append((provider_name, "没有返回候选素材"))
                 continue
