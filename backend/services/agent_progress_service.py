@@ -7,6 +7,21 @@ from backend.db.repositories import (
     AgentSessionRepository,
 )
 
+MAX_CURRENT_STEP_LENGTH = 128
+FAILED_STEP_PREFIX = "处理失败："
+
+
+def _format_failed_current_step(message: str) -> str:
+    current_step = f"{FAILED_STEP_PREFIX}{message}"
+    if len(current_step) <= MAX_CURRENT_STEP_LENGTH:
+        return current_step
+
+    ellipsis = "..."
+    available_length = MAX_CURRENT_STEP_LENGTH - len(FAILED_STEP_PREFIX) - len(ellipsis)
+    if available_length <= 0:
+        return FAILED_STEP_PREFIX[:MAX_CURRENT_STEP_LENGTH]
+    return f"{FAILED_STEP_PREFIX}{message[:available_length]}{ellipsis}"
+
 
 class AgentProgressService:
     def __init__(self, db_session):
@@ -157,16 +172,17 @@ class AgentProgressService:
 
     def mark_job_failed(self, session_id: str, job_id: str, message: str, retryable_step: str):
         # 标记任务失败
+        current_step = _format_failed_current_step(message)
         self.job_repo.update_status(
             job_id,
             status="failed",
-            current_step=f"处理失败：{message}",
+            current_step=current_step,
             finished_at=datetime.utcnow(),
             error_message=message,
         )
         session_record = self.session_repo.get(session_id)
         session_record.status = "failed"
-        session_record.current_step = f"处理失败：{message}"
+        session_record.current_step = current_step
         session_record.error_message = message
         session_record.error_retryable_step = retryable_step
         self.record_event(

@@ -11,6 +11,10 @@ from backend.services.asset_providers.types import AssetCandidate, AssetDownload
 DOWNLOADS_DIR = "backend/downloads"
 
 PEXELS_VIDEO_SEARCH_URL = "https://api.pexels.com/v1/videos/search"
+PEXELS_REQUEST_HEADERS = {
+    "Accept": "application/json",
+    "User-Agent": "ClipForge/1.0",
+}
 
 
 def search_pexels_candidates(keywords: list[str], max_results: int = 5) -> list[AssetCandidate]:
@@ -31,7 +35,10 @@ def search_pexels_candidates(keywords: list[str], max_results: int = 5) -> list[
     )
     request = urllib.request.Request(
         f"{PEXELS_VIDEO_SEARCH_URL}?{params}",
-        headers={"Authorization": config.api_key},
+        headers={
+            **PEXELS_REQUEST_HEADERS,
+            "Authorization": config.api_key,
+        },
     )
 
     try:
@@ -106,7 +113,10 @@ def download_pexels_candidate(
 
     os.makedirs(DOWNLOADS_DIR, exist_ok=True)
     output_path = os.path.join(DOWNLOADS_DIR, output_filename)
-    request = urllib.request.Request(candidate.download_url, headers={"User-Agent": "ClipForge/1.0"})
+    request = urllib.request.Request(
+        candidate.download_url,
+        headers=PEXELS_REQUEST_HEADERS,
+    )
 
     try:
         with urllib.request.urlopen(request, timeout=60) as response:

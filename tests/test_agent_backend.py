@@ -835,6 +835,8 @@ class AgentExecutionContractTests(unittest.TestCase):
 
         request = mock_urlopen.call_args.args[0]
         self.assertEqual(request.headers["Authorization"], "pexels-key")
+        self.assertEqual(request.headers["Accept"], "application/json")
+        self.assertEqual(request.headers["User-agent"], "ClipForge/1.0")
         self.assertIn("/v1/videos/search", request.full_url)
         self.assertIn("orientation=portrait", request.full_url)
         self.assertEqual(len(candidates), 1)

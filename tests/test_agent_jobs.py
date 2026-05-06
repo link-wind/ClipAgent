@@ -1164,6 +1164,37 @@ class AgentExecutionWorkerTests(unittest.TestCase):
         self.assertEqual(session.error.message, "素材检索失败")
         self.assertEqual(session.currentStep, "处理失败：素材检索失败")
 
+    def test_run_agent_job_truncates_failed_current_step_but_keeps_full_error_message(self):
+        from backend.db.repositories import AgentJobRepository
+        from backend.models.agent import AgentStatus
+        from backend.services.agent_read_service import AgentReadService
+        from backend.tasks.agent_tasks import run_agent_job
+
+        session_id, job_id = self._create_queued_job()
+        long_error_message = "Pexels 搜索失败：" + ("HTTP 403 error code: 1010；" * 12)
+
+        async def failing_search_runner(_session_id, _scenes):
+            raise RuntimeError(long_error_message)
+
+        with patch("backend.tasks.agent_tasks.SessionLocal", self.session_factory), patch(
+            "backend.tasks.agent_tasks.search_and_download_agent_clips",
+            failing_search_runner,
+        ):
+            run_agent_job(job_id)
+
+        with self.session_factory() as db:
+            job_record = AgentJobRepository(db).get(job_id)
+            self.assertEqual(job_record.status, "failed")
+            self.assertEqual(job_record.error_message, long_error_message)
+            self.assertLessEqual(len(job_record.current_step), 128)
+            self.assertTrue(job_record.current_step.startswith("处理失败："))
+
+        session = AgentReadService(session_factory=self.session_factory).read_session(session_id)
+        self.assertEqual(session.status, AgentStatus.FAILED)
+        self.assertEqual(session.error.message, long_error_message)
+        self.assertLessEqual(len(session.currentStep), 128)
+        self.assertTrue(session.currentStep.startswith("处理失败："))
+
     def test_run_agent_job_persists_failure_state_when_render_service_import_fails(self):
         from backend.db.repositories import AgentEventRepository, AgentJobRepository
         from backend.models.agent import AgentStatus
