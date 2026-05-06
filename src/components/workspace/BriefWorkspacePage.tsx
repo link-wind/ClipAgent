@@ -1,6 +1,6 @@
 'use client';
 
-import { FormEvent, KeyboardEvent, useEffect, useMemo, useState } from 'react';
+import { FormEvent, KeyboardEvent, useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import ProductShell from '@/components/layout/ProductShell';
 import Button from '@/components/common/Button';
@@ -258,6 +258,12 @@ export default function BriefWorkspacePage() {
   const [message, setMessage] = useState('');
   const [errorText, setErrorText] = useState('');
   const [selectedDirection, setSelectedDirection] = useState('');
+  const [restoredSessionId, setRestoredSessionId] = useState<string | null>(null);
+  const [hasAppliedRestoreJump, setHasAppliedRestoreJump] = useState(false);
+  const executionSectionRef = useRef<HTMLElement | null>(null);
+  const resultSectionRef = useRef<HTMLElement | null>(null);
+  const failureSectionRef = useRef<HTMLElement | null>(null);
+  const textareaRef = useRef<HTMLTextAreaElement | null>(null);
 
   useEffect(() => {
     if (!activeSessionId || session) {
@@ -274,6 +280,8 @@ export default function BriefWorkspacePage() {
         ]);
         if (isActive) {
           setSession({ ...nextSession, events: nextEvents });
+          setRestoredSessionId(activeSessionId);
+          setHasAppliedRestoreJump(false);
         }
       } catch {
         // 恢复失败时保持当前空白状态。
@@ -286,6 +294,17 @@ export default function BriefWorkspacePage() {
       isActive = false;
     };
   }, [activeSessionId, session, setSession]);
+
+  useEffect(() => {
+    if (!session?.id || !restoredSessionId) {
+      return;
+    }
+
+    if (session.id !== restoredSessionId) {
+      setRestoredSessionId(null);
+      setHasAppliedRestoreJump(false);
+    }
+  }, [restoredSessionId, session?.id]);
 
   useEffect(() => {
     setSelectedDirection('');
@@ -384,6 +403,10 @@ export default function BriefWorkspacePage() {
     }
   };
 
+  const focusComposer = () => {
+    textareaRef.current?.focus();
+  };
+
   const sessionMessages = session?.messages ?? [];
   const userMessages = sessionMessages.filter((item) => item.role === 'user');
   const assistantMessages = sessionMessages.filter((item) => item.role === 'assistant');
@@ -435,6 +458,22 @@ export default function BriefWorkspacePage() {
     setSelectedDirection('');
   }, [session?.id, generateOptionsStateSignature]);
 
+  useEffect(() => {
+    if (!restoredSessionId || hasAppliedRestoreJump || session?.id !== restoredSessionId) {
+      return;
+    }
+
+    const target =
+      (resultUrl ? resultSectionRef.current : null) ||
+      (session?.error || failedStep ? failureSectionRef.current : null) ||
+      (showExecutionHandoff ? executionSectionRef.current : null);
+
+    if (target) {
+      target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+    setHasAppliedRestoreJump(true);
+  }, [failedStep, hasAppliedRestoreJump, restoredSessionId, resultUrl, session?.error, session?.id, showExecutionHandoff]);
+
   return (
     <ProductShell>
       <div className="min-h-full px-4 py-4 sm:px-5">
@@ -463,6 +502,42 @@ export default function BriefWorkspacePage() {
         </header>
 
         <main className="mx-auto mt-5 grid w-full max-w-[980px] gap-4" aria-label="方案工作区">
+          {restoredSessionId && session?.id === restoredSessionId ? (
+            <section className="grid gap-3 rounded-lg border border-border bg-white p-4 shadow-soft sm:flex sm:items-center sm:justify-between" aria-label="恢复的方案会话">
+              <div className="min-w-0">
+                <h2 className="text-base font-semibold text-ink">已恢复到当前方案会话</h2>
+                <p className="mt-1 text-sm leading-6 text-secondary">你可以继续查看执行进度、回到任务列表，或补充新的方案修改意见。</p>
+                <div className="mt-3 flex flex-wrap gap-2 text-sm text-secondary">
+                  <span className="rounded-lg border border-border bg-slate-50 px-3 py-1.5">
+                    <span className="font-semibold text-ink">当前状态：</span>
+                    {getWorkspaceStatus(session)}
+                  </span>
+                  {session?.activeJobId ? (
+                    <span className="rounded-lg border border-border bg-slate-50 px-3 py-1.5 [overflow-wrap:anywhere]">
+                      <span className="font-semibold text-ink">Job ID：</span>
+                      {session.activeJobId}
+                    </span>
+                  ) : null}
+                </div>
+              </div>
+              <div className="flex flex-wrap gap-2.5">
+                <Link
+                  href="/tasks"
+                  className="inline-flex min-h-10 items-center justify-center rounded-lg border border-border bg-white px-4 text-sm font-semibold text-ink transition hover:bg-slate-50"
+                >
+                  查看任务列表
+                </Link>
+                <button
+                  type="button"
+                  className="inline-flex min-h-10 items-center justify-center rounded-lg bg-ink px-4 text-sm font-semibold text-white transition hover:bg-slate-800"
+                  onClick={focusComposer}
+                >
+                  继续补充方案
+                </button>
+              </div>
+            </section>
+          ) : null}
+
           <section className="overflow-hidden rounded-lg border border-border bg-white shadow-soft" aria-label="方案沟通">
             <div className="flex flex-col gap-3 border-b border-bordersoft px-5 py-4 min-[861px]:flex-row min-[861px]:items-start min-[861px]:justify-between">
               <div>
@@ -681,7 +756,7 @@ export default function BriefWorkspacePage() {
             </section>
 
             {showExecutionHandoff ? (
-              <section className="mx-5 mb-5 grid gap-3 rounded-lg border border-border bg-[#fbfcfa] p-4" aria-label="执行交接">
+              <section ref={executionSectionRef} className="mx-5 mb-5 grid gap-3 rounded-lg border border-border bg-[#fbfcfa] p-4" aria-label="执行交接">
                 <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                   <div>
                     <span className="text-xs font-bold uppercase tracking-[0.02em] text-secondary">执行交接</span>
@@ -726,7 +801,7 @@ export default function BriefWorkspacePage() {
             ) : null}
 
             {resultUrl ? (
-              <section className="mx-5 mb-5 grid gap-3 rounded-lg border border-border bg-white p-4" aria-label="结果预览">
+              <section ref={resultSectionRef} className="mx-5 mb-5 grid gap-3 rounded-lg border border-border bg-white p-4" aria-label="结果预览">
                 <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                   <div>
                     <span className="text-xs font-bold uppercase tracking-[0.02em] text-secondary">结果预览</span>
@@ -746,6 +821,7 @@ export default function BriefWorkspacePage() {
 
             {session?.error || failedStep ? (
               <section
+                ref={failureSectionRef}
                 className="mx-5 mb-5 rounded-lg border border-[#f5c2c7] bg-[#fff7f7] p-4 text-sm text-[#8b1f2d]"
                 aria-label="失败步骤"
               >
@@ -776,6 +852,7 @@ export default function BriefWorkspacePage() {
 
             <form className="grid gap-3 border-t border-bordersoft bg-[#fcfdfb] p-4" onSubmit={submitMessage}>
               <textarea
+                ref={textareaRef}
                 value={message}
                 onChange={(event) => setMessage(event.target.value)}
                 onKeyDown={submitMessageFromKeyboard}

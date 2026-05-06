@@ -758,6 +758,54 @@ class AgentExecutionContractTests(unittest.TestCase):
         self.assertEqual(mock_pexels_download.call_count, 1)
         self.assertEqual(mock_download.call_count, 0)
 
+    def test_agent_download_stops_searching_after_first_provider_returns_candidates(self):
+        from backend.models.agent import PlanScene
+        from backend.services import search_service
+        from backend.services.asset_providers.types import AssetCandidate, AssetDownload
+
+        scene = PlanScene(
+            id=3,
+            description="产品使用场景",
+            keywords=["product", "workflow"],
+            duration=6,
+            searchQuery="product workflow",
+        )
+        pexels_candidate = AssetCandidate(
+            provider="pexels",
+            id="101",
+            title="Pexels video 101",
+            source_url="https://www.pexels.com/video/demo-101/",
+            download_url="https://videos.pexels.com/101.mp4",
+            duration=14,
+        )
+
+        with patch.dict("os.environ", {"CLIPFORGE_ASSET_PROVIDER_ORDER": "pexels,youtube"}, clear=False), patch(
+            "backend.services.search_service.search_pexels_candidates",
+            return_value=[pexels_candidate],
+        ) as mock_pexels_search, patch(
+            "backend.services.search_service.search_youtube_candidates",
+            side_effect=AssertionError("should not search fallback provider after first provider returns candidates"),
+        ) as mock_youtube_search, patch(
+            "backend.services.search_service.download_pexels_candidate",
+            return_value=AssetDownload(
+                local_path="backend/downloads/session_3_pexels_1.mp4",
+                public_url="/downloads/session_3_pexels_1.mp4",
+                metadata=pexels_candidate.to_metadata(),
+            ),
+        ) as mock_pexels_download, patch(
+            "backend.services.search_service.get_pexels_config",
+        ) as mock_pexels_config:
+            mock_pexels_config.return_value.enabled = True
+            mock_pexels_config.return_value.api_key = "pexels-key"
+
+            clips = asyncio.run(search_service.search_and_download_agent_clips("session", [scene]))
+
+        self.assertEqual(len(clips), 1)
+        self.assertEqual(clips[0].sourceUrl, "https://www.pexels.com/video/demo-101/")
+        self.assertEqual(mock_pexels_search.call_count, 1)
+        self.assertEqual(mock_pexels_download.call_count, 1)
+        self.assertEqual(mock_youtube_search.call_count, 0)
+
     def test_all_provider_failure_surfaces_safe_summaries(self):
         from backend.models.agent import PlanScene
         from backend.services import search_service
@@ -1139,6 +1187,127 @@ class FrontendClientContractTests(unittest.TestCase):
         self.assertIn("查看任务详情", workspace_source)
         self.assertIn("结果预览", workspace_source)
         self.assertIn("失败步骤", workspace_source)
+
+    def test_workspace_restore_experience_renders_resume_actions(self):
+        workspace_source = (ROOT / "src" / "components" / "workspace" / "BriefWorkspacePage.tsx").read_text(
+            encoding="utf-8"
+        )
+
+        self.assertIn("restoredSessionId", workspace_source)
+        self.assertIn("setRestoredSessionId(activeSessionId)", workspace_source)
+        self.assertIn("已恢复到当前方案会话", workspace_source)
+        self.assertIn("当前状态：", workspace_source)
+        self.assertIn("getWorkspaceStatus(session)", workspace_source)
+        self.assertIn("session?.activeJobId", workspace_source)
+        self.assertIn("查看任务列表", workspace_source)
+        self.assertIn("href=\"/tasks\"", workspace_source)
+        self.assertIn("继续补充方案", workspace_source)
+        self.assertIn("focusComposer", workspace_source)
+        self.assertIn("textareaRef", workspace_source)
+
+    def test_workspace_restore_experience_can_jump_to_result_failure_or_execution(self):
+        workspace_source = (ROOT / "src" / "components" / "workspace" / "BriefWorkspacePage.tsx").read_text(
+            encoding="utf-8"
+        )
+
+        self.assertIn("hasAppliedRestoreJump", workspace_source)
+        self.assertIn("executionSectionRef", workspace_source)
+        self.assertIn("resultSectionRef", workspace_source)
+        self.assertIn("failureSectionRef", workspace_source)
+        self.assertIn("resultSectionRef.current", workspace_source)
+        self.assertIn("failureSectionRef.current", workspace_source)
+        self.assertIn("executionSectionRef.current", workspace_source)
+        self.assertIn("scrollIntoView({ behavior: 'smooth', block: 'start' })", workspace_source)
+        self.assertIn("setHasAppliedRestoreJump(true)", workspace_source)
+
+    def test_tasks_concept_pages_share_mock_data_and_cover_three_layouts(self):
+        concepts_index = (ROOT / "src" / "app" / "tasks" / "concepts" / "page.tsx").read_text(encoding="utf-8")
+        b1_source = (ROOT / "src" / "app" / "tasks" / "concepts" / "b1" / "page.tsx").read_text(
+            encoding="utf-8"
+        )
+        b2_source = (ROOT / "src" / "app" / "tasks" / "concepts" / "b2" / "page.tsx").read_text(
+            encoding="utf-8"
+        )
+        b3_source = (ROOT / "src" / "app" / "tasks" / "concepts" / "b3" / "page.tsx").read_text(
+            encoding="utf-8"
+        )
+        mock_source = (ROOT / "src" / "components" / "tasks" / "concepts" / "mockTaskConceptData.ts").read_text(
+            encoding="utf-8"
+        )
+
+        self.assertIn("/tasks/concepts/b1", concepts_index)
+        self.assertIn("/tasks/concepts/b2", concepts_index)
+        self.assertIn("/tasks/concepts/b3", concepts_index)
+        self.assertIn("taskConceptSummaries", b1_source)
+        self.assertIn("taskConceptSummaries", b2_source)
+        self.assertIn("taskConceptSummaries", b3_source)
+        self.assertIn("列表 + 弹窗详情", b1_source)
+        self.assertIn("列表 + 右侧详情面板", b2_source)
+        self.assertIn("独立详情页", b3_source)
+        self.assertIn("videoUrl", mock_source)
+        self.assertIn("clips", mock_source)
+        self.assertIn("events", mock_source)
+        self.assertIn("steps", mock_source)
+
+    def test_tasks_page_is_tailwind_based(self):
+        tasks_source = (ROOT / "src" / "components" / "tasks" / "TaskManagerPage.tsx").read_text(
+            encoding="utf-8"
+        )
+
+        self.assertNotIn("TaskManagerPage.module.css", tasks_source)
+        self.assertNotIn("styles.", tasks_source)
+        self.assertIn("className=\"grid min-w-0 gap-4", tasks_source)
+        self.assertIn("aria-label=\"任务列表\"", tasks_source)
+
+    def test_tasks_modal_renders_b1_sections(self):
+        tasks_source = (ROOT / "src" / "components" / "tasks" / "TaskManagerPage.tsx").read_text(
+            encoding="utf-8"
+        )
+
+        self.assertIn("列表 + 弹窗详情", tasks_source)
+        self.assertIn("任务详情", tasks_source)
+        self.assertIn("状态摘要", tasks_source)
+        self.assertIn("标准步骤", tasks_source)
+        self.assertIn("事件时间线", tasks_source)
+        self.assertIn("素材与结果", tasks_source)
+        self.assertIn("activeTask.videoUrl", tasks_source)
+        self.assertIn("activeTask.clips", tasks_source)
+
+    def test_tasks_modal_actions_wire_refresh_and_workspace_jump(self):
+        tasks_source = (ROOT / "src" / "components" / "tasks" / "TaskManagerPage.tsx").read_text(
+            encoding="utf-8"
+        )
+
+        self.assertIn("const [isRefreshingTaskDetail, setIsRefreshingTaskDetail] = useState(false);", tasks_source)
+        self.assertIn("setActiveSessionId(activeTask.sessionId);", tasks_source)
+        self.assertIn("router.push('/workspace');", tasks_source)
+        self.assertIn("刷新中", tasks_source)
+
+    def test_tasks_workspace_jump_clears_session_before_setting_active_session(self):
+        tasks_source = (ROOT / "src" / "components" / "tasks" / "TaskManagerPage.tsx").read_text(
+            encoding="utf-8"
+        )
+
+        self.assertIn("setSession(null);", tasks_source)
+        self.assertIn("setActiveSessionId(activeTask.sessionId);", tasks_source)
+        self.assertLess(tasks_source.index("setSession(null);"), tasks_source.index("setActiveSessionId(activeTask.sessionId);"))
+
+    def test_tasks_retry_action_is_disabled_with_guidance_copy(self):
+        tasks_source = (ROOT / "src" / "components" / "tasks" / "TaskManagerPage.tsx").read_text(
+            encoding="utf-8"
+        )
+
+        self.assertIn("任务级重新执行暂未开放，请返回方案页重新发起。", tasks_source)
+        self.assertIn("disabled", tasks_source)
+        self.assertIn("activeTask.status === 'failed' || activeTask.status === 'error'", tasks_source)
+
+    def test_tasks_list_rows_do_not_render_active_retry_action(self):
+        tasks_source = (ROOT / "src" / "components" / "tasks" / "TaskManagerPage.tsx").read_text(
+            encoding="utf-8"
+        )
+
+        self.assertNotIn("text-rose-700 transition hover:text-rose-800", tasks_source)
+        self.assertNotIn(">\\n                          重试\\n                        </button>", tasks_source)
 
     def test_agent_chat_resets_stale_session_on_missing_backend_session(self):
         content = (ROOT / "src" / "components" / "agent" / "AgentChat.tsx").read_text(encoding="utf-8")

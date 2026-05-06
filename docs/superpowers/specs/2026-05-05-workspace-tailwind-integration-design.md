@@ -14,6 +14,13 @@ As of May 6, 2026, the `/workspace` page-level Tailwind migration has already la
 
 This also means `/tasks` is no longer part of this stage's implementation scope. It is now a separate follow-on surface, and any further `/tasks` work should be planned independently.
 
+On May 6, 2026, the real integration result advanced one step further:
+
+- the initial external-provider failure was traced to provider-search control flow rather than frontend/backend handoff,
+- `search_and_download_agent_clips()` was searching later providers even after an earlier provider had already returned candidates,
+- under `pexels,youtube`, this still triggered YouTube search and exposed the known external timeout,
+- after changing the search loop to stop probing later providers once the current provider returns candidates, a fresh real run completed with Pexels clips and a rendered MP4.
+
 ## Goals
 
 1. Migrate `/workspace` from CSS Modules to Tailwind CSS.
@@ -147,6 +154,8 @@ The verified user path is:
 7. Confirm the task appears in `/tasks`.
 8. Wait for real素材搜索/下载/render.
 9. Confirm the final MP4 URL is visible and playable or record the exact real external failure.
+
+The verified successful run on May 6, 2026 used `CLIPFORGE_ASSET_PROVIDER_ORDER=pexels,youtube` plus a valid `PEXELS_API_KEY`, and produced a completed job with four Pexels clips and a final MP4 output.
 
 ## Testing Strategy
 

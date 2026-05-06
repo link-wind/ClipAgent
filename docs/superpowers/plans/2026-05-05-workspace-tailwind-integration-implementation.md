@@ -21,7 +21,7 @@ The active next step is therefore not to re-implement the migration tasks below 
 3. record the precise external-provider outcome,
 4. update the runbook and close the loop.
 
-On May 6, 2026, a fresh integration run confirmed:
+On May 6, 2026, the first fresh integration run confirmed:
 
 - `/workspace` can create a session and reach `plan_ready`,
 - confirming the plan creates a real queued job and returns `activeJobId`,
@@ -29,7 +29,14 @@ On May 6, 2026, a fresh integration run confirmed:
 - the worker starts the job on an isolated queue,
 - the real failure point is currently in `search_assets`, where YouTube search returns `Connection reset by peer`.
 
-That outcome should be treated as a successful frontend-to-backend handoff with a real external asset failure, not as a full end-to-end success.
+That first outcome should be treated as a successful frontend-to-backend handoff with a real external asset failure, not as a full end-to-end success.
+
+The follow-up run on the same day identified and fixed the root cause:
+
+- `search_and_download_agent_clips()` collected candidates from every provider before attempting downloads,
+- so `pexels,youtube` still triggered YouTube search even when Pexels had already returned usable candidates,
+- a regression test now locks the expected behavior: once the current provider returns candidates, the code must not search fallback providers before attempting download,
+- after that fix, a fresh real integration run succeeded end-to-end with Pexels-first ordering and produced a rendered MP4 output.
 
 ## File Structure
 

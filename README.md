@@ -116,12 +116,14 @@ npm run dev
 8. 如果生成 MP4，确认 `/workspace` 或 `/tasks` 能打开结果。
 9. 如果外部素材失败，记录任务详情里的失败步骤、事件日志和 worker 错误，不把该次联调记为成功。
 
-2026-05-06 的一条真实联调记录：
+2026-05-06 的真实联调记录分成两次：
 
-- `/workspace` 创建会话、确认方案、生成 `activeJobId`、跳转 `/tasks` 这一段是通的。
-- 新任务 `d698878c-8f29-4411-9766-28abf77181c0` 成功进入独立队列 `clipforge-agent-ws-hardening`。
-- 实际失败点出现在 `search_assets`，错误为 `youtube: 素材搜索失败：ERROR: Unable to download API page: [Errno 54] Connection reset by peer`。
-- 这次结果应记为“前后端交接链路成功，真实外部素材搜索失败”，而不是“联调完全成功”。
+- 第一次联调里，`/workspace` 创建会话、确认方案、生成 `activeJobId`、跳转 `/tasks` 这一段是通的。
+- 当时的新任务 `d698878c-8f29-4411-9766-28abf77181c0` 成功进入独立队列 `clipforge-agent-ws-hardening`，但失败在 `search_assets`，错误为 `youtube: 素材搜索失败：ERROR: Unable to download API page: [Errno 54] Connection reset by peer`。
+- 根因不是 `/workspace -> /tasks` 交接断掉，而是 `search_and_download_agent_clips()` 会先把所有 provider 都搜索一遍；即便 `pexels,youtube` 顺序下 Pexels 已经拿到候选，也会继续触发 YouTube 搜索，于是被外部超时卡住。
+- 修复后，provider 搜索改为“前一个 provider 一旦返回候选，就直接进入下载，不再提前搜索后续 provider”。
+- 第二次联调在同样的独立队列 `clipforge-agent-ws-hardening` 下成功跑通：会话 `939b4573-187a-406e-9a64-220b8edc1b26`、任务 `97383060-838b-43c9-800c-162e6d69f86a` 完成了 Pexels 搜索、下载、渲染，最终输出 `/output/939b4573-187a-406e-9a64-220b8edc1b26.mp4`。
+- 因此这一阶段现在可以记为“前后端交接链路成功，Pexels-first 真实素材链路也已验证成功”。
 
 ### 启动前端
 
@@ -169,7 +171,7 @@ pip install -r backend/requirements.txt --upgrade
 3. 按 yt-dlp 官方文档配置 PO Token 后填写 `YTDLP_PO_TOKEN`。
 4. 用 `YTDLP_PLAYER_CLIENTS` 或 `YTDLP_IMPERSONATE` 调整本地联调环境。
 
-这些配置只能降低 YouTube 失败概率，不能保证 YouTube 永久稳定。生产和稳定联调建议配置 `PEXELS_API_KEY`，让 worker 在 YouTube 失败后继续尝试 Pexels。Pexels 视频搜索使用官方 `https://api.pexels.com/v1/videos/search` endpoint，并通过 `Authorization` header 传入 API key。
+这些配置只能降低 YouTube 失败概率，不能保证 YouTube 永久稳定。生产和稳定联调建议配置 `PEXELS_API_KEY`，并把 `CLIPFORGE_ASSET_PROVIDER_ORDER` 调整为 `pexels,youtube`，让 worker 先走更稳定的 Pexels 搜索链路。Pexels 视频搜索使用官方 `https://api.pexels.com/v1/videos/search` endpoint，并通过 `Authorization` header 传入 API key。
 
 失败任务会保留素材源诊断信息。看到 `youtube: ...`、`pexels: ...` 这类错误时，先确认对应 provider 的环境变量和外部网络，再决定是否禁用某个 provider 做单独排查。
 

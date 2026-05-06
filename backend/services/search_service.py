@@ -200,28 +200,25 @@ async def search_and_download_agent_clips(
             progress_callback(AgentClipInfo, scene.id)
 
         keywords = build_scene_keywords(scene)
-        provider_candidates: list[tuple[str, list[AssetCandidate]]] = []
         for provider_name in get_asset_provider_order():
+            candidates: list[AssetCandidate] | None = None
             if provider_name == "youtube":
                 if not get_youtube_config().enabled:
                     continue
                 try:
-                    provider_candidates.append(("youtube", search_youtube_candidates(keywords, max_results=3)))
+                    candidates = search_youtube_candidates(keywords, max_results=3)
                 except Exception as exc:
                     provider_errors.append(("youtube", summarize_download_error(exc)))
-                continue
 
             if provider_name == "pexels":
                 pexels_config = get_pexels_config()
                 if pexels_config.enabled and pexels_config.api_key:
                     try:
-                        provider_candidates.append(("pexels", search_pexels_candidates(keywords, max_results=3)))
+                        candidates = search_pexels_candidates(keywords, max_results=3)
                     except Exception as exc:
                         provider_errors.append(("pexels", str(exc)))
                 elif pexels_config.enabled:
                     provider_errors.append(("pexels", "缺少 PEXELS_API_KEY，已跳过 Pexels 素材源"))
-
-        for provider_name, candidates in provider_candidates:
             if not candidates:
                 provider_errors.append((provider_name, "没有返回候选素材"))
                 continue
@@ -259,6 +256,8 @@ async def search_and_download_agent_clips(
                 provider_errors.append((provider_name, last_error or "没有可下载候选素材"))
                 continue
             break
+        else:
+            continue
 
     if not clips:
         raise RuntimeError(provider_failure_message(provider_errors))
