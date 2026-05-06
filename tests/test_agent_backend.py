@@ -411,6 +411,7 @@ class AgentExecutionContractTests(unittest.TestCase):
     def test_agent_search_download_returns_agent_clip_paths(self):
         from backend.models.agent import PlanScene
         from backend.services import search_service
+        from backend.services.asset_providers.types import AssetCandidate
 
         scene = PlanScene(
             id=7,
@@ -420,15 +421,17 @@ class AgentExecutionContractTests(unittest.TestCase):
             searchQuery="product detail",
         )
 
-        with patch("backend.services.search_service.search_youtube") as mock_search:
-            with patch("backend.services.search_service.download_video") as mock_download:
+        with patch("backend.services.search_service.search_youtube_candidates") as mock_search:
+            with patch("backend.services.search_service.download_video", new_callable=AsyncMock) as mock_download:
                 mock_search.return_value = [
-                    {
-                        "id": "abc123",
-                        "title": "Product detail",
-                        "url": "https://www.youtube.com/watch?v=abc123",
-                        "duration": 12,
-                    }
+                    AssetCandidate(
+                        provider="youtube",
+                        id="abc123",
+                        title="Product detail",
+                        source_url="https://www.youtube.com/watch?v=abc123",
+                        download_url="https://www.youtube.com/watch?v=abc123",
+                        duration=12,
+                    )
                 ]
                 mock_download.return_value = "backend/downloads/session_7.mp4"
 
@@ -443,6 +446,7 @@ class AgentExecutionContractTests(unittest.TestCase):
     def test_agent_download_tries_next_search_result_after_youtube_failure(self):
         from backend.models.agent import PlanScene
         from backend.services import search_service
+        from backend.services.asset_providers.types import AssetCandidate
 
         scene = PlanScene(
             id=3,
@@ -452,11 +456,25 @@ class AgentExecutionContractTests(unittest.TestCase):
             searchQuery="product workflow",
         )
 
-        with patch("backend.services.search_service.search_youtube") as mock_search:
-            with patch("backend.services.search_service.download_video") as mock_download:
+        with patch("backend.services.search_service.search_youtube_candidates") as mock_search:
+            with patch("backend.services.search_service.download_video", new_callable=AsyncMock) as mock_download:
                 mock_search.return_value = [
-                    {"id": "bad", "title": "Bad", "url": "https://www.youtube.com/watch?v=bad", "duration": 12},
-                    {"id": "good", "title": "Good", "url": "https://www.youtube.com/watch?v=good", "duration": 14},
+                    AssetCandidate(
+                        provider="youtube",
+                        id="bad",
+                        title="Bad",
+                        source_url="https://www.youtube.com/watch?v=bad",
+                        download_url="https://www.youtube.com/watch?v=bad",
+                        duration=12,
+                    ),
+                    AssetCandidate(
+                        provider="youtube",
+                        id="good",
+                        title="Good",
+                        source_url="https://www.youtube.com/watch?v=good",
+                        download_url="https://www.youtube.com/watch?v=good",
+                        duration=14,
+                    ),
                 ]
                 mock_download.side_effect = [
                     Exception("YouTube said: ERROR - Precondition check failed."),
@@ -472,6 +490,7 @@ class AgentExecutionContractTests(unittest.TestCase):
     def test_agent_download_failure_surfaces_last_external_error(self):
         from backend.models.agent import PlanScene
         from backend.services import search_service
+        from backend.services.asset_providers.types import AssetCandidate
 
         scene = PlanScene(
             id=3,
@@ -481,11 +500,25 @@ class AgentExecutionContractTests(unittest.TestCase):
             searchQuery="product workflow",
         )
 
-        with patch("backend.services.search_service.search_youtube") as mock_search:
-            with patch("backend.services.search_service.download_video") as mock_download:
+        with patch("backend.services.search_service.search_youtube_candidates") as mock_search:
+            with patch("backend.services.search_service.download_video", new_callable=AsyncMock) as mock_download:
                 mock_search.return_value = [
-                    {"id": "bad", "title": "Bad", "url": "https://www.youtube.com/watch?v=bad", "duration": 12},
-                    {"id": "worse", "title": "Worse", "url": "https://www.youtube.com/watch?v=worse", "duration": 14},
+                    AssetCandidate(
+                        provider="youtube",
+                        id="bad",
+                        title="Bad",
+                        source_url="https://www.youtube.com/watch?v=bad",
+                        download_url="https://www.youtube.com/watch?v=bad",
+                        duration=12,
+                    ),
+                    AssetCandidate(
+                        provider="youtube",
+                        id="worse",
+                        title="Worse",
+                        source_url="https://www.youtube.com/watch?v=worse",
+                        download_url="https://www.youtube.com/watch?v=worse",
+                        duration=14,
+                    ),
                 ]
                 mock_download.side_effect = [
                     Exception("Download failed: YouTube said: Sign in to confirm you’re not a bot."),
@@ -509,10 +542,135 @@ class AgentExecutionContractTests(unittest.TestCase):
             searchQuery="product workflow",
         )
 
-        with patch("backend.services.search_service.search_youtube") as mock_search:
+        with patch("backend.services.search_service.search_youtube_candidates") as mock_search:
             mock_search.side_effect = RuntimeError("YouTube said: Sign in to confirm you’re not a bot.")
 
             with self.assertRaisesRegex(RuntimeError, "Sign in to confirm"):
+                asyncio.run(search_service.search_and_download_agent_clips("session", [scene]))
+
+    def test_agent_download_falls_back_from_youtube_search_failure_to_pexels(self):
+        from backend.models.agent import PlanScene
+        from backend.services import search_service
+        from backend.services.asset_providers.types import AssetCandidate, AssetDownload
+
+        scene = PlanScene(
+            id=3,
+            description="产品使用场景",
+            keywords=["product", "workflow"],
+            duration=6,
+            searchQuery="product workflow",
+        )
+        pexels_candidate = AssetCandidate(
+            provider="pexels",
+            id="101",
+            title="Pexels video 101",
+            source_url="https://www.pexels.com/video/demo-101/",
+            download_url="https://videos.pexels.com/101.mp4",
+            duration=14,
+            author="Pexels Creator",
+        )
+
+        with patch("backend.services.search_service.search_youtube_candidates") as mock_youtube_search, patch(
+            "backend.services.search_service.search_pexels_candidates",
+        ) as mock_pexels_search, patch(
+            "backend.services.search_service.download_pexels_candidate",
+        ) as mock_pexels_download, patch(
+            "backend.services.search_service.get_pexels_config",
+        ) as mock_pexels_config:
+            mock_youtube_search.side_effect = RuntimeError("素材搜索失败：Sign in to confirm you’re not a bot.")
+            mock_pexels_search.return_value = [pexels_candidate]
+            mock_pexels_download.return_value = AssetDownload(
+                local_path="backend/downloads/session_3.mp4",
+                public_url="/downloads/session_3.mp4",
+                metadata=pexels_candidate.to_metadata(),
+            )
+            mock_pexels_config.return_value.enabled = True
+            mock_pexels_config.return_value.api_key = "pexels-key"
+
+            clips = asyncio.run(search_service.search_and_download_agent_clips("session", [scene]))
+
+        self.assertEqual(len(clips), 1)
+        self.assertEqual(clips[0].sourceUrl, "https://www.pexels.com/video/demo-101/")
+        self.assertEqual(clips[0].localPath, "backend/downloads/session_3.mp4")
+
+    def test_agent_download_falls_back_from_youtube_download_failure_to_pexels(self):
+        from backend.models.agent import PlanScene
+        from backend.services import search_service
+        from backend.services.asset_providers.types import AssetCandidate, AssetDownload
+
+        scene = PlanScene(
+            id=3,
+            description="产品使用场景",
+            keywords=["product", "workflow"],
+            duration=6,
+            searchQuery="product workflow",
+        )
+        youtube_candidate = AssetCandidate(
+            provider="youtube",
+            id="bad",
+            title="Bad",
+            source_url="https://www.youtube.com/watch?v=bad",
+            download_url="https://www.youtube.com/watch?v=bad",
+            duration=12,
+        )
+        pexels_candidate = AssetCandidate(
+            provider="pexels",
+            id="101",
+            title="Pexels video 101",
+            source_url="https://www.pexels.com/video/demo-101/",
+            download_url="https://videos.pexels.com/101.mp4",
+            duration=14,
+        )
+
+        with patch("backend.services.search_service.search_youtube_candidates", return_value=[youtube_candidate]), patch(
+            "backend.services.search_service.download_video",
+            new_callable=AsyncMock,
+        ) as mock_download, patch(
+            "backend.services.search_service.search_pexels_candidates",
+            return_value=[pexels_candidate],
+        ), patch(
+            "backend.services.search_service.download_pexels_candidate",
+            return_value=AssetDownload(
+                local_path="backend/downloads/session_3_pexels_1.mp4",
+                public_url="/downloads/session_3_pexels_1.mp4",
+                metadata=pexels_candidate.to_metadata(),
+            ),
+        ), patch(
+            "backend.services.search_service.get_pexels_config",
+        ) as mock_pexels_config:
+            mock_download.side_effect = Exception("Download failed: YouTube 当前要求 PO Token")
+            mock_pexels_config.return_value.enabled = True
+            mock_pexels_config.return_value.api_key = "pexels-key"
+
+            clips = asyncio.run(search_service.search_and_download_agent_clips("session", [scene]))
+
+        self.assertEqual(len(clips), 1)
+        self.assertEqual(clips[0].sourceUrl, "https://www.pexels.com/video/demo-101/")
+        self.assertEqual(clips[0].publicUrl, "/downloads/session_3_pexels_1.mp4")
+
+    def test_all_provider_failure_surfaces_safe_summaries(self):
+        from backend.models.agent import PlanScene
+        from backend.services import search_service
+
+        scene = PlanScene(
+            id=3,
+            description="产品使用场景",
+            keywords=["product", "workflow"],
+            duration=6,
+            searchQuery="product workflow",
+        )
+
+        with patch("backend.services.search_service.search_youtube_candidates") as mock_youtube_search, patch(
+            "backend.services.search_service.search_pexels_candidates",
+        ) as mock_pexels_search, patch(
+            "backend.services.search_service.get_pexels_config",
+        ) as mock_pexels_config:
+            mock_youtube_search.side_effect = RuntimeError("素材搜索失败：Sign in to confirm you’re not a bot.")
+            mock_pexels_search.side_effect = RuntimeError("Pexels 搜索失败：HTTP 401 Unauthorized")
+            mock_pexels_config.return_value.enabled = True
+            mock_pexels_config.return_value.api_key = "pexels-key"
+
+            with self.assertRaisesRegex(RuntimeError, "youtube.*Sign in.*pexels.*401"):
                 asyncio.run(search_service.search_and_download_agent_clips("session", [scene]))
 
     def test_asset_candidate_exposes_legacy_video_info(self):

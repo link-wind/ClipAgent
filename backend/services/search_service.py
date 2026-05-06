@@ -4,6 +4,11 @@ from typing import Dict, List, Optional
 
 from backend.models.agent import ClipInfo as AgentClipInfo, PlanScene
 from backend.models.task import Scene
+from backend.services.asset_providers.config import get_pexels_config, get_youtube_config
+from backend.services.asset_providers.metadata import remember_clip_metadata
+from backend.services.asset_providers.pexels import download_pexels_candidate, search_pexels_candidates
+from backend.services.asset_providers.types import AssetCandidate, AssetDownload
+from backend.services.asset_providers.youtube import search_youtube_candidates
 
 DOWNLOADS_DIR = "backend/downloads"
 
@@ -63,8 +68,6 @@ def summarize_download_error(error: object) -> str:
 
 def search_youtube(keywords: List[str], max_results: int = 5) -> List[Dict]:
     """使用 yt-dlp 从 YouTube 搜索视频。"""
-    from backend.services.asset_providers.youtube import search_youtube_candidates
-
     return [candidate.to_legacy_video_info() for candidate in search_youtube_candidates(keywords, max_results=max_results)]
 
 
@@ -152,6 +155,37 @@ async def search_and_download_all(
     return clips
 
 
+def build_scene_keywords(scene: PlanScene) -> List[str]:
+    keywords = [keyword for keyword in (scene.keywords or []) if keyword]
+    if keywords:
+        return keywords
+    return [scene.searchQuery] if scene.searchQuery else []
+
+
+def provider_failure_message(provider_errors: list[tuple[str, str]]) -> str:
+    if not provider_errors:
+        return "没有下载到可用素材"
+    return "；".join(f"{provider}: {message}" for provider, message in provider_errors if message)
+
+
+async def download_asset_candidate(
+    session_id: str,
+    candidate: AssetCandidate,
+    scene_id: int,
+    output_filename: str,
+) -> AssetDownload:
+    if candidate.provider == "youtube":
+        local_path = await download_video(session_id, candidate.to_legacy_video_info(), scene_id, output_filename)
+        return AssetDownload(
+            local_path=local_path,
+            public_url=f"/downloads/{output_filename}",
+            metadata=candidate.to_metadata(),
+        )
+    if candidate.provider == "pexels":
+        return download_pexels_candidate(session_id, candidate, scene_id, output_filename)
+    raise RuntimeError(f"未知素材源：{candidate.provider}")
+
+
 async def search_and_download_agent_clips(
     session_id: str,
     scenes: List[PlanScene],
@@ -159,50 +193,70 @@ async def search_and_download_agent_clips(
 ) -> List[AgentClipInfo]:
     """搜索并下载 Agent 场景素材，返回本地路径和公开 URL。"""
     clips: List[AgentClipInfo] = []
-    last_external_error: Optional[str] = None
+    provider_errors: list[tuple[str, str]] = []
 
     for scene in scenes:
         if progress_callback:
             progress_callback(AgentClipInfo, scene.id)
 
-        keywords = scene.keywords or [scene.searchQuery]
-        search_results = search_youtube(keywords, max_results=3)
-        if not search_results:
-            continue
+        keywords = build_scene_keywords(scene)
+        provider_candidates: list[tuple[str, list[AssetCandidate]]] = []
 
-        last_error: Optional[str] = None
-        for index, selected_video in enumerate(search_results, start=1):
-            output_filename = f"{session_id}_{scene.id}.mp4" if index == 1 else f"{session_id}_{scene.id}_{index}.mp4"
+        if get_youtube_config().enabled:
             try:
-                local_path = await download_video(session_id, selected_video, scene.id, output_filename)
+                provider_candidates.append(("youtube", search_youtube_candidates(keywords, max_results=3)))
             except Exception as exc:
-                last_error = summarize_download_error(exc)
+                provider_errors.append(("youtube", summarize_download_error(exc)))
+
+        pexels_config = get_pexels_config()
+        if pexels_config.enabled and pexels_config.api_key:
+            try:
+                provider_candidates.append(("pexels", search_pexels_candidates(keywords, max_results=3)))
+            except Exception as exc:
+                provider_errors.append(("pexels", str(exc)))
+        elif pexels_config.enabled:
+            provider_errors.append(("pexels", "缺少 PEXELS_API_KEY，已跳过 Pexels 素材源"))
+
+        for provider_name, candidates in provider_candidates:
+            if not candidates:
+                provider_errors.append((provider_name, "没有返回候选素材"))
                 continue
 
-            source_duration = normalize_duration(selected_video.get("duration", 0))
-            trim_start, trim_duration = calculate_trim_window(source_duration, scene.duration)
+            last_error: Optional[str] = None
+            for index, candidate in enumerate(candidates, start=1):
+                suffix = "" if provider_name == "youtube" and index == 1 else f"_{provider_name}_{index}"
+                output_filename = f"{session_id}_{scene.id}{suffix}.mp4"
+                try:
+                    download = await download_asset_candidate(session_id, candidate, scene.id, output_filename)
+                except Exception as exc:
+                    last_error = summarize_download_error(exc)
+                    continue
 
-            clips.append(
-                AgentClipInfo(
-                    sceneId=scene.id,
-                    sourceUrl=selected_video.get("url", ""),
-                    localPath=local_path,
-                    publicUrl=f"/downloads/{output_filename}",
-                    caption=scene.description,
-                    startTime=0,
-                    duration=scene.duration,
-                    sourceDuration=source_duration,
-                    trimStart=trim_start,
-                    trimDuration=trim_duration,
+                source_duration = normalize_duration(candidate.duration)
+                trim_start, trim_duration = calculate_trim_window(source_duration, scene.duration)
+                remember_clip_metadata(download.local_path, download.metadata)
+                clips.append(
+                    AgentClipInfo(
+                        sceneId=scene.id,
+                        sourceUrl=candidate.source_url,
+                        localPath=download.local_path,
+                        publicUrl=download.public_url,
+                        caption=scene.description,
+                        startTime=0,
+                        duration=scene.duration,
+                        sourceDuration=source_duration,
+                        trimStart=trim_start,
+                        trimDuration=trim_duration,
+                    )
                 )
-            )
+                break
+            else:
+                print(f"Download skipped for scene {scene.id}: {last_error or '没有可用候选素材'}")
+                provider_errors.append((provider_name, last_error or "没有可下载候选素材"))
+                continue
             break
-        else:
-            print(f"Download skipped for scene {scene.id}: {last_error or '没有可用候选素材'}")
-            if last_error:
-                last_external_error = last_error
 
-    if not clips and last_external_error:
-        raise RuntimeError(last_external_error)
+    if not clips:
+        raise RuntimeError(provider_failure_message(provider_errors))
 
     return clips

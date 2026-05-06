@@ -258,6 +258,7 @@ class ClipTrimCalculationTests(unittest.TestCase):
 class SearchClipAssemblyTests(unittest.TestCase):
     def test_search_and_download_agent_clips_populates_trim_metadata(self):
         from backend.models.agent import PlanScene
+        from backend.services.asset_providers.types import AssetCandidate
         from backend.services.search_service import search_and_download_agent_clips
 
         async def run_test():
@@ -271,17 +272,19 @@ class SearchClipAssemblyTests(unittest.TestCase):
                 )
             ]
 
-            with patch("backend.services.search_service.search_youtube") as mock_search, patch(
+            with patch("backend.services.search_service.search_youtube_candidates") as mock_search, patch(
                 "backend.services.search_service.download_video",
                 new_callable=AsyncMock,
             ) as mock_download:
                 mock_search.return_value = [
-                    {
-                        "id": "abc",
-                        "title": "demo",
-                        "url": "https://example.com/watch?v=abc",
-                        "duration": 20.0,
-                    }
+                    AssetCandidate(
+                        provider="youtube",
+                        id="abc",
+                        title="demo",
+                        source_url="https://example.com/watch?v=abc",
+                        download_url="https://example.com/watch?v=abc",
+                        duration=20.0,
+                    )
                 ]
                 mock_download.return_value = "backend/downloads/demo.mp4"
 
@@ -296,6 +299,7 @@ class SearchClipAssemblyTests(unittest.TestCase):
 
     def test_search_and_download_agent_clips_populates_caption(self):
         from backend.models.agent import PlanScene
+        from backend.services.asset_providers.types import AssetCandidate
         from backend.services.search_service import search_and_download_agent_clips
 
         async def run_test():
@@ -309,17 +313,19 @@ class SearchClipAssemblyTests(unittest.TestCase):
                 )
             ]
 
-            with patch("backend.services.search_service.search_youtube") as mock_search, patch(
+            with patch("backend.services.search_service.search_youtube_candidates") as mock_search, patch(
                 "backend.services.search_service.download_video",
                 new_callable=AsyncMock,
             ) as mock_download:
                 mock_search.return_value = [
-                    {
-                        "id": "abc",
-                        "title": "demo",
-                        "url": "https://example.com/watch?v=abc",
-                        "duration": 20.0,
-                    }
+                    AssetCandidate(
+                        provider="youtube",
+                        id="abc",
+                        title="demo",
+                        source_url="https://example.com/watch?v=abc",
+                        download_url="https://example.com/watch?v=abc",
+                        duration=20.0,
+                    )
                 ]
                 mock_download.return_value = "backend/downloads/demo.mp4"
 
