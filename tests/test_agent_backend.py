@@ -595,10 +595,44 @@ class AgentExecutionContractTests(unittest.TestCase):
         search_options = build_search_options()
         download_options = build_download_options("backend/downloads/example.mp4", [])
 
-        self.assertEqual(search_options["extractor_args"]["youtube"]["player_client"], ["web"])
-        self.assertEqual(download_options["extractor_args"]["youtube"]["player_client"], ["web"])
+        self.assertEqual(search_options["extractor_args"]["youtube"]["player_client"], ["mweb", "web_safari", "web"])
+        self.assertEqual(download_options["extractor_args"]["youtube"]["player_client"], ["mweb", "web_safari", "web"])
         self.assertEqual(download_options["js_runtimes"], {"node": {}})
         self.assertIn("ejs:npm", download_options["remote_components"])
+
+    def test_youtube_options_use_hardening_environment(self):
+        from backend.services.search_service import build_download_options, build_search_options
+
+        with patch.dict(
+            "os.environ",
+            {
+                "YTDLP_COOKIES_FILE": "/tmp/youtube.cookies.txt",
+                "YTDLP_PLAYER_CLIENTS": "mweb,web",
+                "YTDLP_PO_TOKEN": "web.gvs+token-value",
+                "YTDLP_IMPERSONATE": "chrome",
+                "YTDLP_FORMAT": "best[height<=480][ext=mp4]",
+            },
+            clear=False,
+        ):
+            search_options = build_search_options()
+            download_options = build_download_options("backend/downloads/example.mp4", [])
+
+        self.assertEqual(search_options["cookiefile"], "/tmp/youtube.cookies.txt")
+        self.assertEqual(download_options["cookiefile"], "/tmp/youtube.cookies.txt")
+        self.assertEqual(search_options["extractor_args"]["youtube"]["player_client"], ["mweb", "web"])
+        self.assertEqual(download_options["extractor_args"]["youtube"]["player_client"], ["mweb", "web"])
+        self.assertEqual(search_options["extractor_args"]["youtube"]["po_token"], ["web.gvs+token-value"])
+        self.assertEqual(download_options["extractor_args"]["youtube"]["po_token"], ["web.gvs+token-value"])
+        self.assertEqual(search_options["impersonate"], "chrome")
+        self.assertEqual(download_options["impersonate"], "chrome")
+        self.assertEqual(download_options["format"], "best[height<=480][ext=mp4]")
+
+    def test_provider_boolean_env_parsing(self):
+        from backend.services.asset_providers.config import env_flag
+
+        with patch.dict("os.environ", {"YTDLP_PROVIDER_ENABLED": "false", "PEXELS_PROVIDER_ENABLED": "1"}, clear=False):
+            self.assertFalse(env_flag("YTDLP_PROVIDER_ENABLED", default=True))
+            self.assertTrue(env_flag("PEXELS_PROVIDER_ENABLED", default=False))
 
     def test_summarize_youtube_download_errors_for_agent_status(self):
         from backend.services.search_service import summarize_download_error

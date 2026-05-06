@@ -36,43 +36,16 @@ def calculate_trim_window(source_duration: float, target_duration: float) -> tup
 
 def build_search_options() -> Dict:
     """构造 YouTube 搜索参数，降低客户端兼容问题。"""
-    return {
-        "quiet": True,
-        "skip_download": True,
-        "extract_flat": "in_search",
-        "retries": 3,
-        "extractor_retries": 3,
-        "fragment_retries": 3,
-        "js_runtimes": {"node": {}},
-        "remote_components": ["ejs:npm"],
-        "extractor_args": {
-            "youtube": {
-                "player_client": ["web"],
-            }
-        },
-    }
+    from backend.services.asset_providers.youtube import build_youtube_search_options
+
+    return build_youtube_search_options()
 
 
 def build_download_options(output_path: str, progress_hooks: List[callable]) -> Dict:
     """构造 YouTube 下载参数，优先选择可合并的 mp4 素材。"""
-    return {
-        "format": "bestvideo[height<=720][ext=mp4]+bestaudio[ext=m4a]/best[height<=720][ext=mp4]/best[height<=720]",
-        "merge_output_format": "mp4",
-        "outtmpl": output_path,
-        "quiet": True,
-        "retries": 5,
-        "extractor_retries": 5,
-        "fragment_retries": 5,
-        "socket_timeout": 30,
-        "progress_hooks": progress_hooks,
-        "js_runtimes": {"node": {}},
-        "remote_components": ["ejs:npm"],
-        "extractor_args": {
-            "youtube": {
-                "player_client": ["web"],
-            }
-        },
-    }
+    from backend.services.asset_providers.youtube import build_youtube_download_options
+
+    return build_youtube_download_options(output_path, progress_hooks)
 
 
 def summarize_download_error(error: object) -> str:
@@ -90,32 +63,9 @@ def summarize_download_error(error: object) -> str:
 
 def search_youtube(keywords: List[str], max_results: int = 5) -> List[Dict]:
     """使用 yt-dlp 从 YouTube 搜索视频。"""
-    import yt_dlp
+    from backend.services.asset_providers.youtube import search_youtube_candidates
 
-    query = " ".join(keywords)
-    search_query = f"ytsearch{max_results}:{query}"
-    ydl_opts = build_search_options()
-
-    results = []
-    try:
-        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            search_results = ydl.extract_info(search_query, download=False)
-            if search_results and "entries" in search_results:
-                for entry in search_results["entries"]:
-                    if entry:
-                        results.append(
-                            {
-                                "id": entry.get("id", ""),
-                                "title": entry.get("title", ""),
-                                "url": f"https://www.youtube.com/watch?v={entry.get('id', '')}",
-                                "duration": entry.get("duration", 0) or 0,
-                                "thumbnail": entry.get("thumbnail", ""),
-                            }
-                        )
-    except Exception as e:
-        raise RuntimeError(f"素材搜索失败：{e}") from e
-
-    return results
+    return [candidate.to_legacy_video_info() for candidate in search_youtube_candidates(keywords, max_results=max_results)]
 
 
 async def download_video(
