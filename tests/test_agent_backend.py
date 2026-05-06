@@ -515,6 +515,58 @@ class AgentExecutionContractTests(unittest.TestCase):
             with self.assertRaisesRegex(RuntimeError, "Sign in to confirm"):
                 asyncio.run(search_service.search_and_download_agent_clips("session", [scene]))
 
+    def test_asset_candidate_exposes_legacy_video_info(self):
+        from backend.services.asset_providers.types import AssetCandidate
+
+        candidate = AssetCandidate(
+            provider="youtube",
+            id="abc123",
+            title="Demo",
+            source_url="https://www.youtube.com/watch?v=abc123",
+            download_url="https://www.youtube.com/watch?v=abc123",
+            duration=12.5,
+            thumbnail="https://example.com/thumb.jpg",
+            author="Clip Channel",
+            diagnostics={"client": "web"},
+        )
+
+        self.assertEqual(
+            candidate.to_legacy_video_info(),
+            {
+                "id": "abc123",
+                "title": "Demo",
+                "url": "https://www.youtube.com/watch?v=abc123",
+                "duration": 12.5,
+                "thumbnail": "https://example.com/thumb.jpg",
+                "provider": "youtube",
+                "downloadUrl": "https://www.youtube.com/watch?v=abc123",
+                "author": "Clip Channel",
+                "diagnostics": {"client": "web"},
+            },
+        )
+
+    def test_clip_metadata_sidecar_round_trips_by_local_path(self):
+        from backend.services.asset_providers.metadata import pop_clip_metadata, remember_clip_metadata
+
+        remember_clip_metadata(
+            "backend/downloads/session_1.mp4",
+            {
+                "provider": "pexels",
+                "providerId": "42",
+                "author": "Pexels Creator",
+            },
+        )
+
+        self.assertEqual(
+            pop_clip_metadata("backend/downloads/session_1.mp4"),
+            {
+                "provider": "pexels",
+                "providerId": "42",
+                "author": "Pexels Creator",
+            },
+        )
+        self.assertEqual(pop_clip_metadata("backend/downloads/session_1.mp4"), {})
+
     def test_youtube_search_surfaces_external_error(self):
         from backend.services.search_service import search_youtube
 
