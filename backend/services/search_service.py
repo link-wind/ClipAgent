@@ -1,5 +1,6 @@
 import asyncio
 import os
+import re
 from typing import Dict, List, Optional
 
 from backend.models.agent import ClipInfo as AgentClipInfo, PlanScene
@@ -166,16 +167,31 @@ def provider_failure_message(provider_errors: list[tuple[str, str]]) -> str:
     if not provider_errors:
         return "没有下载到可用素材"
     summaries: list[str] = []
-    seen: set[tuple[str, str]] = set()
+    grouped: dict[tuple[str, str], int] = {}
+    has_specific_error = {
+        provider
+        for provider, message in provider_errors
+        if message and message not in {"没有返回候选素材", "没有可下载候选素材"}
+    }
     for provider, message in provider_errors:
         if not message:
             continue
-        key = (provider, message)
-        if key in seen:
+        if provider in has_specific_error and message in {"没有返回候选素材", "没有可下载候选素材"}:
             continue
-        seen.add(key)
-        summaries.append(f"{provider}: {message}")
+        summary = collapse_provider_failure_detail(message)
+        key = (provider, summary)
+        grouped[key] = grouped.get(key, 0) + 1
+    for (provider, message), count in grouped.items():
+        suffix = f"（{count} 次）" if count > 1 else ""
+        summaries.append(f"{provider}: {message}{suffix}")
     return "；".join(summaries) if summaries else "没有下载到可用素材"
+
+
+def collapse_provider_failure_detail(message: str) -> str:
+    http_match = re.match(r"^(.*?HTTP\s+\d{3}(?:\s+[A-Za-z][A-Za-z-]*)?)\b", message)
+    if http_match:
+        return http_match.group(1).strip()
+    return message
 
 
 async def download_asset_candidate(
