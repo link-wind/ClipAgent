@@ -130,7 +130,19 @@ CLIPFORGE_API_ORIGIN=http://127.0.0.1:8011 npm run dev -- --hostname 127.0.0.1 -
 - Task 3 后做过两次最小修补：`8e9ded4 fix: dedupe provider failure diagnostics` 去重 provider 失败诊断，`79e41f1 fix: collapse repeated scene provider failures` 折叠重复 scene provider 失败。
 - 第二条真实联调仍失败在 `search_assets`，但 provider failure 聚合已更清晰，不再无限累加同类 scene 错误。
 - 当前阶段尚未达到“稳定出片”标准。没有 `PEXELS_API_KEY` 时，`pexels,youtube` 会退到受外部网络和平台限制影响较大的 YouTube 路径；如果 YouTube connection reset 或 timeout，本次失败应归类为 asset search / provider availability failure，而不是 worker、任务交接或渲染失败。
-- 下一步更适合补 deterministic asset support / fixture fallback，让本地 P0 验证和演示不完全依赖实时外部素材平台。
+
+### Deterministic fixture mode
+
+仓库现在内置了一个 deterministic 本地素材源 `fixture`，用于本地 P0 验证、演示和前后端联调。它会读取 `fixtures/videos.json`，按简单关键词重叠匹配本地样例素材，再把命中的 `.mp4` 复制到 `backend/downloads/`，继续复用现有渲染链路。
+
+这条链路的目标不是替代真实外部素材，而是在外部 provider 不稳定、没有 API key、或者只是想验证产品流程时，提供一条稳定出片路径。当前仓库已经附带 5 个极小的本地 fixture mp4，用来保证 demo 和自动化测试都能真正走到 MP4 输出。
+
+推荐用法：
+
+- demo / 本地演示：`CLIPFORGE_ASSET_PROVIDER_ORDER=fixture,pexels,youtube`
+- 真实外部素材联调：`CLIPFORGE_ASSET_PROVIDER_ORDER=pexels,youtube`
+
+fixture mode 的成功口径是：从 `/workspace` 或 `/tasks` 发起任务后，worker 能稳定完成素材命中、复制和渲染，最终产出可访问的 MP4。它验证的是产品工作流和渲染链路，不代表真实外部 provider 也已经稳定。
 
 ### 启动前端
 
@@ -157,7 +169,9 @@ npm run dev
 - `YTDLP_PO_TOKEN`：可选，yt-dlp YouTube PO Token 配置字符串。只有在本机已经按 yt-dlp 文档配置好 token 流程时再使用。
 - `YTDLP_IMPERSONATE`：可选，浏览器 TLS 指纹模拟值，例如 `chrome`。
 - `YTDLP_FORMAT`：可选，覆盖 yt-dlp 下载格式选择；默认优先 720p 左右的 MP4。
-- `CLIPFORGE_ASSET_PROVIDER_ORDER`：可选，素材源搜索顺序，默认 `youtube,pexels`。联调环境如果 YouTube 经常超时或反爬，可改成 `pexels,youtube`。
+- `FIXTURE_PROVIDER_ENABLED`：可选，是否启用本地 deterministic fixture provider，默认启用。
+- `FIXTURE_LIBRARY_PATH`：可选，本地 fixture metadata 路径，默认 `fixtures/videos.json`。
+- `CLIPFORGE_ASSET_PROVIDER_ORDER`：可选，素材源搜索顺序，默认 `youtube,pexels`。demo / 稳定演示建议使用 `fixture,pexels,youtube`；真实外部素材联调如果 YouTube 经常超时或反爬，可改成 `pexels,youtube`。
 - `PEXELS_PROVIDER_ENABLED`：可选，是否启用 Pexels 素材源；当 `PEXELS_API_KEY` 存在时默认启用。
 - `PEXELS_API_KEY`：Pexels API key，用于稳定搜索和下载公开视频素材。
 
@@ -191,6 +205,16 @@ PEXELS_PROVIDER_ENABLED=true
 ```
 
 这会优先走 Pexels，并且在上面示例里直接跳过 YouTube，只验证 Pexels 搜索、下载和渲染链路。反过来设置 `PEXELS_PROVIDER_ENABLED=false` 可以只验证 YouTube/yt-dlp 链路。
+
+如果只是验证产品链路是否能稳定出片，推荐直接使用：
+
+```bash
+FIXTURE_PROVIDER_ENABLED=true
+FIXTURE_LIBRARY_PATH=fixtures/videos.json
+CLIPFORGE_ASSET_PROVIDER_ORDER=fixture,pexels,youtube
+```
+
+这会优先命中仓库内的本地 fixture 素材，不依赖外部网络，也不要求 `PEXELS_API_KEY`。一旦 fixture 没命中，worker 仍会继续尝试后面的真实 provider。
 
 ## 当前工作流
 
