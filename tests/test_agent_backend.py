@@ -1166,6 +1166,107 @@ class AgentExecutionContractTests(unittest.TestCase):
                 with self.assertRaisesRegex(RuntimeError, "本地素材文件不存在"):
                     download_fixture_candidate("session", candidate, 1, "missing.mp4")
 
+    def test_agent_download_can_complete_with_fixture_provider(self):
+        import json
+        from pathlib import Path
+        from tempfile import TemporaryDirectory
+
+        from backend.models.agent import PlanScene
+        from backend.services import search_service
+        from backend.services.asset_providers import fixture as fixture_provider
+
+        scene = PlanScene(
+            id=1,
+            description="城市演示镜头",
+            keywords=["城市", "车流"],
+            duration=6,
+            searchQuery="城市 车流",
+        )
+
+        with TemporaryDirectory() as tmpdir:
+            temp_root = Path(tmpdir)
+            fixtures_dir = temp_root / "fixtures"
+            downloads_dir = temp_root / "backend" / "downloads"
+            fixtures_dir.mkdir(parents=True)
+            downloads_dir.mkdir(parents=True)
+            (fixtures_dir / "videos.json").write_text(
+                json.dumps(
+                    [
+                        {
+                            "id": "vid_001",
+                            "title": "城市黄昏车流",
+                            "description": "傍晚城市街道，车流穿梭，霓虹初上",
+                            "duration": 45,
+                            "tags": ["城市", "黄昏", "车流", "夜景"],
+                            "thumbnailUrl": "/fixtures/thumbnails/vid_001.jpg",
+                            "videoUrl": "/fixtures/vid_001.mp4",
+                        }
+                    ]
+                ),
+                encoding="utf-8",
+            )
+            (fixtures_dir / "vid_001.mp4").write_bytes(b"fixture-mp4-bytes")
+
+            with patch.object(fixture_provider, "ROOT_DIR", temp_root), patch.object(
+                fixture_provider,
+                "DOWNLOADS_DIR",
+                str(downloads_dir),
+            ), patch.dict(
+                "os.environ",
+                {"CLIPFORGE_ASSET_PROVIDER_ORDER": "fixture", "FIXTURE_PROVIDER_ENABLED": "true"},
+                clear=False,
+            ):
+                clips = asyncio.run(search_service.search_and_download_agent_clips("session", [scene]))
+
+        self.assertEqual(len(clips), 1)
+        self.assertEqual(clips[0].sceneId, 1)
+        self.assertEqual(clips[0].caption, "城市演示镜头")
+        self.assertEqual(clips[0].sourceUrl, "/fixtures/vid_001.mp4")
+        self.assertTrue(clips[0].localPath.endswith(".mp4"))
+
+    def test_fixture_provider_falls_through_to_next_provider_when_no_match(self):
+        from backend.models.agent import PlanScene
+        from backend.services import search_service
+        from backend.services.asset_providers.types import AssetCandidate, AssetDownload
+
+        scene = PlanScene(
+            id=3,
+            description="产品使用场景",
+            keywords=["product", "workflow"],
+            duration=6,
+            searchQuery="product workflow",
+        )
+        pexels_candidate = AssetCandidate(
+            provider="pexels",
+            id="101",
+            title="Pexels video 101",
+            source_url="https://www.pexels.com/video/demo-101/",
+            download_url="https://videos.pexels.com/101.mp4",
+            duration=14,
+        )
+
+        with patch.dict("os.environ", {"CLIPFORGE_ASSET_PROVIDER_ORDER": "fixture,pexels"}, clear=False), patch(
+            "backend.services.search_service.search_pexels_candidates",
+            return_value=[pexels_candidate],
+        ), patch(
+            "backend.services.search_service.download_pexels_candidate",
+            return_value=AssetDownload(
+                local_path="backend/downloads/session_3_pexels_1.mp4",
+                public_url="/downloads/session_3_pexels_1.mp4",
+                metadata=pexels_candidate.to_metadata(),
+            ),
+        ) as mock_download, patch(
+            "backend.services.search_service.get_pexels_config",
+        ) as mock_pexels_config:
+            mock_pexels_config.return_value.enabled = True
+            mock_pexels_config.return_value.api_key = "pexels-key"
+
+            clips = asyncio.run(search_service.search_and_download_agent_clips("session", [scene]))
+
+        self.assertEqual(len(clips), 1)
+        self.assertEqual(clips[0].sourceUrl, "https://www.pexels.com/video/demo-101/")
+        self.assertEqual(mock_download.call_count, 1)
+
     def test_pexels_search_maps_api_response_to_candidates(self):
         import json
         from unittest.mock import MagicMock

@@ -5,7 +5,13 @@ from typing import Dict, List, Optional
 
 from backend.models.agent import ClipInfo as AgentClipInfo, PlanScene
 from backend.models.task import Scene
-from backend.services.asset_providers.config import get_asset_provider_order, get_pexels_config, get_youtube_config
+from backend.services.asset_providers.config import (
+    get_asset_provider_order,
+    get_fixture_config,
+    get_pexels_config,
+    get_youtube_config,
+)
+from backend.services.asset_providers.fixture import download_fixture_candidate, search_fixture_candidates
 from backend.services.asset_providers.metadata import remember_clip_metadata
 from backend.services.asset_providers.pexels import download_pexels_candidate, search_pexels_candidates
 from backend.services.asset_providers.types import AssetCandidate, AssetDownload
@@ -209,6 +215,8 @@ async def download_asset_candidate(
         )
     if candidate.provider == "pexels":
         return download_pexels_candidate(session_id, candidate, scene_id, output_filename)
+    if candidate.provider == "fixture":
+        return download_fixture_candidate(session_id, candidate, scene_id, output_filename)
     raise RuntimeError(f"未知素材源：{candidate.provider}")
 
 
@@ -228,6 +236,15 @@ async def search_and_download_agent_clips(
         keywords = build_scene_keywords(scene)
         for provider_name in get_asset_provider_order():
             candidates: list[AssetCandidate] | None = None
+            if provider_name == "fixture":
+                fixture_config = get_fixture_config()
+                if not fixture_config.enabled:
+                    continue
+                try:
+                    candidates = search_fixture_candidates(keywords, max_results=3)
+                except Exception as exc:
+                    provider_errors.append(("fixture", str(exc)))
+
             if provider_name == "youtube":
                 if not get_youtube_config().enabled:
                     continue

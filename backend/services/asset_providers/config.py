@@ -23,7 +23,7 @@ def env_csv(name: str, default: list[str]) -> list[str]:
 
 def get_asset_provider_order() -> list[str]:
     configured = env_csv("CLIPFORGE_ASSET_PROVIDER_ORDER", DEFAULT_ASSET_PROVIDER_ORDER)
-    allowed = {"youtube", "pexels"}
+    allowed = {"fixture", "youtube", "pexels"}
     ordered: list[str] = []
 
     for provider in configured:
