@@ -3,6 +3,7 @@ import asyncio
 from backend.db.repositories import AgentJobRepository, AgentPlanRepository
 from backend.models.agent import ClipInfo, EditPlan
 from backend.services.agent_progress_service import AgentProgressService
+from backend.services.asset_providers.metadata import pop_clip_metadata
 from backend.services.search_service import search_and_download_agent_clips
 from backend.tasks.celery_app import celery_app
 
@@ -52,6 +53,13 @@ def run_agent_job(job_id: str) -> None:
 
             progress_service.mark_clips_ready(session_id, job_id, len(clips))
             for clip in clips:
+                metadata = {
+                    **pop_clip_metadata(clip.localPath),
+                    "caption": clip.caption,
+                    "sourceDuration": clip.sourceDuration,
+                    "trimStart": clip.trimStart,
+                    "trimDuration": clip.trimDuration,
+                }
                 progress_service.create_artifact(
                     session_id=session_id,
                     job_id=job_id,
@@ -61,12 +69,7 @@ def run_agent_job(job_id: str) -> None:
                     local_path=clip.localPath,
                     public_url=clip.publicUrl,
                     duration=clip.duration,
-                    metadata={
-                        "caption": clip.caption,
-                        "sourceDuration": clip.sourceDuration,
-                        "trimStart": clip.trimStart,
-                        "trimDuration": clip.trimDuration,
-                    },
+                    metadata=metadata,
                 )
             db.commit()
 

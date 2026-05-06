@@ -450,6 +450,76 @@ class ArtifactTrimMetadataTests(unittest.TestCase):
         clip_artifact = next(row for row in artifacts if row.artifact_type == "clip")
         self.assertEqual(clip_artifact.metadata_json["caption"], "开场镜头")
 
+    def test_run_agent_job_persists_provider_metadata_in_artifacts(self):
+        from backend.db.repositories import AgentArtifactRepository
+        from backend.services.asset_providers.metadata import remember_clip_metadata
+        from backend.tasks.agent_tasks import run_agent_job
+
+        session_id, job_id = self._create_queued_job()
+
+        async def fake_search_runner(_session_id, _scenes):
+            local_path = "backend/downloads/1.mp4"
+            remember_clip_metadata(
+                local_path,
+                {
+                    "provider": "pexels",
+                    "providerId": "asset-42",
+                    "author": "Pexels Creator",
+                    "sourceUrl": "https://www.pexels.com/video/asset-42/",
+                    "downloadUrl": "https://videos.pexels.com/asset-42.mp4",
+                    "width": 1920,
+                    "height": 1080,
+                },
+            )
+            return [
+                {
+                    "sceneId": 1,
+                    "sourceUrl": "https://example.com/1",
+                    "localPath": local_path,
+                    "publicUrl": "/downloads/1.mp4",
+                    "duration": 6.0,
+                    "caption": "开场镜头",
+                    "sourceDuration": 20.0,
+                    "trimStart": 4.9,
+                    "trimDuration": 6.0,
+                }
+            ]
+
+        async def fake_render_runner(_session_id, _clips, _filename):
+            return "/output/final.mp4"
+
+        with patch("backend.tasks.agent_tasks.SessionLocal", self.session_factory), patch(
+            "backend.tasks.agent_tasks.search_and_download_agent_clips",
+            fake_search_runner,
+        ), patch(
+            "backend.tasks.agent_tasks.render_video",
+            fake_render_runner,
+        ):
+            run_agent_job(job_id)
+
+        with self.session_factory() as db:
+            artifact_repo = AgentArtifactRepository(db)
+            artifacts = artifact_repo.list_for_session(session_id)
+
+        clip_artifact = next(row for row in artifacts if row.artifact_type == "clip")
+        self.assertEqual(clip_artifact.metadata_json["provider"], "pexels")
+        self.assertEqual(clip_artifact.metadata_json["providerId"], "asset-42")
+        self.assertEqual(clip_artifact.metadata_json["author"], "Pexels Creator")
+        self.assertEqual(
+            clip_artifact.metadata_json["sourceUrl"],
+            "https://www.pexels.com/video/asset-42/",
+        )
+        self.assertEqual(
+            clip_artifact.metadata_json["downloadUrl"],
+            "https://videos.pexels.com/asset-42.mp4",
+        )
+        self.assertEqual(clip_artifact.metadata_json["width"], 1920)
+        self.assertEqual(clip_artifact.metadata_json["height"], 1080)
+        self.assertEqual(clip_artifact.metadata_json["caption"], "开场镜头")
+        self.assertEqual(clip_artifact.metadata_json["sourceDuration"], 20.0)
+        self.assertEqual(clip_artifact.metadata_json["trimStart"], 4.9)
+        self.assertEqual(clip_artifact.metadata_json["trimDuration"], 6.0)
+
 
 class RenderPreparationTests(unittest.TestCase):
     def test_default_bgm_asset_exists(self):
