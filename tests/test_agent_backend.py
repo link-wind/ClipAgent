@@ -699,6 +699,45 @@ class AgentExecutionContractTests(unittest.TestCase):
 
         self.assertEqual(selected["link"], "portrait-720.mp4")
 
+    def test_pexels_direct_download_writes_mp4(self):
+        from pathlib import Path
+        from tempfile import TemporaryDirectory
+        from unittest.mock import MagicMock
+
+        from backend.services.asset_providers.pexels import download_pexels_candidate
+        from backend.services.asset_providers.types import AssetCandidate
+
+        candidate = AssetCandidate(
+            provider="pexels",
+            id="101",
+            title="Pexels video 101",
+            source_url="https://www.pexels.com/video/demo-101/",
+            download_url="https://videos.pexels.com/video-files/101/portrait.mp4",
+            duration=9,
+            width=720,
+            height=1280,
+            author="Pexels Creator",
+        )
+        fake_response = MagicMock()
+        fake_response.status = 200
+        fake_response.read.return_value = b"\x00\x00\x00\x18ftypmp42video-bytes"
+        fake_response.__enter__.return_value = fake_response
+        fake_response.__exit__.return_value = None
+
+        with TemporaryDirectory() as tmp_dir, patch(
+            "backend.services.asset_providers.pexels.DOWNLOADS_DIR",
+            tmp_dir,
+        ), patch("urllib.request.urlopen", return_value=fake_response):
+            download = download_pexels_candidate("session", candidate, scene_id=4, output_filename="session_4.mp4")
+
+            output_path = Path(tmp_dir) / "session_4.mp4"
+            self.assertTrue(output_path.exists())
+            self.assertEqual(output_path.read_bytes(), b"\x00\x00\x00\x18ftypmp42video-bytes")
+            self.assertEqual(download.local_path, str(output_path))
+            self.assertEqual(download.public_url, "/downloads/session_4.mp4")
+            self.assertEqual(download.metadata["provider"], "pexels")
+            self.assertEqual(download.metadata["author"], "Pexels Creator")
+
     def test_summarize_youtube_download_errors_for_agent_status(self):
         from backend.services.search_service import summarize_download_error
 

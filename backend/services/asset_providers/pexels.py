@@ -1,11 +1,12 @@
 import json
+import os
 import urllib.error
 import urllib.parse
 import urllib.request
 from typing import Any
 
 from backend.services.asset_providers.config import get_pexels_config
-from backend.services.asset_providers.types import AssetCandidate
+from backend.services.asset_providers.types import AssetCandidate, AssetDownload
 
 DOWNLOADS_DIR = "backend/downloads"
 
@@ -90,3 +91,43 @@ def select_pexels_video_file(video_files: list[dict[str, Any]]) -> dict[str, Any
         return (0 if is_vertical else 1, 0 if bounded else 1, resolution)
 
     return sorted(mp4_files, key=score)[0]
+
+
+def download_pexels_candidate(
+    session_id: str,
+    candidate: AssetCandidate,
+    scene_id: int,
+    output_filename: str,
+) -> AssetDownload:
+    del session_id, scene_id
+
+    if not candidate.download_url:
+        raise RuntimeError("Pexels 下载失败：候选素材缺少下载链接")
+
+    os.makedirs(DOWNLOADS_DIR, exist_ok=True)
+    output_path = os.path.join(DOWNLOADS_DIR, output_filename)
+    request = urllib.request.Request(candidate.download_url, headers={"User-Agent": "ClipForge/1.0"})
+
+    try:
+        with urllib.request.urlopen(request, timeout=60) as response:
+            status = getattr(response, "status", 200)
+            data = response.read()
+    except urllib.error.HTTPError as exc:
+        body = exc.read().decode("utf-8", errors="replace")[:240]
+        raise RuntimeError(f"Pexels 下载失败：HTTP {exc.code} {body}") from exc
+    except urllib.error.URLError as exc:
+        raise RuntimeError(f"Pexels 下载失败：{exc.reason}") from exc
+
+    if status >= 400:
+        raise RuntimeError(f"Pexels 下载失败：HTTP {status}")
+    if not data:
+        raise RuntimeError("Pexels 下载失败：返回了空文件")
+
+    with open(output_path, "wb") as output_file:
+        output_file.write(data)
+
+    return AssetDownload(
+        local_path=output_path,
+        public_url=f"/downloads/{output_filename}",
+        metadata=candidate.to_metadata(),
+    )
