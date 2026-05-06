@@ -634,6 +634,71 @@ class AgentExecutionContractTests(unittest.TestCase):
             self.assertFalse(env_flag("YTDLP_PROVIDER_ENABLED", default=True))
             self.assertTrue(env_flag("PEXELS_PROVIDER_ENABLED", default=False))
 
+    def test_pexels_search_maps_api_response_to_candidates(self):
+        import json
+        from unittest.mock import MagicMock
+
+        from backend.services.asset_providers.pexels import search_pexels_candidates
+
+        response_payload = {
+            "videos": [
+                {
+                    "id": 101,
+                    "url": "https://www.pexels.com/video/demo-101/",
+                    "duration": 9,
+                    "width": 1080,
+                    "height": 1920,
+                    "image": "https://images.pexels.com/videos/101/thumb.jpg",
+                    "user": {"name": "Pexels Creator", "url": "https://www.pexels.com/@creator"},
+                    "video_files": [
+                        {
+                            "id": 1,
+                            "quality": "hd",
+                            "file_type": "video/mp4",
+                            "width": 720,
+                            "height": 1280,
+                            "link": "https://videos.pexels.com/video-files/101/portrait.mp4",
+                        }
+                    ],
+                }
+            ]
+        }
+        fake_response = MagicMock()
+        fake_response.status = 200
+        fake_response.read.return_value = json.dumps(response_payload).encode("utf-8")
+        fake_response.__enter__.return_value = fake_response
+        fake_response.__exit__.return_value = None
+
+        with patch.dict("os.environ", {"PEXELS_API_KEY": "pexels-key"}, clear=False), patch(
+            "urllib.request.urlopen",
+            return_value=fake_response,
+        ) as mock_urlopen:
+            candidates = search_pexels_candidates(["product", "demo"], max_results=3)
+
+        request = mock_urlopen.call_args.args[0]
+        self.assertEqual(request.headers["Authorization"], "pexels-key")
+        self.assertIn("/v1/videos/search", request.full_url)
+        self.assertIn("orientation=portrait", request.full_url)
+        self.assertEqual(len(candidates), 1)
+        self.assertEqual(candidates[0].provider, "pexels")
+        self.assertEqual(candidates[0].id, "101")
+        self.assertEqual(candidates[0].source_url, "https://www.pexels.com/video/demo-101/")
+        self.assertEqual(candidates[0].download_url, "https://videos.pexels.com/video-files/101/portrait.mp4")
+        self.assertEqual(candidates[0].author, "Pexels Creator")
+
+    def test_pexels_selects_vertical_mp4_with_bounded_resolution(self):
+        from backend.services.asset_providers.pexels import select_pexels_video_file
+
+        selected = select_pexels_video_file(
+            [
+                {"file_type": "video/mp4", "width": 3840, "height": 2160, "link": "landscape-4k.mp4"},
+                {"file_type": "video/mp4", "width": 720, "height": 1280, "link": "portrait-720.mp4"},
+                {"file_type": "video/webm", "width": 720, "height": 1280, "link": "portrait.webm"},
+            ]
+        )
+
+        self.assertEqual(selected["link"], "portrait-720.mp4")
+
     def test_summarize_youtube_download_errors_for_agent_status(self):
         from backend.services.search_service import summarize_download_error
 
