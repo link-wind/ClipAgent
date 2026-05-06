@@ -113,7 +113,7 @@ def search_youtube(keywords: List[str], max_results: int = 5) -> List[Dict]:
                             }
                         )
     except Exception as e:
-        print(f"Search error: {e}")
+        raise RuntimeError(f"素材搜索失败：{e}") from e
 
     return results
 
@@ -209,6 +209,7 @@ async def search_and_download_agent_clips(
 ) -> List[AgentClipInfo]:
     """搜索并下载 Agent 场景素材，返回本地路径和公开 URL。"""
     clips: List[AgentClipInfo] = []
+    last_external_error: Optional[str] = None
 
     for scene in scenes:
         if progress_callback:
@@ -248,5 +249,10 @@ async def search_and_download_agent_clips(
             break
         else:
             print(f"Download skipped for scene {scene.id}: {last_error or '没有可用候选素材'}")
+            if last_error:
+                last_external_error = last_error
+
+    if not clips and last_external_error:
+        raise RuntimeError(last_external_error)
 
     return clips

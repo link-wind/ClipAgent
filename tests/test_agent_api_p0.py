@@ -770,6 +770,96 @@ class AgentApiP0ContractTests(unittest.TestCase):
         ):
             asyncio.run(_run())
 
+    def test_agent_task_failed_summary_uses_retryable_step_as_current_step_id(self):
+        async def _run():
+            session = self.session_service.create_session("做一个素材搜索失败的短片")
+
+            with self.session_factory() as db:
+                job_repo = AgentJobRepository(db)
+                event_repo = AgentEventRepository(db)
+                job_record = job_repo.create(
+                    session_id=session.id,
+                    plan_id=None,
+                    job_type="generate_video",
+                    status="failed",
+                    progress=35,
+                    current_step="处理失败：没有下载到可用素材",
+                    error_message="没有下载到可用素材",
+                )
+                event_repo.create(
+                    session_id=session.id,
+                    job_id=job_record.id,
+                    event_type="job_failed",
+                    step="failed",
+                    progress=35,
+                    message="没有下载到可用素材",
+                    payload_json={"retryableStep": "searching"},
+                )
+                job_id = job_record.id
+                db.commit()
+
+            transport = httpx.ASGITransport(app=app)
+            async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as client:
+                response = await client.get("/api/agent/tasks")
+                self.assertEqual(response.status_code, 200)
+                payload = response.json()
+
+                self.assertEqual(payload[0]["id"], job_id)
+                self.assertEqual(payload[0]["currentStepId"], "search_assets")
+
+        import asyncio
+
+        task_read_service = AgentTaskReadService(session_factory=self.session_factory)
+        with patch.object(agent_api_module, "session_service", self.session_service), patch.object(
+            agent_api_module, "task_read_service", task_read_service
+        ):
+            asyncio.run(_run())
+
+    def test_agent_dashboard_failed_summary_uses_retryable_step_as_current_step_id(self):
+        async def _run():
+            session = self.session_service.create_session("做一个素材搜索失败的短片")
+
+            with self.session_factory() as db:
+                job_repo = AgentJobRepository(db)
+                event_repo = AgentEventRepository(db)
+                job_record = job_repo.create(
+                    session_id=session.id,
+                    plan_id=None,
+                    job_type="generate_video",
+                    status="failed",
+                    progress=35,
+                    current_step="处理失败：没有下载到可用素材",
+                    error_message="没有下载到可用素材",
+                )
+                event_repo.create(
+                    session_id=session.id,
+                    job_id=job_record.id,
+                    event_type="job_failed",
+                    step="failed",
+                    progress=35,
+                    message="没有下载到可用素材",
+                    payload_json={"retryableStep": "searching"},
+                )
+                job_id = job_record.id
+                db.commit()
+
+            transport = httpx.ASGITransport(app=app)
+            async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as client:
+                response = await client.get("/api/agent/dashboard")
+                self.assertEqual(response.status_code, 200)
+                payload = response.json()
+
+                self.assertEqual(payload["recentTasks"][0]["id"], job_id)
+                self.assertEqual(payload["recentTasks"][0]["currentStepId"], "search_assets")
+
+        import asyncio
+
+        task_read_service = AgentTaskReadService(session_factory=self.session_factory)
+        with patch.object(agent_api_module, "session_service", self.session_service), patch.object(
+            agent_api_module, "task_read_service", task_read_service
+        ):
+            asyncio.run(_run())
+
     def test_agent_task_steps_are_isolated_from_other_jobs_in_same_session(self):
         async def _run():
             session = self.session_service.create_session("做一个多阶段短片")

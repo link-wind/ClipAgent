@@ -371,6 +371,9 @@ class AgentStepSnapshotService:
                 )
 
     def _normalize_retryable_step(self, retryable_step: str | None) -> Optional[AgentStepId]:
+        return self.normalize_retryable_step(retryable_step)
+
+    def normalize_retryable_step(self, retryable_step: str | None) -> Optional[AgentStepId]:
         if retryable_step in {"create_task", "search_assets", "prepare_assets", "render_video"}:
             return retryable_step
         if retryable_step:

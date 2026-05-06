@@ -469,6 +469,62 @@ class AgentExecutionContractTests(unittest.TestCase):
         self.assertEqual(mock_download.call_count, 2)
         self.assertEqual(clips[0].sourceUrl, "https://www.youtube.com/watch?v=good")
 
+    def test_agent_download_failure_surfaces_last_external_error(self):
+        from backend.models.agent import PlanScene
+        from backend.services import search_service
+
+        scene = PlanScene(
+            id=3,
+            description="产品使用场景",
+            keywords=["product", "workflow"],
+            duration=6,
+            searchQuery="product workflow",
+        )
+
+        with patch("backend.services.search_service.search_youtube") as mock_search:
+            with patch("backend.services.search_service.download_video") as mock_download:
+                mock_search.return_value = [
+                    {"id": "bad", "title": "Bad", "url": "https://www.youtube.com/watch?v=bad", "duration": 12},
+                    {"id": "worse", "title": "Worse", "url": "https://www.youtube.com/watch?v=worse", "duration": 14},
+                ]
+                mock_download.side_effect = [
+                    Exception("Download failed: YouTube said: Sign in to confirm you’re not a bot."),
+                    Exception("Download failed: YouTube 当前要求 PO Token"),
+                ]
+
+                with self.assertRaisesRegex(RuntimeError, "YouTube 当前要求 PO Token"):
+                    asyncio.run(search_service.search_and_download_agent_clips("session", [scene]))
+
+        self.assertEqual(mock_download.call_count, 2)
+
+    def test_agent_search_failure_surfaces_external_error(self):
+        from backend.models.agent import PlanScene
+        from backend.services import search_service
+
+        scene = PlanScene(
+            id=3,
+            description="产品使用场景",
+            keywords=["product", "workflow"],
+            duration=6,
+            searchQuery="product workflow",
+        )
+
+        with patch("backend.services.search_service.search_youtube") as mock_search:
+            mock_search.side_effect = RuntimeError("YouTube said: Sign in to confirm you’re not a bot.")
+
+            with self.assertRaisesRegex(RuntimeError, "Sign in to confirm"):
+                asyncio.run(search_service.search_and_download_agent_clips("session", [scene]))
+
+    def test_youtube_search_surfaces_external_error(self):
+        from backend.services.search_service import search_youtube
+
+        with patch("yt_dlp.YoutubeDL") as mock_youtube_dl:
+            ydl = mock_youtube_dl.return_value.__enter__.return_value
+            ydl.extract_info.side_effect = Exception("Sign in to confirm you’re not a bot.")
+
+            with self.assertRaisesRegex(RuntimeError, "Sign in to confirm"):
+                search_youtube(["product", "workflow"], max_results=3)
+
     def test_youtube_options_use_current_clients_and_retry_settings(self):
         from backend.services.search_service import build_download_options, build_search_options
 

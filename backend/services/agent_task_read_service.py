@@ -28,9 +28,17 @@ class AgentTaskReadService:
         # 读取最近任务摘要
         with self.session_factory() as db:
             session_repo = AgentSessionRepository(db)
+            event_repo = AgentEventRepository(db)
             jobs = AgentJobRepository(db).list_recent(limit=limit)
             session_by_id = self._load_sessions_for_jobs(session_repo, jobs)
-            return [self._build_task_summary(job, session_by_id.get(job.session_id)) for job in jobs]
+            return [
+                self._build_task_summary(
+                    job,
+                    session_by_id.get(job.session_id),
+                    self._resolve_retryable_step(event_repo.list_for_job(job.id)),
+                )
+                for job in jobs
+            ]
 
     def read_task(self, job_id: str) -> AgentTaskDetail:
         # 读取任务详情
@@ -46,7 +54,7 @@ class AgentTaskReadService:
             clip_rows = [row for row in artifacts if row.artifact_type == "clip"]
             video_url = self._resolve_video_url(artifacts, events)
             retryable_step = self._resolve_retryable_step(events)
-            summary = self._build_task_summary(job, session)
+            summary = self._build_task_summary(job, session, retryable_step)
             return AgentTaskDetail(
                 **summary.model_dump(),
                 events=self.read_service.build_event_response(events),
@@ -74,6 +82,7 @@ class AgentTaskReadService:
         with self.session_factory() as db:
             session_repo = AgentSessionRepository(db)
             job_repo = AgentJobRepository(db)
+            event_repo = AgentEventRepository(db)
             jobs = job_repo.list_recent(limit=50)
             session_by_id = self._load_sessions_for_jobs(session_repo, jobs)
             return AgentDashboardSummary(
@@ -82,12 +91,16 @@ class AgentTaskReadService:
                 completedTasks=job_repo.count_by_status("succeeded"),
                 failedTasks=job_repo.count_by_status("failed"),
                 recentTasks=[
-                    self._build_task_summary(job, session_by_id.get(job.session_id))
+                    self._build_task_summary(
+                        job,
+                        session_by_id.get(job.session_id),
+                        self._resolve_retryable_step(event_repo.list_for_job(job.id)),
+                    )
                     for job in jobs
                 ],
             )
 
-    def _build_task_summary(self, job, session) -> AgentTaskSummary:
+    def _build_task_summary(self, job, session, retryable_step: str | None = None) -> AgentTaskSummary:
         title = session.title if session and session.title else "未命名视频任务"
         return AgentTaskSummary(
             id=job.id,
@@ -96,10 +109,7 @@ class AgentTaskReadService:
             status=job.status,
             progress=job.progress,
             currentStep=job.current_step or "",
-            currentStepId=self.step_snapshot_service.resolve_current_step_id(
-                job.status,
-                job.current_step or "",
-            ),
+            currentStepId=self._resolve_summary_current_step_id(job, retryable_step),
             createdAt=job.created_at.isoformat(),
             updatedAt=job.updated_at.isoformat(),
         )
@@ -129,3 +139,14 @@ class AgentTaskReadService:
                 return str(retryable_step)
 
         return None
+
+    def _resolve_summary_current_step_id(self, job, retryable_step: str | None = None):
+        if job.status == "failed" and retryable_step:
+            normalized_step = self.step_snapshot_service.normalize_retryable_step(retryable_step)
+            if normalized_step:
+                return normalized_step
+
+        return self.step_snapshot_service.resolve_current_step_id(
+            job.status,
+            job.current_step or "",
+        )
