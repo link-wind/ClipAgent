@@ -1742,6 +1742,36 @@ class FrontendClientContractTests(unittest.TestCase):
         self.assertNotIn("text-rose-700 transition hover:text-rose-800", tasks_source)
         self.assertNotIn(">\\n                          重试\\n                        </button>", tasks_source)
 
+    def test_tasks_operations_console_copy(self):
+        tasks_source = (ROOT / "src" / "components" / "tasks" / "TaskManagerPage.tsx").read_text(
+            encoding="utf-8"
+        )
+
+        self.assertIn("任务控制台", tasks_source)
+        self.assertIn("统一扫读任务状态、最近活动和结果入口", tasks_source)
+        self.assertIn("失败优先关注", tasks_source)
+        self.assertIn("结果直达", tasks_source)
+
+    def test_tasks_row_actions_include_workspace_and_result_paths(self):
+        tasks_source = (ROOT / "src" / "components" / "tasks" / "TaskManagerPage.tsx").read_text(
+            encoding="utf-8"
+        )
+
+        self.assertIn("const [taskVideoUrls, setTaskVideoUrls] = useState<Record<string, string>>({});", tasks_source)
+        self.assertIn("function openTaskResult(taskId: string)", tasks_source)
+        self.assertIn("taskVideoUrls[task.id]", tasks_source)
+        self.assertIn("打开结果", tasks_source)
+        self.assertIn("查看方案", tasks_source)
+
+    def test_tasks_batch_action_is_honest_placeholder(self):
+        tasks_source = (ROOT / "src" / "components" / "tasks" / "TaskManagerPage.tsx").read_text(
+            encoding="utf-8"
+        )
+
+        self.assertIn("批量操作将在后续阶段开放", tasks_source)
+        self.assertIn("本阶段先支持单任务查看、回到方案和结果直达。", tasks_source)
+        self.assertIn("disabled", tasks_source)
+
     def test_agent_chat_resets_stale_session_on_missing_backend_session(self):
         content = (ROOT / "src" / "components" / "agent" / "AgentChat.tsx").read_text(encoding="utf-8")
 

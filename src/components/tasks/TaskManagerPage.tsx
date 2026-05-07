@@ -114,6 +114,24 @@ function getEventTimestamp(value: string | null | undefined) {
   return formatDateTime(value);
 }
 
+function isCompletedTask(status: string) {
+  return status === 'completed' || status === 'done' || status === 'succeeded';
+}
+
+function isFailedTask(status: string) {
+  return status === 'failed' || status === 'error';
+}
+
+function getTaskRowAccentClasses(task: AgentTaskSummary, hasResult: boolean) {
+  if (isFailedTask(task.status)) {
+    return 'border-rose-200 bg-rose-50/60';
+  }
+  if (hasResult) {
+    return 'border-emerald-200 bg-emerald-50/50';
+  }
+  return 'border-border bg-white';
+}
+
 export default function TaskManagerPage() {
   const router = useRouter();
   const setActiveSessionId = useAgentStore((state) => state.setActiveSessionId);
@@ -123,6 +141,8 @@ export default function TaskManagerPage() {
   const [filter, setFilter] = useState('all');
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [activeTask, setActiveTask] = useState<AgentTaskDetail | null>(null);
+  const [taskVideoUrls, setTaskVideoUrls] = useState<Record<string, string>>({});
+  const [taskResultLoadingIds, setTaskResultLoadingIds] = useState<Record<string, boolean>>({});
   const [errorText, setErrorText] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isRefreshingTaskDetail, setIsRefreshingTaskDetail] = useState(false);
@@ -194,6 +214,14 @@ export default function TaskManagerPage() {
   );
 
   useEffect(() => {
+    filteredTasks.forEach((task) => {
+      if (isCompletedTask(task.status) && !taskVideoUrls[task.id] && taskResultLoadingIds[task.id] === undefined) {
+        void primeTaskResult(task.id);
+      }
+    });
+  }, [filteredTasks, taskResultLoadingIds, taskVideoUrls]);
+
+  useEffect(() => {
     if (activeTask) {
       closeButtonRef.current?.focus();
     }
@@ -212,6 +240,9 @@ export default function TaskManagerPage() {
         return;
       }
       setActiveTask(detail);
+      if (detail.videoUrl) {
+        setTaskVideoUrls((prev) => ({ ...prev, [taskId]: detail.videoUrl as string }));
+      }
     } catch {
       if (detailRequestIdRef.current === requestId) {
         setErrorText('任务详情暂时加载失败。');
@@ -239,6 +270,9 @@ export default function TaskManagerPage() {
         return;
       }
       setActiveTask(detail);
+      if (detail.videoUrl) {
+        setTaskVideoUrls((prev) => ({ ...prev, [activeTask.id]: detail.videoUrl as string }));
+      }
     } catch {
       if (detailRequestIdRef.current === requestId) {
         setErrorText('任务详情暂时加载失败。');
@@ -248,6 +282,58 @@ export default function TaskManagerPage() {
         setIsRefreshingTaskDetail(false);
       }
     }
+  }
+
+  async function primeTaskResult(taskId: string) {
+    if (taskVideoUrls[taskId] || taskResultLoadingIds[taskId] !== undefined) {
+      return;
+    }
+
+    setTaskResultLoadingIds((prev) => ({ ...prev, [taskId]: true }));
+
+    try {
+      const detail = await getAgentTask(taskId);
+      if (detail.videoUrl) {
+        setTaskVideoUrls((prev) => ({ ...prev, [taskId]: detail.videoUrl as string }));
+      }
+    } catch {
+      // Keep result prefetch silent; explicit row actions surface readable errors.
+    } finally {
+      setTaskResultLoadingIds((prev) => ({ ...prev, [taskId]: false }));
+    }
+  }
+
+  async function openTaskResult(taskId: string) {
+    const cachedUrl = taskVideoUrls[taskId];
+    if (cachedUrl) {
+      window.open(cachedUrl, '_blank', 'noopener,noreferrer');
+      return;
+    }
+
+    setErrorText(null);
+
+    try {
+      const detail = await getAgentTask(taskId);
+      if (detail.videoUrl) {
+        setTaskVideoUrls((prev) => ({ ...prev, [taskId]: detail.videoUrl as string }));
+        window.open(detail.videoUrl, '_blank', 'noopener,noreferrer');
+        return;
+      }
+      setErrorText('当前任务还没有可打开的成片，请稍后再试。');
+    } catch {
+      setErrorText('当前任务结果暂时无法读取，请稍后再试。');
+    }
+  }
+
+  function openWorkspaceForTask(sessionId: string) {
+    if (!sessionId) {
+      setErrorText('当前任务缺少方案会话，暂时无法打开方案页。');
+      return;
+    }
+
+    setSession(null);
+    setActiveSessionId(sessionId);
+    router.push('/workspace');
   }
 
   function openWorkspaceForActiveTask() {
@@ -328,9 +414,9 @@ export default function TaskManagerPage() {
                 <div className="inline-flex items-center rounded-full bg-slate-100 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.02em] text-secondary">
                   {isLoading ? '加载中' : `${filteredTasks.length} 项`}
                 </div>
-                <h1 className="text-3xl font-semibold tracking-tight text-ink sm:text-4xl">任务管理页面</h1>
+                <h1 className="text-3xl font-semibold tracking-tight text-ink sm:text-4xl">任务控制台</h1>
                 <p className="max-w-3xl text-sm leading-6 text-secondary sm:text-base">
-                  统一查看任务队列、状态和最近结果；在列表里筛选、搜索、批量理解任务状态，并通过弹窗查看和处理单个任务。
+                  统一扫读任务状态、最近活动和结果入口；先在列表判断下一步，再按需进入详情弹窗。
                 </p>
               </div>
             </div>
@@ -364,13 +450,18 @@ export default function TaskManagerPage() {
                 </select>
               </label>
 
-              <button
-                type="button"
-                className="inline-flex min-h-11 items-center justify-center rounded-lg bg-slate-900 px-5 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-45"
-                disabled={selectedIds.length === 0}
-              >
-                批量操作
-              </button>
+              <div className="grid gap-2">
+                <button
+                  type="button"
+                  className="inline-flex min-h-11 items-center justify-center rounded-lg border border-border bg-slate-100 px-5 text-sm font-semibold text-slate-500"
+                  disabled
+                >
+                  批量操作将在后续阶段开放
+                </button>
+                <p className="text-xs leading-5 text-secondary">
+                  本阶段先支持单任务查看、回到方案和结果直达。
+                </p>
+              </div>
             </div>
           </div>
         </section>
@@ -426,11 +517,14 @@ export default function TaskManagerPage() {
               {selectedTasks.length} 个已选
             </span>
             <span className="rounded-full border border-border bg-slate-50 px-3 py-1 text-xs font-semibold text-secondary">
-              按更新时间查看
+              失败优先关注
+            </span>
+            <span className="rounded-full border border-border bg-slate-50 px-3 py-1 text-xs font-semibold text-secondary">
+              结果直达
             </span>
           </div>
 
-          <div className="mt-4 hidden min-h-11 grid-cols-[28px_minmax(220px,1.45fr)_110px_130px_minmax(140px,0.9fr)_130px_110px] items-center gap-3 border-b border-border px-3 text-xs font-semibold text-secondary lg:grid">
+          <div className="mt-4 hidden min-h-11 grid-cols-[28px_minmax(220px,1.45fr)_110px_130px_minmax(140px,0.9fr)_130px_220px] items-center gap-3 border-b border-border px-3 text-xs font-semibold text-secondary lg:grid">
             <span />
             <span>任务</span>
             <span>状态</span>
@@ -444,13 +538,16 @@ export default function TaskManagerPage() {
             {hasTasks ? (
               filteredTasks.map((task) => {
                 const isSelected = selectedIds.includes(task.id);
+                const hasResult = Boolean(taskVideoUrls[task.id]);
+                const rowAccentClasses = getTaskRowAccentClasses(task, hasResult);
 
                 return (
                   <div
                     key={task.id}
                     className={[
-                      'grid gap-3 rounded-lg border border-border bg-white p-3 shadow-soft transition lg:grid-cols-[28px_minmax(220px,1.45fr)_110px_130px_minmax(140px,0.9fr)_130px_110px] lg:items-center lg:rounded-none lg:border-x-0 lg:border-b lg:border-t-0 lg:p-3 lg:shadow-none',
-                      isSelected ? 'border-lime-200 bg-lime-50/70' : 'hover:bg-slate-50/70',
+                      'grid gap-3 rounded-lg border p-3 shadow-soft transition lg:grid-cols-[28px_minmax(220px,1.45fr)_110px_130px_minmax(140px,0.9fr)_130px_220px] lg:items-center lg:rounded-none lg:border-x-0 lg:border-b lg:border-t-0 lg:p-3 lg:shadow-none',
+                      rowAccentClasses,
+                      isSelected ? 'ring-2 ring-lime-200' : 'hover:bg-slate-50/80',
                     ].join(' ')}
                   >
                     <label className="inline-grid w-[18px] place-items-start pt-[3px]">
@@ -471,6 +568,9 @@ export default function TaskManagerPage() {
                       <span className="text-base font-semibold leading-6">{task.title}</span>
                       <span className="text-sm leading-6 text-secondary">
                         {task.sessionId} · 任务 ID {task.id}
+                      </span>
+                      <span className="text-xs leading-5 text-secondary">
+                        {hasResult ? '已有成片，可直接打开结果。' : isFailedTask(task.status) ? '任务失败，建议先看详情或回到方案页。' : '继续关注当前阶段推进。'}
                       </span>
                     </button>
 
@@ -503,6 +603,22 @@ export default function TaskManagerPage() {
                       >
                         查看详情
                       </button>
+                      <button
+                        type="button"
+                        className="text-xs font-semibold text-ink transition hover:text-slate-600"
+                        onClick={() => openWorkspaceForTask(task.sessionId)}
+                      >
+                        查看方案
+                      </button>
+                      {hasResult ? (
+                        <button
+                          type="button"
+                          className="text-xs font-semibold text-emerald-700 transition hover:text-emerald-800"
+                          onClick={() => void openTaskResult(task.id)}
+                        >
+                          打开结果
+                        </button>
+                      ) : null}
                     </div>
                   </div>
                 );

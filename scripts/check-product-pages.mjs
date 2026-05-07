@@ -71,12 +71,15 @@ async function main() {
   assertIncludes(workspaceHtml, '底部输入区用于继续补充信息', 'workspace 页面缺少输入区说明');
 
   const tasksHtml = await readText('.next/server/app/tasks.html');
+  assertIncludes(tasksHtml, '任务控制台', 'tasks 页面缺少控制台标题');
   assertIncludes(tasksHtml, '任务列表', 'tasks 页面缺少任务列表区块');
-  assertIncludes(tasksHtml, '批量操作', 'tasks 页面缺少批量操作入口');
   assertIncludes(tasksHtml, '搜索任务', 'tasks 页面缺少搜索输入');
   assertIncludes(tasksHtml, '可管理任务列表', 'tasks 页面缺少 B1 列表标题');
   assertIncludes(tasksHtml, '查看已选', 'tasks 页面缺少 B1 已选操作入口');
   assertIncludes(tasksHtml, '列表 + 弹窗详情', 'tasks 页面缺少 B1 布局说明');
+  assertIncludes(tasksHtml, '批量操作将在后续阶段开放', 'tasks 页面缺少诚实的批量操作提示');
+  assertIncludes(tasksHtml, '失败优先关注', 'tasks 页面缺少运营摘要标签');
+  assertIncludes(tasksHtml, '结果直达', 'tasks 页面缺少结果摘要标签');
 
   const tasksConceptIndexHtml = await readText('.next/server/app/tasks/concepts.html');
   assertIncludes(tasksConceptIndexHtml, '任务页三种静态参考方案', 'tasks concepts 索引页缺少页面标题');
