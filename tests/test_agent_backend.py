@@ -202,6 +202,73 @@ class AgentApiTests(unittest.TestCase):
         self.assertEqual(data["status"], "plan_ready")
         self.assertGreaterEqual(len(data["messages"]), 3)
 
+    def test_add_message_updates_existing_plan_keywords_and_search_queries(self):
+        from backend.main import app
+
+        client = _make_test_client(app)
+        created = client.post("/api/agent/sessions", json={"message": "做一个科技短片"}).json()
+        response = client.post(
+            f"/api/agent/sessions/{created['id']}/messages",
+            json={
+                "message": (
+                    "把方案改成更适合真实素材检索的中文关键词："
+                    "场景1：城市 车流 黄昏；"
+                    "场景2：咖啡 特写 手工艺；"
+                    "场景3：海边 日落 风景；"
+                    "场景4：雪山 航拍 自然"
+                )
+            },
+        )
+
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertEqual(data["status"], "plan_ready")
+        self.assertEqual(data["plan"]["scenes"][0]["keywords"], ["城市", "车流", "黄昏"])
+        self.assertEqual(data["plan"]["scenes"][0]["searchQuery"], "城市 车流 黄昏")
+        self.assertEqual(data["plan"]["scenes"][1]["keywords"], ["咖啡", "特写", "手工艺"])
+        self.assertEqual(data["plan"]["scenes"][1]["searchQuery"], "咖啡 特写 手工艺")
+
+    def test_add_message_persists_new_plan_version_after_scene_keyword_edits(self):
+        from backend.db.repositories import AgentPlanRepository
+
+        created = self.session_service.create_session("做一个科技短片")
+
+        updated = self.session_service.add_user_message(
+            created.id,
+            "场景1：城市 车流 黄昏；场景2：咖啡 特写 手工艺；场景3：海边 日落 风景；场景4：雪山 航拍 自然",
+        )
+
+        self.assertEqual(updated.plan.scenes[0].keywords, ["城市", "车流", "黄昏"])
+        self.assertEqual(updated.plan.scenes[3].searchQuery, "雪山 航拍 自然")
+
+        with self.session_factory() as db:
+            latest_plan = AgentPlanRepository(db).get_latest_for_session(created.id)
+
+        self.assertIsNotNone(latest_plan)
+        self.assertEqual(latest_plan.version, 2)
+        self.assertEqual(latest_plan.plan_json["scenes"][0]["keywords"], ["城市", "车流", "黄昏"])
+        self.assertEqual(latest_plan.plan_json["scenes"][2]["searchQuery"], "海边 日落 风景")
+
+    def test_add_message_updates_failed_planning_session_plan_when_scene_keywords_are_provided(self):
+        created = self.session_service.create_session("做一个科技短片")
+
+        with self.session_factory() as db:
+            from backend.db.repositories import AgentSessionRepository
+
+            session_record = AgentSessionRepository(db).get(created.id)
+            session_record.status = "failed"
+            session_record.error_retryable_step = "planning"
+            db.commit()
+
+        updated = self.session_service.add_user_message(
+            created.id,
+            "重新规划并改成中文关键词：场景1：城市 车流 黄昏；场景2：咖啡 特写 手工艺",
+        )
+
+        self.assertEqual(updated.plan.title, "智能剪辑短片")
+        self.assertEqual(updated.plan.scenes[0].keywords, ["城市", "车流", "黄昏"])
+        self.assertEqual(updated.plan.scenes[1].searchQuery, "咖啡 特写 手工艺")
+
     def test_get_missing_session_returns_404(self):
         from backend.main import app
 
@@ -831,6 +898,92 @@ class AgentExecutionContractTests(unittest.TestCase):
             with self.assertRaisesRegex(RuntimeError, "youtube.*Sign in.*pexels.*401"):
                 asyncio.run(search_service.search_and_download_agent_clips("session", [scene]))
 
+    def test_provider_failure_message_dedupes_and_keeps_specific_diagnostics(self):
+        from backend.models.agent import PlanScene
+        from backend.services import search_service
+
+        scenes = [
+            PlanScene(
+                id=1,
+                description="产品使用场景",
+                keywords=["product", "workflow"],
+                duration=6,
+                searchQuery="product workflow",
+            ),
+            PlanScene(
+                id=2,
+                description="产品细节特写",
+                keywords=["product", "detail"],
+                duration=6,
+                searchQuery="product detail",
+            ),
+        ]
+
+        with patch("backend.services.search_service.get_asset_provider_order", return_value=["pexels"]), patch(
+            "backend.services.search_service.get_pexels_config",
+        ) as mock_pexels_config:
+            mock_pexels_config.return_value.enabled = True
+            mock_pexels_config.return_value.api_key = ""
+
+            with self.assertRaises(RuntimeError) as ctx:
+                asyncio.run(search_service.search_and_download_agent_clips("session", scenes))
+
+        message = str(ctx.exception)
+        self.assertEqual(message.count("缺少 PEXELS_API_KEY，已跳过 Pexels 素材源"), 1)
+        self.assertNotIn("pexels: 没有返回候选素材", message)
+
+    def test_repeated_scene_provider_failures_are_collapsed_into_summary(self):
+        from backend.models.agent import PlanScene
+        from backend.services import search_service
+
+        scenes = [
+            PlanScene(
+                id=1,
+                description="产品使用场景",
+                keywords=["product", "workflow"],
+                duration=6,
+                searchQuery="product workflow",
+            ),
+            PlanScene(
+                id=2,
+                description="产品细节特写",
+                keywords=["product", "detail"],
+                duration=6,
+                searchQuery="product detail",
+            ),
+            PlanScene(
+                id=3,
+                description="品牌氛围镜头",
+                keywords=["brand", "mood"],
+                duration=6,
+                searchQuery="brand mood",
+            ),
+        ]
+
+        with patch("backend.services.search_service.get_asset_provider_order", return_value=["pexels"]), patch(
+            "backend.services.search_service.get_pexels_config",
+        ) as mock_pexels_config, patch(
+            "backend.services.search_service.search_pexels_candidates",
+        ) as mock_pexels_search:
+            mock_pexels_config.return_value.enabled = True
+            mock_pexels_config.return_value.api_key = "pexels-key"
+            mock_pexels_search.side_effect = [
+                RuntimeError("Pexels 搜索失败：HTTP 401 Unauthorized for query product workflow"),
+                RuntimeError("Pexels 搜索失败：HTTP 401 Unauthorized for query product detail"),
+                RuntimeError("Pexels 搜索失败：HTTP 401 Unauthorized for query brand mood"),
+            ]
+
+            with self.assertRaises(RuntimeError) as ctx:
+                asyncio.run(search_service.search_and_download_agent_clips("session", scenes))
+
+        message = str(ctx.exception)
+        self.assertEqual(message.count("Pexels 搜索失败"), 1)
+        self.assertIn("HTTP 401 Unauthorized", message)
+        self.assertIn("3 次", message)
+        self.assertNotIn("product detail", message)
+        self.assertNotIn("brand mood", message)
+        self.assertNotIn("pexels: 没有返回候选素材", message)
+
     def test_asset_candidate_exposes_legacy_video_info(self):
         from backend.services.asset_providers.types import AssetCandidate
 
@@ -949,6 +1102,276 @@ class AgentExecutionContractTests(unittest.TestCase):
         with patch.dict("os.environ", {"YTDLP_PROVIDER_ENABLED": "false", "PEXELS_PROVIDER_ENABLED": "1"}, clear=False):
             self.assertFalse(env_flag("YTDLP_PROVIDER_ENABLED", default=True))
             self.assertTrue(env_flag("PEXELS_PROVIDER_ENABLED", default=False))
+
+    def test_fixture_provider_config_uses_defaults(self):
+        from backend.services.asset_providers.config import get_fixture_config
+
+        with patch.dict("os.environ", {}, clear=True):
+            config = get_fixture_config()
+
+        self.assertTrue(config.enabled)
+        self.assertEqual(config.library_path, "fixtures/videos.json")
+
+    def test_fixture_library_loads_default_videos_json(self):
+        from backend.services.asset_providers.fixture import load_fixture_library
+
+        with patch.dict("os.environ", {}, clear=True):
+            library = load_fixture_library()
+
+        self.assertIsInstance(library, list)
+        self.assertGreater(len(library), 0)
+        self.assertIsInstance(library[0], dict)
+        self.assertIn("id", library[0])
+        self.assertIn("videoUrl", library[0])
+        self.assertIn("thumbnailUrl", library[0])
+
+    def test_fixture_search_returns_normalized_candidates(self):
+        from backend.services.asset_providers.fixture import search_fixture_candidates
+
+        with patch.dict("os.environ", {}, clear=True):
+            candidates = search_fixture_candidates(["  城市 ", "夜景"], max_results=3)
+
+        self.assertEqual(len(candidates), 1)
+        candidate = candidates[0]
+        self.assertEqual(candidate.provider, "fixture")
+        self.assertEqual(candidate.id, "vid_001")
+        self.assertEqual(candidate.title, "城市黄昏车流")
+        self.assertEqual(candidate.source_url, "/fixtures/vid_001.mp4")
+        self.assertEqual(candidate.download_url, "/fixtures/vid_001.mp4")
+        self.assertEqual(candidate.thumbnail, "/fixtures/thumbnails/vid_001.jpg")
+        self.assertEqual(candidate.duration, 45)
+        self.assertEqual(
+            candidate.diagnostics,
+            {
+                "score": 2,
+                "matchedKeywords": ["城市", "夜景"],
+            },
+        )
+
+    def test_fixture_search_returns_empty_list_when_no_match(self):
+        from backend.services.asset_providers.fixture import search_fixture_candidates
+
+        with patch.dict("os.environ", {}, clear=True):
+            candidates = search_fixture_candidates(["沙漠", "极光"], max_results=5)
+
+        self.assertEqual(candidates, [])
+
+    def test_fixture_search_prefers_probed_media_duration_when_local_file_exists(self):
+        import json
+        from pathlib import Path
+        from tempfile import TemporaryDirectory
+
+        from backend.services.asset_providers import fixture as fixture_provider
+        from backend.services.asset_providers.fixture import search_fixture_candidates
+
+        with TemporaryDirectory() as tmpdir:
+            temp_root = Path(tmpdir)
+            fixtures_dir = temp_root / "fixtures"
+            fixtures_dir.mkdir(parents=True)
+            (fixtures_dir / "videos.json").write_text(
+                json.dumps(
+                    [
+                        {
+                            "id": "vid_001",
+                            "title": "城市黄昏车流",
+                            "description": "傍晚城市街道，车流穿梭，霓虹初上",
+                            "duration": 45,
+                            "tags": ["城市", "黄昏", "车流", "夜景"],
+                            "thumbnailUrl": "/fixtures/thumbnails/vid_001.jpg",
+                            "videoUrl": "/fixtures/vid_001.mp4",
+                        }
+                    ]
+                ),
+                encoding="utf-8",
+            )
+            (fixtures_dir / "vid_001.mp4").write_bytes(b"fixture-mp4-bytes")
+
+            with patch.object(fixture_provider, "ROOT_DIR", temp_root), patch(
+                "backend.services.asset_providers.fixture.probe_fixture_duration",
+                return_value=1.0,
+            ), patch.dict("os.environ", {}, clear=True):
+                candidates = search_fixture_candidates(["城市", "车流"], max_results=1)
+
+        self.assertEqual(len(candidates), 1)
+        self.assertEqual(candidates[0].duration, 1.0)
+
+    def test_fixture_download_copies_asset_into_backend_downloads(self):
+        import json
+        from pathlib import Path
+        from tempfile import TemporaryDirectory
+
+        from backend.services.asset_providers import fixture as fixture_provider
+        from backend.services.asset_providers.fixture import download_fixture_candidate, search_fixture_candidates
+
+        with TemporaryDirectory() as tmpdir:
+            temp_root = Path(tmpdir)
+            fixtures_dir = temp_root / "fixtures"
+            downloads_dir = temp_root / "backend" / "downloads"
+            fixtures_dir.mkdir(parents=True)
+            downloads_dir.mkdir(parents=True)
+            (fixtures_dir / "videos.json").write_text(
+                json.dumps(
+                    [
+                        {
+                            "id": "vid_001",
+                            "title": "城市黄昏车流",
+                            "description": "傍晚城市街道，车流穿梭，霓虹初上",
+                            "duration": 45,
+                            "tags": ["城市", "黄昏", "车流", "夜景"],
+                            "thumbnailUrl": "/fixtures/thumbnails/vid_001.jpg",
+                            "videoUrl": "/fixtures/vid_001.mp4",
+                        }
+                    ]
+                ),
+                encoding="utf-8",
+            )
+            source_path = fixtures_dir / "vid_001.mp4"
+            source_bytes = b"fixture-mp4-bytes"
+            source_path.write_bytes(source_bytes)
+
+            with patch.object(fixture_provider, "ROOT_DIR", temp_root), patch.object(
+                fixture_provider,
+                "DOWNLOADS_DIR",
+                str(downloads_dir),
+            ), patch.dict("os.environ", {}, clear=True):
+                candidate = search_fixture_candidates(["城市", "车流"], max_results=1)[0]
+                download = download_fixture_candidate("session", candidate, 1, "session_1_fixture_1.mp4")
+
+            self.assertTrue(download.local_path.endswith("backend/downloads/session_1_fixture_1.mp4"))
+            self.assertEqual(download.public_url, "/downloads/session_1_fixture_1.mp4")
+            self.assertIn("provider", download.metadata)
+            self.assertEqual(Path(download.local_path).read_bytes(), source_bytes)
+
+    def test_fixture_download_raises_clear_error_when_source_file_missing(self):
+        from pathlib import Path
+        from tempfile import TemporaryDirectory
+
+        from backend.services.asset_providers import fixture as fixture_provider
+        from backend.services.asset_providers.fixture import download_fixture_candidate
+        from backend.services.asset_providers.types import AssetCandidate
+
+        candidate = AssetCandidate(
+            provider="fixture",
+            id="missing",
+            title="missing",
+            source_url="/fixtures/missing.mp4",
+            download_url="/fixtures/missing.mp4",
+            duration=10,
+        )
+
+        with TemporaryDirectory() as tmpdir:
+            temp_root = Path(tmpdir)
+            downloads_dir = temp_root / "backend" / "downloads"
+            downloads_dir.mkdir(parents=True)
+
+            with patch.object(fixture_provider, "ROOT_DIR", temp_root), patch.object(
+                fixture_provider,
+                "DOWNLOADS_DIR",
+                str(downloads_dir),
+            ):
+                with self.assertRaisesRegex(RuntimeError, "本地素材文件不存在"):
+                    download_fixture_candidate("session", candidate, 1, "missing.mp4")
+
+    def test_agent_download_can_complete_with_fixture_provider(self):
+        import json
+        from pathlib import Path
+        from tempfile import TemporaryDirectory
+
+        from backend.models.agent import PlanScene
+        from backend.services import search_service
+        from backend.services.asset_providers import fixture as fixture_provider
+
+        scene = PlanScene(
+            id=1,
+            description="城市演示镜头",
+            keywords=["城市", "车流"],
+            duration=6,
+            searchQuery="城市 车流",
+        )
+
+        with TemporaryDirectory() as tmpdir:
+            temp_root = Path(tmpdir)
+            fixtures_dir = temp_root / "fixtures"
+            downloads_dir = temp_root / "backend" / "downloads"
+            fixtures_dir.mkdir(parents=True)
+            downloads_dir.mkdir(parents=True)
+            (fixtures_dir / "videos.json").write_text(
+                json.dumps(
+                    [
+                        {
+                            "id": "vid_001",
+                            "title": "城市黄昏车流",
+                            "description": "傍晚城市街道，车流穿梭，霓虹初上",
+                            "duration": 45,
+                            "tags": ["城市", "黄昏", "车流", "夜景"],
+                            "thumbnailUrl": "/fixtures/thumbnails/vid_001.jpg",
+                            "videoUrl": "/fixtures/vid_001.mp4",
+                        }
+                    ]
+                ),
+                encoding="utf-8",
+            )
+            (fixtures_dir / "vid_001.mp4").write_bytes(b"fixture-mp4-bytes")
+
+            with patch.object(fixture_provider, "ROOT_DIR", temp_root), patch.object(
+                fixture_provider,
+                "DOWNLOADS_DIR",
+                str(downloads_dir),
+            ), patch.dict(
+                "os.environ",
+                {"CLIPFORGE_ASSET_PROVIDER_ORDER": "fixture", "FIXTURE_PROVIDER_ENABLED": "true"},
+                clear=False,
+            ):
+                clips = asyncio.run(search_service.search_and_download_agent_clips("session", [scene]))
+
+        self.assertEqual(len(clips), 1)
+        self.assertEqual(clips[0].sceneId, 1)
+        self.assertEqual(clips[0].caption, "城市演示镜头")
+        self.assertEqual(clips[0].sourceUrl, "/fixtures/vid_001.mp4")
+        self.assertTrue(clips[0].localPath.endswith(".mp4"))
+
+    def test_fixture_provider_falls_through_to_next_provider_when_no_match(self):
+        from backend.models.agent import PlanScene
+        from backend.services import search_service
+        from backend.services.asset_providers.types import AssetCandidate, AssetDownload
+
+        scene = PlanScene(
+            id=3,
+            description="产品使用场景",
+            keywords=["product", "workflow"],
+            duration=6,
+            searchQuery="product workflow",
+        )
+        pexels_candidate = AssetCandidate(
+            provider="pexels",
+            id="101",
+            title="Pexels video 101",
+            source_url="https://www.pexels.com/video/demo-101/",
+            download_url="https://videos.pexels.com/101.mp4",
+            duration=14,
+        )
+
+        with patch.dict("os.environ", {"CLIPFORGE_ASSET_PROVIDER_ORDER": "fixture,pexels"}, clear=False), patch(
+            "backend.services.search_service.search_pexels_candidates",
+            return_value=[pexels_candidate],
+        ), patch(
+            "backend.services.search_service.download_pexels_candidate",
+            return_value=AssetDownload(
+                local_path="backend/downloads/session_3_pexels_1.mp4",
+                public_url="/downloads/session_3_pexels_1.mp4",
+                metadata=pexels_candidate.to_metadata(),
+            ),
+        ) as mock_download, patch(
+            "backend.services.search_service.get_pexels_config",
+        ) as mock_pexels_config:
+            mock_pexels_config.return_value.enabled = True
+            mock_pexels_config.return_value.api_key = "pexels-key"
+
+            clips = asyncio.run(search_service.search_and_download_agent_clips("session", [scene]))
+
+        self.assertEqual(len(clips), 1)
+        self.assertEqual(clips[0].sourceUrl, "https://www.pexels.com/video/demo-101/")
+        self.assertEqual(mock_download.call_count, 1)
 
     def test_pexels_search_maps_api_response_to_candidates(self):
         import json
@@ -1205,6 +1628,16 @@ class FrontendClientContractTests(unittest.TestCase):
         self.assertIn("focusComposer", workspace_source)
         self.assertIn("textareaRef", workspace_source)
 
+    def test_workspace_confirm_applies_pending_message_before_confirming(self):
+        workspace_source = (ROOT / "src" / "components" / "workspace" / "BriefWorkspacePage.tsx").read_text(
+            encoding="utf-8"
+        )
+
+        self.assertIn("const pendingMessage = message.trim();", workspace_source)
+        self.assertIn("pendingMessage ? await sendAgentMessage(session.id, pendingMessage) : session", workspace_source)
+        self.assertIn("const nextSession = await confirmAgentSession(sessionToConfirm.id);", workspace_source)
+        self.assertIn("setMessage('');", workspace_source)
+
     def test_workspace_restore_experience_can_jump_to_result_failure_or_execution(self):
         workspace_source = (ROOT / "src" / "components" / "workspace" / "BriefWorkspacePage.tsx").read_text(
             encoding="utf-8"
@@ -1314,6 +1747,17 @@ class FrontendClientContractTests(unittest.TestCase):
 
         self.assertIn("会话已失效", content)
         self.assertIn("setSession(null)", content)
+
+    def test_agent_chat_confirm_submits_pending_message_before_confirming(self):
+        content = (ROOT / "src" / "components" / "agent" / "AgentChat.tsx").read_text(encoding="utf-8")
+
+        self.assertIn("const pendingMessage = message.trim();", content)
+        self.assertIn(
+            "const sessionToConfirm = pendingMessage ? await sendAgentMessage(session.id, pendingMessage) : session;",
+            content,
+        )
+        self.assertIn("const nextSession = await confirmAgentSession(sessionToConfirm.id);", content)
+        self.assertIn("setMessage('');", content)
 
     def test_run_confirmed_session_completes_with_clips_and_video_url(self):
         from backend.models.agent import AgentStatus, ClipInfo

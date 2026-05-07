@@ -1,10 +1,17 @@
 import asyncio
 import os
+import re
 from typing import Dict, List, Optional
 
 from backend.models.agent import ClipInfo as AgentClipInfo, PlanScene
 from backend.models.task import Scene
-from backend.services.asset_providers.config import get_asset_provider_order, get_pexels_config, get_youtube_config
+from backend.services.asset_providers.config import (
+    get_asset_provider_order,
+    get_fixture_config,
+    get_pexels_config,
+    get_youtube_config,
+)
+from backend.services.asset_providers.fixture import download_fixture_candidate, search_fixture_candidates
 from backend.services.asset_providers.metadata import remember_clip_metadata
 from backend.services.asset_providers.pexels import download_pexels_candidate, search_pexels_candidates
 from backend.services.asset_providers.types import AssetCandidate, AssetDownload
@@ -165,7 +172,32 @@ def build_scene_keywords(scene: PlanScene) -> List[str]:
 def provider_failure_message(provider_errors: list[tuple[str, str]]) -> str:
     if not provider_errors:
         return "没有下载到可用素材"
-    return "；".join(f"{provider}: {message}" for provider, message in provider_errors if message)
+    summaries: list[str] = []
+    grouped: dict[tuple[str, str], int] = {}
+    has_specific_error = {
+        provider
+        for provider, message in provider_errors
+        if message and message not in {"没有返回候选素材", "没有可下载候选素材"}
+    }
+    for provider, message in provider_errors:
+        if not message:
+            continue
+        if provider in has_specific_error and message in {"没有返回候选素材", "没有可下载候选素材"}:
+            continue
+        summary = collapse_provider_failure_detail(message)
+        key = (provider, summary)
+        grouped[key] = grouped.get(key, 0) + 1
+    for (provider, message), count in grouped.items():
+        suffix = f"（{count} 次）" if count > 1 else ""
+        summaries.append(f"{provider}: {message}{suffix}")
+    return "；".join(summaries) if summaries else "没有下载到可用素材"
+
+
+def collapse_provider_failure_detail(message: str) -> str:
+    http_match = re.match(r"^(.*?HTTP\s+\d{3}(?:\s+[A-Za-z][A-Za-z-]*)?)\b", message)
+    if http_match:
+        return http_match.group(1).strip()
+    return message
 
 
 async def download_asset_candidate(
@@ -183,6 +215,8 @@ async def download_asset_candidate(
         )
     if candidate.provider == "pexels":
         return download_pexels_candidate(session_id, candidate, scene_id, output_filename)
+    if candidate.provider == "fixture":
+        return download_fixture_candidate(session_id, candidate, scene_id, output_filename)
     raise RuntimeError(f"未知素材源：{candidate.provider}")
 
 
@@ -202,6 +236,15 @@ async def search_and_download_agent_clips(
         keywords = build_scene_keywords(scene)
         for provider_name in get_asset_provider_order():
             candidates: list[AssetCandidate] | None = None
+            if provider_name == "fixture":
+                fixture_config = get_fixture_config()
+                if not fixture_config.enabled:
+                    continue
+                try:
+                    candidates = search_fixture_candidates(keywords, max_results=3)
+                except Exception as exc:
+                    provider_errors.append(("fixture", str(exc)))
+
             if provider_name == "youtube":
                 if not get_youtube_config().enabled:
                     continue
@@ -219,6 +262,7 @@ async def search_and_download_agent_clips(
                         provider_errors.append(("pexels", str(exc)))
                 elif pexels_config.enabled:
                     provider_errors.append(("pexels", "缺少 PEXELS_API_KEY，已跳过 Pexels 素材源"))
+                    continue
             if not candidates:
                 provider_errors.append((provider_name, "没有返回候选素材"))
                 continue
