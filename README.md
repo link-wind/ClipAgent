@@ -133,16 +133,21 @@ CLIPFORGE_API_ORIGIN=http://127.0.0.1:8011 npm run dev -- --hostname 127.0.0.1 -
 
 ### Deterministic fixture mode
 
-仓库现在内置了一个 deterministic 本地素材源 `fixture`，用于本地 P0 验证、演示和前后端联调。它会读取 `fixtures/videos.json`，按简单关键词重叠匹配本地样例素材，再把命中的 `.mp4` 复制到 `backend/downloads/`，继续复用现有渲染链路。
+仓库现在内置了一个 deterministic 本地素材源 `fixture`，用于本地 P0 验证、smoke / 冒烟、演示和前后端联调。它会读取 `fixtures/videos.json`，按简单关键词重叠匹配本地样例素材，再把命中的 `.mp4` 复制到 `backend/downloads/`，继续复用现有渲染链路。
 
-这条链路的目标不是替代真实外部素材，而是在外部 provider 不稳定、没有 API key、或者只是想验证产品流程时，提供一条稳定出片路径。当前仓库已经附带 5 个极小的本地 fixture mp4，用来保证 demo 和自动化测试都能真正走到 MP4 输出。
+这里要明确区分两种模式：
+
+- fixture-first 的 smoke / demo 模式：目标是优先验证产品链路、任务交接、worker 执行和 MP4 输出是否稳定，不要求先打到真实外部 provider。推荐 provider order 为 `fixture,pexels,youtube`。
+- 真实外部 provider 验证模式：目标是验证真实素材搜索、下载和渲染是否能依赖外部 provider 完成，不把本地 fixture 当作主路径。推荐 provider order 为 `pexels,youtube`。
+
+这条 fixture-first 链路的目标不是替代真实外部素材，而是在外部 provider 不稳定、没有 API key、或者只是想验证产品流程时，提供一条稳定出片路径。当前仓库已经附带 5 个极小的本地 fixture mp4，用来保证 smoke、demo 和自动化测试都能真正走到 MP4 输出。
 
 推荐用法：
 
-- demo / 本地演示：`CLIPFORGE_ASSET_PROVIDER_ORDER=fixture,pexels,youtube`
+- smoke / demo / 本地演示：`CLIPFORGE_ASSET_PROVIDER_ORDER=fixture,pexels,youtube`
 - 真实外部素材联调：`CLIPFORGE_ASSET_PROVIDER_ORDER=pexels,youtube`
 
-fixture mode 的成功口径是：从 `/workspace` 或 `/tasks` 发起任务后，worker 能稳定完成素材命中、复制和渲染，最终产出可访问的 MP4。它验证的是产品工作流和渲染链路，不代表真实外部 provider 也已经稳定。
+fixture-first smoke mode 的成功口径是：从 `/workspace` 或 `/tasks` 发起任务后，worker 能稳定完成素材命中、复制和渲染，最终产出可访问的 MP4。它验证的是产品工作流和渲染链路，不代表真实外部 provider 也已经稳定，更不能把这类成功直接记作真实外部素材验证通过。
 
 ### 启动前端
 
