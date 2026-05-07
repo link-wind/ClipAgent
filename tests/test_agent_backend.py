@@ -187,6 +187,47 @@ class AgentApiTests(unittest.TestCase):
         self.assertIn("plan", data)
         self.assertGreater(len(data["plan"]["scenes"]), 0)
 
+    def test_create_session_api_returns_grounding_candidates_before_plan_confirmation(self):
+        from backend.main import app
+
+        client = _make_test_client(app)
+        response = client.post(
+            "/api/agent/sessions",
+            json={"message": "给 Notion AI 做一个 30 秒产品亮点视频"},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertEqual(data["status"], "plan_ready")
+        self.assertIsNone(data["plan"])
+        self.assertIn("grounding", data)
+        self.assertEqual(data["grounding"]["status"], "needs_confirmation")
+        self.assertGreater(len(data["grounding"]["candidates"]), 0)
+
+    def test_confirm_candidates_api_builds_grounded_plan(self):
+        from backend.main import app
+
+        client = _make_test_client(app)
+        created = client.post(
+            "/api/agent/sessions",
+            json={"message": "给 Notion AI 做一个 30 秒产品亮点视频"},
+        ).json()
+        self.assertIn("grounding", created)
+        candidate_ids = [candidate["id"] for candidate in created["grounding"]["candidates"][:2]]
+
+        response = client.post(
+            f"/api/agent/sessions/{created['id']}/grounding/confirm",
+            json={"candidateIds": candidate_ids},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertEqual(data["status"], "plan_ready")
+        self.assertEqual(data["grounding"]["status"], "confirmed")
+        self.assertEqual(data["grounding"]["selectedCandidateIds"], candidate_ids)
+        self.assertIsNotNone(data["plan"])
+        self.assertGreater(len(data["plan"]["scenes"]), 0)
+
     def test_add_message_updates_existing_session(self):
         from backend.main import app
 
@@ -1610,6 +1651,16 @@ class FrontendClientContractTests(unittest.TestCase):
         self.assertIn("查看任务详情", workspace_source)
         self.assertIn("结果预览", workspace_source)
         self.assertIn("失败步骤", workspace_source)
+
+    def test_workspace_renders_candidate_confirmation_stage(self):
+        workspace_source = (ROOT / "src" / "components" / "workspace" / "BriefWorkspacePage.tsx").read_text(
+            encoding="utf-8"
+        )
+
+        self.assertIn("候选产品画面确认", workspace_source)
+        self.assertIn("确认这些画面", workspace_source)
+        self.assertIn("grounding", workspace_source)
+        self.assertIn("selectedCandidateIds", workspace_source)
 
     def test_workspace_restore_experience_renders_resume_actions(self):
         workspace_source = (ROOT / "src" / "components" / "workspace" / "BriefWorkspacePage.tsx").read_text(

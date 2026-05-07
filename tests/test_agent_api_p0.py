@@ -249,6 +249,21 @@ class AgentApiP0ContractTests(unittest.TestCase):
         ):
             asyncio.run(_run())
 
+    def test_session_steps_show_candidate_confirmation_before_finalize_plan(self):
+        session = self.session_service.create_session("给 Notion AI 做一个 30 秒产品亮点视频")
+        steps = session.steps
+
+        self.assertEqual(steps[0].id, "understand_request")
+        self.assertEqual(steps[0].status, "succeeded")
+        self.assertEqual(steps[1].id, "extract_requirements")
+        self.assertEqual(steps[1].status, "succeeded")
+        self.assertEqual(steps[2].id, "generate_options")
+        self.assertEqual(steps[2].status, "succeeded")
+        self.assertIn("status", steps[2].result)
+        self.assertEqual(steps[2].result["status"], "needs_confirmation")
+        self.assertEqual(steps[3].id, "finalize_plan")
+        self.assertEqual(steps[3].status, "pending")
+
     def test_confirmed_session_steps_mark_create_task_succeeded(self):
         session = self.session_service.create_session("做一个 30 秒 AI 笔记产品宣传片")
         execution_service = AgentExecutionService(

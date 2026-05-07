@@ -970,6 +970,21 @@ class ConfirmFlowContractTests(unittest.TestCase):
             self.assertEqual(event_rows[0].job_id, confirmed.activeJobId)
             self.assertEqual(event_rows[0].event_type, "job_queued")
 
+    def test_confirm_session_rejects_unconfirmed_grounding_state(self):
+        from backend.services.agent_execution_service import AgentExecutionService
+
+        session = self.session_service.create_session("给 Notion AI 做一个 30 秒产品亮点视频")
+        service = AgentExecutionService(
+            session_factory=self.session_factory,
+            enqueue_job=lambda _job_id: None,
+        )
+
+        with self.assertRaisesRegex(
+            RuntimeError,
+            "Session cannot be confirmed before grounding candidates are selected",
+        ):
+            service.confirm_session(session.id)
+
     def test_confirm_endpoint_returns_queued_session(self):
         import backend.api.agent as agent_api_module
         from backend.main import app
