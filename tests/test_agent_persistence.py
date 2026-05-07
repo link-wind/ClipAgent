@@ -316,6 +316,18 @@ class AgentPersistenceModelTests(unittest.TestCase):
             },
         )
 
+    def test_grounding_response_models_align_with_plan_contract(self):
+        from backend.models import agent as models
+
+        self.assertTrue(hasattr(models, "AgentGroundingCandidate"))
+        self.assertTrue(hasattr(models, "AgentGroundingSummary"))
+        self.assertEqual(
+            models.AgentGroundingSummary.model_fields["status"].default,
+            "pending_search",
+        )
+        self.assertIn("grounding", models.AgentSession.model_fields)
+        self.assertIsNone(models.AgentSession.model_fields["grounding"].default)
+
 
 class AlembicPersistenceTests(unittest.TestCase):
     def _load_migration_module(self):
