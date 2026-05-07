@@ -1,10 +1,11 @@
-import os
 from dataclasses import dataclass
 from functools import lru_cache
 
-
-DEFAULT_DATABASE_URL = "postgresql+psycopg://clipforge:clipforge@localhost:5432/clipforge"
-DEFAULT_REDIS_URL = "redis://localhost:6379/0"
+from backend.services.runtime_config_service import (
+    DEFAULT_DATABASE_URL,
+    DEFAULT_REDIS_URL,
+    runtime_config_service,
+)
 
 
 @dataclass(frozen=True)
@@ -23,15 +24,13 @@ class Settings:
 
 @lru_cache(maxsize=1)
 def get_settings() -> Settings:
-    redis_url = os.getenv("CLIPFORGE_REDIS_URL") or os.getenv("REDIS_URL") or DEFAULT_REDIS_URL
-    database_url = (
-        os.getenv("CLIPFORGE_DATABASE_URL") or os.getenv("DATABASE_URL") or DEFAULT_DATABASE_URL
-    )
+    redis_url = runtime_config_service.get_effective_value("CLIPFORGE_REDIS_URL") or DEFAULT_REDIS_URL
+    database_url = runtime_config_service.get_effective_value("CLIPFORGE_DATABASE_URL") or DEFAULT_DATABASE_URL
 
     return Settings(
         database_url=database_url,
         redis_url=redis_url,
-        celery_broker_url=os.getenv("CELERY_BROKER_URL", redis_url),
-        celery_result_backend=os.getenv("CELERY_RESULT_BACKEND", redis_url),
-        celery_queue=os.getenv("CLIPFORGE_CELERY_QUEUE", "clipforge-agent"),
+        celery_broker_url=runtime_config_service.get_effective_value("CELERY_BROKER_URL") or redis_url,
+        celery_result_backend=runtime_config_service.get_effective_value("CELERY_RESULT_BACKEND") or redis_url,
+        celery_queue=runtime_config_service.get_effective_value("CLIPFORGE_CELERY_QUEUE") or "clipforge-agent",
     )

@@ -409,6 +409,72 @@ class RuntimeConfigServiceTests(unittest.TestCase):
         self.assertEqual(clear_response.status_code, 200)
 
 
+class RuntimeConfigIntegrationTests(unittest.TestCase):
+    def setUp(self):
+        self.temp_dir = tempfile.TemporaryDirectory()
+        self.runtime_path = Path(self.temp_dir.name) / "runtime_config.local.json"
+
+    def tearDown(self):
+        self.temp_dir.cleanup()
+
+    def test_asset_provider_config_reads_runtime_overrides(self):
+        import backend.services.asset_providers.config as provider_config
+        from backend.services.runtime_config_service import RuntimeConfigService
+
+        service = RuntimeConfigService(config_path=self.runtime_path)
+        service.update(
+            {
+                "CLIPFORGE_ASSET_PROVIDER_ORDER": "fixture,pexels,youtube",
+                "PEXELS_API_KEY": "runtime-pexels",
+                "PEXELS_PROVIDER_ENABLED": True,
+                "YOUTUBE_PROVIDER_ENABLED": False,
+            }
+        )
+
+        with patch.object(provider_config, "runtime_config_service", service):
+            self.assertEqual(provider_config.get_asset_provider_order(), ["fixture", "pexels", "youtube"])
+            self.assertEqual(provider_config.get_pexels_config().api_key, "runtime-pexels")
+            self.assertTrue(provider_config.get_pexels_config().enabled)
+            self.assertFalse(provider_config.get_youtube_config().enabled)
+
+    def test_gpt_service_reads_runtime_openai_config(self):
+        import backend.services.gpt_service as gpt_service_module
+        from backend.services.runtime_config_service import RuntimeConfigService
+
+        service = RuntimeConfigService(config_path=self.runtime_path)
+        service.update({"OPENAI_API_KEY": "runtime-openai", "OPENAI_BASE_URL": "https://example.test/v1"})
+
+        with patch.object(gpt_service_module, "runtime_config_service", service):
+            with patch.object(gpt_service_module, "OpenAI") as openai_client:
+                gpt_service_module.GPTService().client
+
+        openai_client.assert_called_once_with(api_key="runtime-openai", base_url="https://example.test/v1")
+
+    def test_backend_settings_reads_runtime_infrastructure_values(self):
+        import backend.config as backend_config
+        from backend.services.runtime_config_service import RuntimeConfigService
+
+        service = RuntimeConfigService(config_path=self.runtime_path)
+        service.update(
+            {
+                "CLIPFORGE_DATABASE_URL": "postgresql+psycopg://runtime/runtime",
+                "CLIPFORGE_REDIS_URL": "redis://localhost:6379/9",
+                "CLIPFORGE_CELERY_QUEUE": "clipforge-runtime",
+            }
+        )
+
+        backend_config.get_settings.cache_clear()
+        with patch.object(backend_config, "runtime_config_service", service):
+            settings = backend_config.get_settings()
+        backend_config.get_settings.cache_clear()
+
+        self.assertEqual(settings.database_url, "postgresql+psycopg://runtime/runtime")
+        self.assertEqual(settings.redis_url, "redis://localhost:6379/9")
+        self.assertEqual(settings.celery_broker_url, "redis://localhost:6379/9")
+        self.assertEqual(settings.celery_result_backend, "redis://localhost:6379/9")
+        self.assertEqual(settings.celery_queue, "clipforge-runtime")
+
+
 class AgentExecutionContractTests(unittest.TestCase):
     def test_clip_info_contains_local_and_public_paths(self):
         from backend.models.agent import ClipInfo
