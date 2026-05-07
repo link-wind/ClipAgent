@@ -595,6 +595,7 @@ class RepositoryContractTests(unittest.TestCase):
 
         self.assertTrue(callable(getattr(AgentSessionRepository, "create", None)))
         self.assertTrue(callable(getattr(AgentSessionRepository, "get", None)))
+        self.assertTrue(callable(getattr(AgentSessionRepository, "update_grounding_state", None)))
         self.assertTrue(callable(getattr(AgentMessageRepository, "create", None)))
         self.assertTrue(callable(getattr(AgentMessageRepository, "list_for_session", None)))
         self.assertTrue(callable(getattr(AgentPlanRepository, "create", None)))
@@ -607,6 +608,7 @@ class RepositoryContractTests(unittest.TestCase):
         self.assertTrue(callable(getattr(AgentEventRepository, "list_for_session", None)))
         self.assertTrue(callable(getattr(AgentArtifactRepository, "create", None)))
         self.assertTrue(callable(getattr(AgentArtifactRepository, "list_for_session", None)))
+        self.assertTrue(callable(getattr(AgentArtifactRepository, "list_candidate_visuals_for_session", None)))
 
 
 class RepositoryBehaviorTests(unittest.TestCase):
