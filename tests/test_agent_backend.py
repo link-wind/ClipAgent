@@ -1904,6 +1904,31 @@ class FrontendClientContractTests(unittest.TestCase):
         self.assertNotIn("text-rose-700 transition hover:text-rose-800", tasks_source)
         self.assertNotIn(">\\n                          重试\\n                        </button>", tasks_source)
 
+    def test_settings_page_renders_editable_runtime_settings_contract(self):
+        settings_page = (ROOT / "src" / "components" / "settings" / "SettingsPage.tsx").read_text(
+            encoding="utf-8"
+        )
+        settings_route = (ROOT / "src" / "app" / "settings" / "page.tsx").read_text(encoding="utf-8")
+        settings_api = (ROOT / "src" / "lib" / "settingsApi.ts").read_text(encoding="utf-8")
+        shell_source = (ROOT / "src" / "components" / "layout" / "ProductShell.tsx").read_text(
+            encoding="utf-8"
+        )
+
+        self.assertIn("运行设置", settings_page)
+        self.assertIn("AI 配置", settings_page)
+        self.assertIn("素材源配置", settings_page)
+        self.assertIn("YouTube 高级配置", settings_page)
+        self.assertIn("基础设施配置", settings_page)
+        self.assertIn("输入新值以替换当前配置", settings_page)
+        self.assertIn("保存修改", settings_page)
+        self.assertIn("放弃修改", settings_page)
+        self.assertIn("清除", settings_page)
+        self.assertIn("getRuntimeSettings", settings_api)
+        self.assertIn("updateRuntimeSettings", settings_api)
+        self.assertIn("clearRuntimeSettings", settings_api)
+        self.assertIn("SettingsPage", settings_route)
+        self.assertIn("href: '/settings'", shell_source)
+
     def test_tasks_operations_console_copy(self):
         tasks_source = (ROOT / "src" / "components" / "tasks" / "TaskManagerPage.tsx").read_text(
             encoding="utf-8"

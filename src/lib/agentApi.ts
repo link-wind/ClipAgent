@@ -106,7 +106,7 @@ export interface AgentSession {
 }
 
 type RequestOptions = {
-  method?: 'GET' | 'POST'
+  method?: 'GET' | 'POST' | 'PATCH'
   body?: unknown
 }
 

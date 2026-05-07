@@ -34,6 +34,7 @@ FIELD_DEFINITIONS: tuple[RuntimeField, ...] = (
     RuntimeField("OPENAI_BASE_URL", "OpenAI Base URL", "ai", "string", False, "https://api.openai.com/v1", ("OPENAI_BASE_URL",), help="OpenAI 兼容 API 地址。"),
     RuntimeField("CLIPFORGE_ASSET_PROVIDER_ORDER", "素材源顺序", "providers", "provider_order", False, DEFAULT_ASSET_PROVIDER_ORDER, ("CLIPFORGE_ASSET_PROVIDER_ORDER",), help="demo 建议 fixture,pexels,youtube；真实外部素材联调建议 pexels,youtube。"),
     RuntimeField("FIXTURE_PROVIDER_ENABLED", "Fixture Provider", "providers", "boolean", False, True, ("FIXTURE_PROVIDER_ENABLED",), help="启用本地 deterministic fixture 素材源。"),
+    RuntimeField("FIXTURE_LIBRARY_PATH", "Fixture Library Path", "providers", "string", False, DEFAULT_FIXTURE_LIBRARY_PATH, ("FIXTURE_LIBRARY_PATH",), help="本地 fixture metadata 文件路径。"),
     RuntimeField("PEXELS_PROVIDER_ENABLED", "Pexels Provider", "providers", "boolean", False, None, ("PEXELS_PROVIDER_ENABLED",), help="启用 Pexels 素材源。未显式设置时，有 Pexels key 即启用。"),
     RuntimeField("PEXELS_API_KEY", "Pexels API Key", "providers", "secret", True, env_keys=("PEXELS_API_KEY",), help="用于 Pexels 视频搜索和下载。"),
     RuntimeField("YOUTUBE_PROVIDER_ENABLED", "YouTube Provider", "youtube", "boolean", False, True, ("YTDLP_PROVIDER_ENABLED", "YOUTUBE_PROVIDER_ENABLED"), help="启用 YouTube/yt-dlp 素材源。"),

@@ -10,6 +10,10 @@ const nextConfig = {
         destination: `${API_ORIGIN}/api/agent/:path*`,
       },
       {
+        source: '/api/config/:path*',
+        destination: `${API_ORIGIN}/api/config/:path*`,
+      },
+      {
         source: '/output/:path*',
         destination: `${API_ORIGIN}/output/:path*`,
       },
