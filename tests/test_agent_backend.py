@@ -1628,6 +1628,16 @@ class FrontendClientContractTests(unittest.TestCase):
         self.assertIn("focusComposer", workspace_source)
         self.assertIn("textareaRef", workspace_source)
 
+    def test_workspace_confirm_applies_pending_message_before_confirming(self):
+        workspace_source = (ROOT / "src" / "components" / "workspace" / "BriefWorkspacePage.tsx").read_text(
+            encoding="utf-8"
+        )
+
+        self.assertIn("const pendingMessage = message.trim();", workspace_source)
+        self.assertIn("pendingMessage ? await sendAgentMessage(session.id, pendingMessage) : session", workspace_source)
+        self.assertIn("const nextSession = await confirmAgentSession(sessionToConfirm.id);", workspace_source)
+        self.assertIn("setMessage('');", workspace_source)
+
     def test_workspace_restore_experience_can_jump_to_result_failure_or_execution(self):
         workspace_source = (ROOT / "src" / "components" / "workspace" / "BriefWorkspacePage.tsx").read_text(
             encoding="utf-8"
