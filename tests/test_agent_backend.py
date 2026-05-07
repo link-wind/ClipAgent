@@ -1759,6 +1759,56 @@ class FrontendClientContractTests(unittest.TestCase):
         self.assertIn("const nextSession = await confirmAgentSession(sessionToConfirm.id);", content)
         self.assertIn("setMessage('');", content)
 
+    def test_readme_distinguishes_fixture_smoke_mode_from_real_external_provider_mode(self):
+        readme = (ROOT / "README.md").read_text(encoding="utf-8")
+        lowered = readme.lower()
+
+        self.assertIn("deterministic", readme)
+        self.assertIn("fixture", readme)
+        self.assertTrue("smoke" in lowered or "冒烟" in readme)
+        self.assertTrue("demo" in lowered or "演示" in readme)
+        self.assertIn("真实外部", readme)
+        self.assertIn("provider", readme)
+        self.assertIn("fixture,pexels,youtube", readme)
+        self.assertIn("pexels,youtube", readme)
+
+    def test_run_fixture_smoke_script_declares_cli_contract_markers(self):
+        script_path = ROOT / "scripts" / "run_fixture_smoke.py"
+        content = script_path.read_text(encoding="utf-8")
+
+        self.assertIn("argparse", content)
+        self.assertIn("http://127.0.0.1:8010", content)
+        self.assertIn("/api/agent/sessions", content)
+        self.assertIn("SMOKE OK", content)
+        self.assertIn("SMOKE FAILED", content)
+
+    def test_run_fixture_smoke_script_declares_request_and_failure_helpers(self):
+        script_path = ROOT / "scripts" / "run_fixture_smoke.py"
+        content = script_path.read_text(encoding="utf-8")
+
+        self.assertIn("def request_json(", content)
+        self.assertIn("HTTPError", content)
+        self.assertIn("URLError", content)
+        self.assertIn("def print_failure(", content)
+        self.assertIn("api_error", content)
+        self.assertIn("timeout", content)
+        self.assertIn("job_missing", content)
+        self.assertIn("artifact_missing", content)
+        self.assertIn("session_id=", content)
+        self.assertIn("job_id=", content)
+        self.assertIn("video_url=", content)
+        self.assertIn("output_path=", content)
+
+    def test_run_fixture_smoke_script_updates_plan_with_fixture_keywords_before_confirm(self):
+        script_path = ROOT / "scripts" / "run_fixture_smoke.py"
+        content = script_path.read_text(encoding="utf-8")
+
+        self.assertIn("/messages", content)
+        self.assertIn("场景1：城市 黄昏 车流", content)
+        self.assertIn("场景2：咖啡 特写 手工艺", content)
+        self.assertIn("场景3：海边 日落 风景", content)
+        self.assertIn("场景4：雪山 航拍 自然", content)
+
     def test_run_confirmed_session_completes_with_clips_and_video_url(self):
         from backend.models.agent import AgentStatus, ClipInfo
         from backend.services.agent_service import AgentService
@@ -1787,6 +1837,37 @@ class FrontendClientContractTests(unittest.TestCase):
         self.assertEqual(updated.progress, 100)
         self.assertEqual(len(updated.clips), 1)
         self.assertEqual(updated.videoUrl, f"/output/{session.id}.mp4")
+
+    def test_run_confirmed_session_fixture_smoke_exposes_verifiable_video_result_entrypoint(self):
+        from backend.models.agent import AgentStatus, ClipInfo
+        from backend.services.agent_service import AgentService
+
+        async def fake_search(session_id, scenes):
+            return [
+                ClipInfo(
+                    sceneId=scenes[0].id,
+                    sourceUrl="/fixtures/vid_001.mp4",
+                    localPath="backend/downloads/session_fixture_1.mp4",
+                    publicUrl="/downloads/session_fixture_1.mp4",
+                    duration=6,
+                )
+            ]
+
+        async def fake_render(session_id, clips, output_filename):
+            return f"/output/{output_filename}"
+
+        service = AgentService()
+        session = service.create_session("用 deterministic fixture smoke 跑一条演示短片")
+        service.confirm_session(session.id)
+
+        updated = asyncio.run(service.run_confirmed_session(session.id, fake_search, fake_render))
+
+        self.assertEqual(updated.status, AgentStatus.DONE)
+        self.assertEqual(len(updated.clips), 1)
+        self.assertEqual(updated.clips[0].publicUrl, "/downloads/session_fixture_1.mp4")
+        self.assertEqual(updated.videoUrl, f"/output/{session.id}.mp4")
+        self.assertTrue(updated.videoUrl.startswith("/output/"))
+        self.assertTrue(updated.videoUrl.endswith(".mp4"))
 
     def test_run_confirmed_session_without_downloaded_clips_fails(self):
         from backend.models.agent import AgentStatus
