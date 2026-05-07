@@ -28,6 +28,9 @@ class AgentSessionRecord(Base):
         ForeignKey("agent_jobs.id"),
         nullable=True,
     )
+    grounding_status: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    grounding_summary_json: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    selected_candidate_ids_json: Mapped[list | None] = mapped_column(JSON, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime,

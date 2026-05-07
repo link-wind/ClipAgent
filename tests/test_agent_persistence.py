@@ -201,6 +201,9 @@ class AgentPersistenceModelTests(unittest.TestCase):
                 "error_message",
                 "error_retryable_step",
                 "active_job_id",
+                "grounding_status",
+                "grounding_summary_json",
+                "selected_candidate_ids_json",
                 "created_at",
                 "updated_at",
             },
@@ -370,8 +373,16 @@ class AlembicPersistenceTests(unittest.TestCase):
             / "versions"
             / "20260502_create_agent_tables.py"
         )
+        grounding_migration = (
+            ROOT
+            / "backend"
+            / "alembic"
+            / "versions"
+            / "20260507_add_agent_grounding_state.py"
+        )
 
         self.assertTrue(migration.exists())
+        self.assertTrue(grounding_migration.exists())
         content = migration.read_text(encoding="utf-8")
 
         for table_name in [
