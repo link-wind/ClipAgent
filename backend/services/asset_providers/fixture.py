@@ -3,6 +3,8 @@ import os
 import shutil
 from pathlib import Path
 
+import ffmpeg
+
 from backend.services.asset_providers.config import get_fixture_config
 from backend.services.asset_providers.types import AssetCandidate, AssetDownload
 
@@ -63,6 +65,12 @@ def search_fixture_candidates(keywords, max_results=5) -> list[AssetCandidate]:
         entry_tokens = normalize_fixture_tokens(build_fixture_text(entry))
         matched_keywords = build_matched_keywords(entry_tokens, normalized_keywords)
         video_url = entry.get("videoUrl", "") or ""
+        source_path = resolve_fixture_source_path(video_url) if video_url else None
+        duration = entry.get("duration", 0) or 0
+        if source_path is not None and source_path.is_file():
+            probed_duration = probe_fixture_duration(source_path)
+            if probed_duration is not None:
+                duration = probed_duration
         candidates.append(
             AssetCandidate(
                 provider="fixture",
@@ -70,7 +78,7 @@ def search_fixture_candidates(keywords, max_results=5) -> list[AssetCandidate]:
                 title=entry.get("title", "") or "",
                 source_url=video_url,
                 download_url=video_url,
-                duration=entry.get("duration", 0) or 0,
+                duration=duration,
                 thumbnail=entry.get("thumbnailUrl", "") or "",
                 diagnostics={
                     "score": score,
@@ -84,6 +92,21 @@ def search_fixture_candidates(keywords, max_results=5) -> list[AssetCandidate]:
 def resolve_fixture_source_path(source_url: str) -> Path:
     relative_path = source_url.lstrip("/")
     return ROOT_DIR / relative_path
+
+
+def probe_fixture_duration(source_path: Path) -> float | None:
+    try:
+        probe = ffmpeg.probe(str(source_path))
+    except Exception:
+        return None
+    raw_duration = (probe.get("format") or {}).get("duration")
+    if raw_duration in (None, ""):
+        return None
+    try:
+        duration = float(raw_duration)
+    except (TypeError, ValueError):
+        return None
+    return duration if duration > 0 else None
 
 
 def download_fixture_candidate(

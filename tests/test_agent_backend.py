@@ -202,6 +202,73 @@ class AgentApiTests(unittest.TestCase):
         self.assertEqual(data["status"], "plan_ready")
         self.assertGreaterEqual(len(data["messages"]), 3)
 
+    def test_add_message_updates_existing_plan_keywords_and_search_queries(self):
+        from backend.main import app
+
+        client = _make_test_client(app)
+        created = client.post("/api/agent/sessions", json={"message": "做一个科技短片"}).json()
+        response = client.post(
+            f"/api/agent/sessions/{created['id']}/messages",
+            json={
+                "message": (
+                    "把方案改成更适合真实素材检索的中文关键词："
+                    "场景1：城市 车流 黄昏；"
+                    "场景2：咖啡 特写 手工艺；"
+                    "场景3：海边 日落 风景；"
+                    "场景4：雪山 航拍 自然"
+                )
+            },
+        )
+
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertEqual(data["status"], "plan_ready")
+        self.assertEqual(data["plan"]["scenes"][0]["keywords"], ["城市", "车流", "黄昏"])
+        self.assertEqual(data["plan"]["scenes"][0]["searchQuery"], "城市 车流 黄昏")
+        self.assertEqual(data["plan"]["scenes"][1]["keywords"], ["咖啡", "特写", "手工艺"])
+        self.assertEqual(data["plan"]["scenes"][1]["searchQuery"], "咖啡 特写 手工艺")
+
+    def test_add_message_persists_new_plan_version_after_scene_keyword_edits(self):
+        from backend.db.repositories import AgentPlanRepository
+
+        created = self.session_service.create_session("做一个科技短片")
+
+        updated = self.session_service.add_user_message(
+            created.id,
+            "场景1：城市 车流 黄昏；场景2：咖啡 特写 手工艺；场景3：海边 日落 风景；场景4：雪山 航拍 自然",
+        )
+
+        self.assertEqual(updated.plan.scenes[0].keywords, ["城市", "车流", "黄昏"])
+        self.assertEqual(updated.plan.scenes[3].searchQuery, "雪山 航拍 自然")
+
+        with self.session_factory() as db:
+            latest_plan = AgentPlanRepository(db).get_latest_for_session(created.id)
+
+        self.assertIsNotNone(latest_plan)
+        self.assertEqual(latest_plan.version, 2)
+        self.assertEqual(latest_plan.plan_json["scenes"][0]["keywords"], ["城市", "车流", "黄昏"])
+        self.assertEqual(latest_plan.plan_json["scenes"][2]["searchQuery"], "海边 日落 风景")
+
+    def test_add_message_updates_failed_planning_session_plan_when_scene_keywords_are_provided(self):
+        created = self.session_service.create_session("做一个科技短片")
+
+        with self.session_factory() as db:
+            from backend.db.repositories import AgentSessionRepository
+
+            session_record = AgentSessionRepository(db).get(created.id)
+            session_record.status = "failed"
+            session_record.error_retryable_step = "planning"
+            db.commit()
+
+        updated = self.session_service.add_user_message(
+            created.id,
+            "重新规划并改成中文关键词：场景1：城市 车流 黄昏；场景2：咖啡 特写 手工艺",
+        )
+
+        self.assertEqual(updated.plan.title, "智能剪辑短片")
+        self.assertEqual(updated.plan.scenes[0].keywords, ["城市", "车流", "黄昏"])
+        self.assertEqual(updated.plan.scenes[1].searchQuery, "咖啡 特写 手工艺")
+
     def test_get_missing_session_returns_404(self):
         from backend.main import app
 
@@ -1088,6 +1155,45 @@ class AgentExecutionContractTests(unittest.TestCase):
             candidates = search_fixture_candidates(["沙漠", "极光"], max_results=5)
 
         self.assertEqual(candidates, [])
+
+    def test_fixture_search_prefers_probed_media_duration_when_local_file_exists(self):
+        import json
+        from pathlib import Path
+        from tempfile import TemporaryDirectory
+
+        from backend.services.asset_providers import fixture as fixture_provider
+        from backend.services.asset_providers.fixture import search_fixture_candidates
+
+        with TemporaryDirectory() as tmpdir:
+            temp_root = Path(tmpdir)
+            fixtures_dir = temp_root / "fixtures"
+            fixtures_dir.mkdir(parents=True)
+            (fixtures_dir / "videos.json").write_text(
+                json.dumps(
+                    [
+                        {
+                            "id": "vid_001",
+                            "title": "城市黄昏车流",
+                            "description": "傍晚城市街道，车流穿梭，霓虹初上",
+                            "duration": 45,
+                            "tags": ["城市", "黄昏", "车流", "夜景"],
+                            "thumbnailUrl": "/fixtures/thumbnails/vid_001.jpg",
+                            "videoUrl": "/fixtures/vid_001.mp4",
+                        }
+                    ]
+                ),
+                encoding="utf-8",
+            )
+            (fixtures_dir / "vid_001.mp4").write_bytes(b"fixture-mp4-bytes")
+
+            with patch.object(fixture_provider, "ROOT_DIR", temp_root), patch(
+                "backend.services.asset_providers.fixture.probe_fixture_duration",
+                return_value=1.0,
+            ), patch.dict("os.environ", {}, clear=True):
+                candidates = search_fixture_candidates(["城市", "车流"], max_results=1)
+
+        self.assertEqual(len(candidates), 1)
+        self.assertEqual(candidates[0].duration, 1.0)
 
     def test_fixture_download_copies_asset_into_backend_downloads(self):
         import json

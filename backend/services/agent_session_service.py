@@ -1,3 +1,4 @@
+import re
 from typing import Optional
 
 from backend.db.repositories import (
@@ -72,12 +73,16 @@ class AgentSessionService:
 
                 message_repo.create(session_id=session_id, role="user", content=content)
                 latest_plan = plan_repo.get_latest_for_session(session_id)
-                should_create_plan = latest_plan is None or session_record.status == "plan_ready"
-                if should_create_plan:
-                    plan = self._fallback_plan(
-                        content,
-                        title=latest_plan.title if latest_plan else "智能剪辑短片",
+                should_create_plan = (
+                    latest_plan is None
+                    or session_record.status == "plan_ready"
+                    or (
+                        session_record.status == "failed"
+                        and session_record.error_retryable_step == "planning"
                     )
+                )
+                if should_create_plan:
+                    plan = self._build_next_plan(latest_plan, content)
                     self._apply_plan_to_session(session_record, plan)
                     next_version = 1 if latest_plan is None else latest_plan.version + 1
                     plan_repo.create(
@@ -120,6 +125,59 @@ class AgentSessionService:
             session_record.status == "failed"
             and session_record.error_retryable_step == "planning"
         )
+
+    def _build_next_plan(self, latest_plan, content: str) -> EditPlan:
+        if latest_plan is None:
+            return self._fallback_plan(content)
+
+        current_plan = EditPlan.model_validate(latest_plan.plan_json)
+        updated_plan = self._apply_scene_keyword_updates(current_plan, content)
+        if updated_plan is not None:
+            return updated_plan
+
+        return self._fallback_plan(content, title=current_plan.title)
+
+    def _apply_scene_keyword_updates(self, plan: EditPlan, content: str) -> EditPlan | None:
+        updates = self._extract_scene_keyword_updates(content)
+        if not updates:
+            return None
+
+        updated_scenes: list[PlanScene] = []
+        changed = False
+        for scene in plan.scenes:
+            keywords = updates.get(scene.id)
+            if not keywords:
+                updated_scenes.append(scene.model_copy(deep=True))
+                continue
+
+            changed = True
+            updated_scenes.append(
+                scene.model_copy(
+                    update={
+                        "keywords": keywords,
+                        "searchQuery": " ".join(keywords),
+                    }
+                )
+            )
+
+        if not changed:
+            return None
+
+        return plan.model_copy(update={"scenes": updated_scenes})
+
+    def _extract_scene_keyword_updates(self, content: str) -> dict[int, list[str]]:
+        updates: dict[int, list[str]] = {}
+        pattern = re.compile(r"场景\s*(\d+)\s*[:：]\s*([^；;\n]+)")
+        for raw_scene_id, raw_keywords in pattern.findall(content):
+            scene_id = int(raw_scene_id)
+            keywords = self._split_keywords(raw_keywords)
+            if keywords:
+                updates[scene_id] = keywords
+        return updates
+
+    def _split_keywords(self, raw_keywords: str) -> list[str]:
+        parts = re.split(r"[\s,，、/|]+", raw_keywords.strip())
+        return [part.strip() for part in parts if part.strip()]
 
     def _fallback_plan(self, prompt: str, title: str = "智能剪辑短片") -> EditPlan:
         # 生成最小兜底方案
