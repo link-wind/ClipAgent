@@ -1748,6 +1748,17 @@ class FrontendClientContractTests(unittest.TestCase):
         self.assertIn("会话已失效", content)
         self.assertIn("setSession(null)", content)
 
+    def test_agent_chat_confirm_submits_pending_message_before_confirming(self):
+        content = (ROOT / "src" / "components" / "agent" / "AgentChat.tsx").read_text(encoding="utf-8")
+
+        self.assertIn("const pendingMessage = message.trim();", content)
+        self.assertIn(
+            "const sessionToConfirm = pendingMessage ? await sendAgentMessage(session.id, pendingMessage) : session;",
+            content,
+        )
+        self.assertIn("const nextSession = await confirmAgentSession(sessionToConfirm.id);", content)
+        self.assertIn("setMessage('');", content)
+
     def test_run_confirmed_session_completes_with_clips_and_video_url(self):
         from backend.models.agent import AgentStatus, ClipInfo
         from backend.services.agent_service import AgentService

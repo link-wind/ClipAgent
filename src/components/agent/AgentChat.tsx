@@ -78,9 +78,12 @@ export default function AgentChat() {
     setErrorText('');
 
     try {
-      const nextSession = await confirmAgentSession(session.id);
+      const pendingMessage = message.trim();
+      const sessionToConfirm = pendingMessage ? await sendAgentMessage(session.id, pendingMessage) : session;
+      const nextSession = await confirmAgentSession(sessionToConfirm.id);
       setActiveSessionId(nextSession.id);
       setSession(nextSession);
+      setMessage('');
     } catch (error) {
       setErrorText(toUserError(error, () => setSession(null)));
     } finally {
