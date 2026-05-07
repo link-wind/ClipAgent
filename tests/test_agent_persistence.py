@@ -328,15 +328,37 @@ class AgentPersistenceModelTests(unittest.TestCase):
         self.assertIn("grounding", models.AgentSession.model_fields)
         self.assertIsNone(models.AgentSession.model_fields["grounding"].default)
 
+    def test_grounding_session_record_defaults_align_with_response_contract(self):
+        models = self._load_models_module()
+
+        self.assertEqual(
+            models.AgentSessionRecord.__table__.columns["grounding_status"].default.arg,
+            "pending_search",
+        )
+        self.assertTrue(
+            models.AgentSessionRecord.__table__.columns["grounding_summary_json"].default.is_callable
+        )
+        self.assertEqual(
+            models.AgentSessionRecord.__table__.columns["grounding_summary_json"].default.arg.__name__,
+            "dict",
+        )
+        self.assertTrue(
+            models.AgentSessionRecord.__table__.columns["selected_candidate_ids_json"].default.is_callable
+        )
+        self.assertEqual(
+            models.AgentSessionRecord.__table__.columns["selected_candidate_ids_json"].default.arg.__name__,
+            "list",
+        )
+
 
 class AlembicPersistenceTests(unittest.TestCase):
-    def _load_migration_module(self):
+    def _load_migration_module(self, filename="20260502_create_agent_tables.py"):
         migration_path = (
             ROOT
             / "backend"
             / "alembic"
             / "versions"
-            / "20260502_create_agent_tables.py"
+            / filename
         )
         fake_alembic = types.ModuleType("alembic")
         fake_alembic.op = _FakeAlembicOp()
@@ -376,6 +398,29 @@ class AlembicPersistenceTests(unittest.TestCase):
 
         self.assertIn("script_location = %(here)s/alembic", content)
         self.assertIn("prepend_sys_path = %(here)s/..", content)
+
+    def test_grounding_state_migration_applies_and_reverts_three_columns_in_order(self):
+        module, fake_op = self._load_migration_module("20260507_add_agent_grounding_state.py")
+
+        module.upgrade()
+        self.assertEqual(
+            [call["name"] for call in fake_op.add_columns],
+            [
+                "grounding_status",
+                "grounding_summary_json",
+                "selected_candidate_ids_json",
+            ],
+        )
+
+        module.downgrade()
+        self.assertEqual(
+            [call["name"] for call in fake_op.drop_columns],
+            [
+                "selected_candidate_ids_json",
+                "grounding_summary_json",
+                "grounding_status",
+            ],
+        )
 
     def test_initial_migration_mentions_core_tables_and_indexes(self):
         migration = (
@@ -488,6 +533,8 @@ class _FakeAlembicOp:
         self.create_tables = []
         self.create_indexes = []
         self.create_foreign_keys = []
+        self.add_columns = []
+        self.drop_columns = []
         self.drop_indexes = []
         self.drop_constraints = []
         self.drop_tables = []
@@ -516,6 +563,12 @@ class _FakeAlembicOp:
                 "kwargs": kwargs,
             }
         )
+
+    def add_column(self, table_name, column, **kwargs):
+        self.add_columns.append({"table_name": table_name, "name": column.name, "column": column, "kwargs": kwargs})
+
+    def drop_column(self, table_name, column_name, **kwargs):
+        self.drop_columns.append({"table_name": table_name, "name": column_name, "kwargs": kwargs})
 
     def drop_index(self, name, table_name=None, **kwargs):
         self.drop_indexes.append({"name": name, "table_name": table_name, "kwargs": kwargs})
