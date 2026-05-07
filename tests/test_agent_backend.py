@@ -1,7 +1,9 @@
 import asyncio
 import importlib
+import json
 import os
 import sys
+import tempfile
 import unittest
 from pathlib import Path
 from unittest.mock import AsyncMock, patch
@@ -311,6 +313,100 @@ class AgentApiTests(unittest.TestCase):
         data = response.json()
         self.assertEqual(data["id"], created["id"])
         self.assertEqual(data["status"], created["status"])
+
+
+class RuntimeConfigServiceTests(unittest.TestCase):
+    def setUp(self):
+        self.temp_dir = tempfile.TemporaryDirectory()
+        self.runtime_path = Path(self.temp_dir.name) / "runtime_config.local.json"
+
+    def tearDown(self):
+        self.temp_dir.cleanup()
+
+    def test_runtime_config_file_is_gitignored(self):
+        gitignore = (ROOT / ".gitignore").read_text(encoding="utf-8")
+
+        self.assertIn("backend/runtime_config.local.json", gitignore)
+
+    def test_runtime_values_override_environment_and_defaults_without_leaking_secrets(self):
+        from backend.services.runtime_config_service import RuntimeConfigService
+
+        self.runtime_path.write_text(
+            json.dumps(
+                {
+                    "PEXELS_API_KEY": "runtime-pexels-key",
+                    "CLIPFORGE_ASSET_PROVIDER_ORDER": "pexels,youtube",
+                }
+            ),
+            encoding="utf-8",
+        )
+        service = RuntimeConfigService(config_path=self.runtime_path)
+
+        with patch.dict(os.environ, {"PEXELS_API_KEY": "env-pexels-key"}, clear=False):
+            self.assertEqual(service.get_effective_value("PEXELS_API_KEY"), "runtime-pexels-key")
+            response = service.get_settings_response()
+
+        providers = next(group for group in response["groups"] if group["id"] == "providers")
+        pexels_key = next(field for field in providers["fields"] if field["key"] == "PEXELS_API_KEY")
+        provider_order = next(
+            field for field in providers["fields"] if field["key"] == "CLIPFORGE_ASSET_PROVIDER_ORDER"
+        )
+
+        self.assertTrue(pexels_key["configured"])
+        self.assertEqual(pexels_key["source"], "runtime")
+        self.assertIsNone(pexels_key.get("value"))
+        self.assertNotIn("runtime-pexels-key", json.dumps(response, ensure_ascii=False))
+        self.assertEqual(provider_order["value"], "pexels,youtube")
+
+    def test_clear_runtime_override_falls_back_to_environment(self):
+        from backend.services.runtime_config_service import RuntimeConfigService
+
+        self.runtime_path.write_text(json.dumps({"PEXELS_API_KEY": "runtime-key"}), encoding="utf-8")
+        service = RuntimeConfigService(config_path=self.runtime_path)
+
+        with patch.dict(os.environ, {"PEXELS_API_KEY": "env-key"}, clear=False):
+            service.clear(["PEXELS_API_KEY"])
+            self.assertEqual(service.get_effective_value("PEXELS_API_KEY"), "env-key")
+            response = service.get_settings_response()
+
+        providers = next(group for group in response["groups"] if group["id"] == "providers")
+        pexels_key = next(field for field in providers["fields"] if field["key"] == "PEXELS_API_KEY")
+        self.assertEqual(pexels_key["source"], "env")
+        self.assertTrue(pexels_key["configured"])
+
+    def test_invalid_provider_order_is_rejected(self):
+        from backend.services.runtime_config_service import RuntimeConfigService
+
+        service = RuntimeConfigService(config_path=self.runtime_path)
+
+        with self.assertRaisesRegex(ValueError, "Unknown asset provider"):
+            service.update({"CLIPFORGE_ASSET_PROVIDER_ORDER": "pexels,vimeo"})
+
+    def test_runtime_settings_api_returns_grouped_sanitized_fields(self):
+        from fastapi import FastAPI
+
+        from backend.api.config import create_config_router
+        from backend.services.runtime_config_service import RuntimeConfigService
+
+        service = RuntimeConfigService(config_path=self.runtime_path)
+        app = FastAPI()
+        app.include_router(create_config_router(service), prefix="/api/test-config")
+        client = _make_test_client(app)
+
+        response = client.patch(
+            "/api/test-config/settings",
+            json={"updates": {"PEXELS_API_KEY": "secret-value", "CLIPFORGE_ASSET_PROVIDER_ORDER": "pexels,youtube"}},
+        )
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+
+        self.assertIn("mode", data)
+        self.assertIn("groups", data)
+        self.assertNotIn("secret-value", json.dumps(data, ensure_ascii=False))
+        self.assertTrue(self.runtime_path.exists())
+
+        clear_response = client.post("/api/test-config/settings/clear", json={"keys": ["PEXELS_API_KEY"]})
+        self.assertEqual(clear_response.status_code, 200)
 
 
 class AgentExecutionContractTests(unittest.TestCase):
