@@ -174,16 +174,30 @@ class AgentApiP0ContractTests(unittest.TestCase):
                 session_id = created_session["id"]
                 self.assertEqual(created_session["status"], "plan_ready")
                 self.assertEqual(len(created_session["messages"]), 2)
-                self.assertIsNotNone(created_session["plan"])
+                self.assertIsNone(created_session["plan"])
+                self.assertEqual(created_session["grounding"]["status"], "needs_confirmation")
+
+                confirm_response = await client.post(
+                    f"/api/agent/sessions/{session_id}/grounding/confirm",
+                    json={
+                        "candidateIds": [
+                            candidate["id"] for candidate in created_session["grounding"]["candidates"][:2]
+                        ]
+                    },
+                )
+                self.assertEqual(confirm_response.status_code, 200)
+                confirmed_session = confirm_response.json()
+                self.assertIsNotNone(confirmed_session["plan"])
+                self.assertEqual(confirmed_session["grounding"]["status"], "confirmed")
 
                 get_response = await client.get(f"/api/agent/sessions/{session_id}")
                 self.assertEqual(get_response.status_code, 200)
                 fetched_session = get_response.json()
                 self.assertEqual(fetched_session["id"], session_id)
-                self.assertEqual(len(fetched_session["messages"]), 2)
+                self.assertEqual(len(fetched_session["messages"]), 3)
                 self.assertEqual(
                     fetched_session["plan"]["title"],
-                    created_session["plan"]["title"],
+                    confirmed_session["plan"]["title"],
                 )
 
                 message_response = await client.post(
@@ -193,7 +207,7 @@ class AgentApiP0ContractTests(unittest.TestCase):
                 self.assertEqual(message_response.status_code, 200)
                 updated_session = message_response.json()
                 self.assertEqual(updated_session["status"], "plan_ready")
-                self.assertEqual(len(updated_session["messages"]), 4)
+                self.assertEqual(len(updated_session["messages"]), 5)
                 self.assertEqual(updated_session["messages"][-1]["role"], "assistant")
 
         import asyncio
@@ -209,12 +223,18 @@ class AgentApiP0ContractTests(unittest.TestCase):
         async def _run():
             transport = httpx.ASGITransport(app=app)
             async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as client:
-                response = await client.post(
+                create_response = await client.post(
                     "/api/agent/sessions",
                     json={"message": "做一个 30 秒 AI 笔记产品宣传片"},
                 )
-                self.assertEqual(response.status_code, 200)
-                payload = response.json()
+                self.assertEqual(create_response.status_code, 200)
+                created = create_response.json()
+                confirm_response = await client.post(
+                    f"/api/agent/sessions/{created['id']}/grounding/confirm",
+                    json={"candidateIds": [candidate["id"] for candidate in created["grounding"]["candidates"][:2]]},
+                )
+                self.assertEqual(confirm_response.status_code, 200)
+                payload = confirm_response.json()
 
                 self.assertEqual(
                     [step["id"] for step in payload["steps"]],
@@ -249,14 +269,33 @@ class AgentApiP0ContractTests(unittest.TestCase):
         ):
             asyncio.run(_run())
 
+    def test_session_steps_show_candidate_confirmation_before_finalize_plan(self):
+        session = self.session_service.create_session("给 Notion AI 做一个 30 秒产品亮点视频")
+        steps = session.steps
+
+        self.assertEqual(steps[0].id, "understand_request")
+        self.assertEqual(steps[0].status, "succeeded")
+        self.assertEqual(steps[1].id, "extract_requirements")
+        self.assertEqual(steps[1].status, "succeeded")
+        self.assertEqual(steps[2].id, "generate_options")
+        self.assertEqual(steps[2].status, "succeeded")
+        self.assertIn("status", steps[2].result)
+        self.assertEqual(steps[2].result["status"], "needs_confirmation")
+        self.assertEqual(steps[3].id, "finalize_plan")
+        self.assertEqual(steps[3].status, "pending")
+
     def test_confirmed_session_steps_mark_create_task_succeeded(self):
         session = self.session_service.create_session("做一个 30 秒 AI 笔记产品宣传片")
+        grounded_session = self.session_service.confirm_grounding_candidates(
+            session.id,
+            [candidate.id for candidate in session.grounding.candidates[:2]],
+        )
         execution_service = AgentExecutionService(
             session_factory=self.session_factory,
             enqueue_job=lambda job_id: None,
         )
 
-        confirmed_session = execution_service.confirm_session(session.id)
+        confirmed_session = execution_service.confirm_session(grounded_session.id)
 
         self.assertEqual(confirmed_session.status.value, "queued")
         self.assertEqual(confirmed_session.steps[4].id, "create_task")

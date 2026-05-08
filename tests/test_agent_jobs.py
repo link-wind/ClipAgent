@@ -939,12 +939,16 @@ class ConfirmFlowContractTests(unittest.TestCase):
 
         queued_job_ids: list[str] = []
         session = self.session_service.create_session("做一个智能剪辑演示视频")
+        grounded_session = self.session_service.confirm_grounding_candidates(
+            session.id,
+            [candidate.id for candidate in session.grounding.candidates[:2]],
+        )
         service = AgentExecutionService(
             session_factory=self.session_factory,
             enqueue_job=queued_job_ids.append,
         )
 
-        confirmed = service.confirm_session(session.id)
+        confirmed = service.confirm_session(grounded_session.id)
 
         self.assertEqual(confirmed.status, AgentStatus.QUEUED)
         self.assertEqual(confirmed.progress, 25)
@@ -970,6 +974,44 @@ class ConfirmFlowContractTests(unittest.TestCase):
             self.assertEqual(event_rows[0].job_id, confirmed.activeJobId)
             self.assertEqual(event_rows[0].event_type, "job_queued")
 
+    def test_confirm_session_rejects_unconfirmed_grounding_state(self):
+        from backend.services.agent_execution_service import AgentExecutionService
+
+        session = self.session_service.create_session("给 Notion AI 做一个 30 秒产品亮点视频")
+        service = AgentExecutionService(
+            session_factory=self.session_factory,
+            enqueue_job=lambda _job_id: None,
+        )
+
+        with self.assertRaisesRegex(
+            RuntimeError,
+            "Session cannot be confirmed before grounding candidates are selected",
+        ):
+            service.confirm_session(session.id)
+
+    def test_confirm_grounding_rejects_repeat_confirmation_after_job_is_queued(self):
+        from backend.db.repositories import AgentPlanRepository
+        from backend.services.agent_execution_service import AgentExecutionService
+
+        session = self.session_service.create_session("给 Notion AI 做一个 30 秒产品亮点视频")
+        candidate_ids = [candidate.id for candidate in session.grounding.candidates[:2]]
+        grounded_session = self.session_service.confirm_grounding_candidates(session.id, candidate_ids)
+        service = AgentExecutionService(
+            session_factory=self.session_factory,
+            enqueue_job=lambda _job_id: None,
+        )
+
+        confirmed = service.confirm_session(grounded_session.id)
+
+        with self.assertRaisesRegex(RuntimeError, "awaiting confirmation"):
+            self.session_service.confirm_grounding_candidates(confirmed.id, candidate_ids)
+
+        with self.session_factory() as db:
+            latest_plan = AgentPlanRepository(db).get_latest_for_session(session.id)
+
+        self.assertIsNotNone(latest_plan)
+        self.assertEqual(latest_plan.version, 1)
+
     def test_confirm_endpoint_returns_queued_session(self):
         import backend.api.agent as agent_api_module
         from backend.main import app
@@ -977,6 +1019,10 @@ class ConfirmFlowContractTests(unittest.TestCase):
         from backend.services.agent_execution_service import AgentExecutionService
 
         session = self.session_service.create_session("做一个品牌展示短片")
+        grounding_confirmed = self.session_service.confirm_grounding_candidates(
+            session.id,
+            [candidate.id for candidate in session.grounding.candidates[:2]],
+        )
         execution_service = AgentExecutionService(
             session_factory=self.session_factory,
             enqueue_job=lambda _job_id: None,
@@ -988,7 +1034,7 @@ class ConfirmFlowContractTests(unittest.TestCase):
                 transport=transport,
                 base_url="http://testserver",
             ) as client:
-                response = await client.post(f"/api/agent/sessions/{session.id}/confirm")
+                response = await client.post(f"/api/agent/sessions/{grounding_confirmed.id}/confirm")
                 self.assertEqual(response.status_code, 200)
                 payload = response.json()
                 self.assertEqual(payload["status"], AgentStatus.QUEUED.value)
@@ -1025,11 +1071,15 @@ class AgentExecutionWorkerTests(unittest.TestCase):
         from backend.services.agent_execution_service import AgentExecutionService
 
         session = self.session_service.create_session("做一个智能剪辑 agent 演示视频")
+        grounded_session = self.session_service.confirm_grounding_candidates(
+            session.id,
+            [candidate.id for candidate in session.grounding.candidates[:2]],
+        )
         execution_service = AgentExecutionService(
             session_factory=self.session_factory,
             enqueue_job=lambda _job_id: None,
         )
-        confirmed = execution_service.confirm_session(session.id)
+        confirmed = execution_service.confirm_session(grounded_session.id)
         return session.id, confirmed.activeJobId
 
     def test_progress_service_exposes_required_methods(self):

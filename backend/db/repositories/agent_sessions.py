@@ -44,3 +44,28 @@ class AgentSessionRepository:
             .limit(limit)
         )
         return list(self.db.scalars(stmt))
+
+    def update_grounding_state(
+        self,
+        session_id: str,
+        *,
+        grounding_status: str | None = None,
+        grounding_summary_json: dict | None = None,
+        selected_candidate_ids_json: list | None = None,
+    ) -> AgentSessionRecord | None:
+        # 更新会话的 grounding 状态聚合字段
+        record = self.get(session_id)
+        if record is None:
+            return None
+
+        if grounding_status is not None:
+            record.grounding_status = grounding_status
+        if grounding_summary_json is not None:
+            record.grounding_summary_json = grounding_summary_json
+        if selected_candidate_ids_json is not None:
+            record.selected_candidate_ids_json = selected_candidate_ids_json
+
+        self.db.add(record)
+        self.db.flush()
+        self.db.refresh(record)
+        return record

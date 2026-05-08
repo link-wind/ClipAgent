@@ -32,6 +32,8 @@ class AgentExecutionService:
 
                 if session_record.status not in {"idle", "plan_ready"}:
                     raise RuntimeError(f"Session cannot be confirmed while {session_record.status}")
+                if self._requires_grounding_confirmation(session_record) and session_record.grounding_status != "confirmed":
+                    raise RuntimeError("Session cannot be confirmed before grounding candidates are selected")
 
                 plan_record = plan_repo.get_latest_for_session(session_id)
                 if plan_record is None:
@@ -75,6 +77,26 @@ class AgentExecutionService:
 
         self.enqueue_job(job_id)
         return self.read_service.read_session(session_id)
+
+    @staticmethod
+    def _requires_grounding_confirmation(session_record) -> bool:
+        grounding_summary = getattr(session_record, "grounding_summary_json", None) or {}
+        if getattr(session_record, "selected_candidate_ids_json", None):
+            return True
+        if getattr(session_record, "grounding_status", None) in {"needs_confirmation", "confirmed"}:
+            return True
+        return any(
+            grounding_summary.get(key)
+            for key in (
+                "productName",
+                "audience",
+                "styleHint",
+                "featureHints",
+                "searchQueries",
+                "candidates",
+                "selectedCandidateIds",
+            )
+        )
 
     @staticmethod
     def _enqueue_with_celery(job_id: str) -> None:

@@ -68,6 +68,7 @@ AgentStepId = Literal[
 ]
 
 AgentStepStatus = Literal["pending", "running", "succeeded", "failed", "skipped"]
+GroundingStatus = Literal["pending_search", "needs_confirmation", "confirmed"]
 
 
 class AgentStepError(BaseModel):
@@ -99,6 +100,36 @@ class AgentEvent(BaseModel):
     createdAt: str
 
 
+class AgentGroundingCandidate(BaseModel):
+    id: str
+    title: str
+    imageUrl: str
+    sourceUrl: str
+    previewUrl: str = ""
+    sourceType: str
+    provider: str
+    providerLabel: str
+    isOfficial: bool = False
+    confidence: float = 0.0
+    summary: str = ""
+    diagnostics: Dict[str, Any] = Field(default_factory=dict)
+    productName: str
+    audience: str
+    styleHint: str
+    featureHints: List[str] = Field(default_factory=list)
+
+
+class AgentGroundingSummary(BaseModel):
+    status: GroundingStatus = "pending_search"
+    productName: str = ""
+    audience: str = ""
+    styleHint: str = ""
+    featureHints: List[str] = Field(default_factory=list)
+    searchQueries: List[str] = Field(default_factory=list)
+    candidates: List[AgentGroundingCandidate] = Field(default_factory=list)
+    selectedCandidateIds: List[str] = Field(default_factory=list)
+
+
 class AgentSession(BaseModel):
     id: str
     status: AgentStatus = AgentStatus.IDLE
@@ -109,6 +140,7 @@ class AgentSession(BaseModel):
     steps: List[AgentStep] = Field(default_factory=list)
     videoUrl: Optional[str] = None
     activeJobId: Optional[str] = None
+    grounding: Optional[AgentGroundingSummary] = None
     error: Optional[AgentError] = None
     progress: float = 0.0
     currentStep: str = ""

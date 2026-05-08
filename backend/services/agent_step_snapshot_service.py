@@ -77,6 +77,7 @@ class AgentStepSnapshotService:
     def build_session_steps(self, session_record, message_rows, plan_row, event_rows) -> list[AgentStep]:
         first_prompt = self._extract_first_prompt(message_rows)
         plan = self._extract_plan(plan_row)
+        grounding = self._extract_grounding(session_record)
         event_state = self._build_event_state(session_record, event_rows)
 
         steps_by_id = {meta.id: self._build_pending_step(meta) for meta in STANDARD_STEPS}
@@ -84,8 +85,20 @@ class AgentStepSnapshotService:
         if first_prompt is not None:
             steps_by_id["understand_request"] = self._build_understand_request_step(first_prompt)
 
+        if grounding is not None:
+            steps_by_id["extract_requirements"] = self._build_succeeded_step(
+                self._meta("extract_requirements"),
+                self._build_grounding_requirements_result(first_prompt, grounding),
+                summary="已提炼需求",
+            )
+            steps_by_id["generate_options"] = self._build_succeeded_step(
+                self._meta("generate_options"),
+                self._build_grounding_generate_options_result(grounding),
+                summary="已生成候选方向",
+            )
+
         if plan is not None:
-            requirements_result = self._build_requirements_result(first_prompt, plan)
+            requirements_result = self._build_requirements_result(first_prompt, plan, grounding)
             steps_by_id["extract_requirements"] = self._build_succeeded_step(
                 self._meta("extract_requirements"),
                 requirements_result,
@@ -93,12 +106,12 @@ class AgentStepSnapshotService:
             )
             steps_by_id["generate_options"] = self._build_succeeded_step(
                 self._meta("generate_options"),
-                self._build_generate_options_result(plan),
+                self._build_generate_options_result(plan, grounding),
                 summary="已生成方案",
             )
             steps_by_id["finalize_plan"] = self._build_succeeded_step(
                 self._meta("finalize_plan"),
-                self._build_finalize_plan_result(plan),
+                self._build_finalize_plan_result(plan, grounding),
                 summary="已确认计划",
             )
 
@@ -109,9 +122,10 @@ class AgentStepSnapshotService:
     def build_task_steps(self, session_record, job_record, plan_row, artifact_rows, event_rows) -> list[AgentStep]:
         steps_by_id = {meta.id: self._build_pending_step(meta) for meta in STANDARD_STEPS}
         plan = self._extract_plan(plan_row)
+        grounding = self._extract_grounding(session_record)
         first_prompt = None
         if plan is not None:
-            requirements_result = self._build_requirements_result(first_prompt, plan)
+            requirements_result = self._build_requirements_result(first_prompt, plan, grounding)
             steps_by_id["extract_requirements"] = self._build_succeeded_step(
                 self._meta("extract_requirements"),
                 requirements_result,
@@ -119,12 +133,12 @@ class AgentStepSnapshotService:
             )
             steps_by_id["generate_options"] = self._build_succeeded_step(
                 self._meta("generate_options"),
-                self._build_generate_options_result(plan),
+                self._build_generate_options_result(plan, grounding),
                 summary="已生成方案",
             )
             steps_by_id["finalize_plan"] = self._build_succeeded_step(
                 self._meta("finalize_plan"),
-                self._build_finalize_plan_result(plan),
+                self._build_finalize_plan_result(plan, grounding),
                 summary="已确认计划",
             )
         task_state = self._build_task_state(job_record, artifact_rows, event_rows)
@@ -151,17 +165,29 @@ class AgentStepSnapshotService:
             summary="已读取原始需求",
         )
 
-    def _build_requirements_result(self, prompt: Optional[str], plan: EditPlan) -> dict[str, Any]:
+    def _build_requirements_result(
+        self,
+        prompt: Optional[str],
+        plan: EditPlan,
+        grounding: Optional[dict[str, Any]] = None,
+    ) -> dict[str, Any]:
         return {
             "originalPrompt": prompt or "",
             "title": plan.title,
             "targetDuration": plan.targetDuration,
             "style": plan.style,
             "sceneCount": len(plan.scenes),
+            "productName": (grounding or {}).get("productName", ""),
+            "audience": (grounding or {}).get("audience", ""),
+            "featureHints": (grounding or {}).get("featureHints", []) or [],
         }
 
-    def _build_generate_options_result(self, plan: EditPlan) -> dict[str, Any]:
-        return {
+    def _build_generate_options_result(
+        self,
+        plan: EditPlan,
+        grounding: Optional[dict[str, Any]] = None,
+    ) -> dict[str, Any]:
+        result = {
             "title": plan.title,
             "options": [
                 {
@@ -174,13 +200,63 @@ class AgentStepSnapshotService:
                 for scene in plan.scenes
             ],
         }
+        if grounding is not None:
+            result["status"] = grounding.get("status", "confirmed")
+            result["selectedCandidateIds"] = grounding.get("selectedCandidateIds", []) or []
+            result["candidates"] = grounding.get("candidates", []) or []
+        return result
 
-    def _build_finalize_plan_result(self, plan: EditPlan) -> dict[str, Any]:
-        return {
+    def _build_finalize_plan_result(
+        self,
+        plan: EditPlan,
+        grounding: Optional[dict[str, Any]] = None,
+    ) -> dict[str, Any]:
+        result = {
             "title": plan.title,
             "targetDuration": plan.targetDuration,
             "style": plan.style,
             "scenes": [scene.model_dump(mode="json") for scene in plan.scenes],
+        }
+        if grounding is not None:
+            result["selectedCandidateIds"] = grounding.get("selectedCandidateIds", []) or []
+        return result
+
+    def _extract_grounding(self, session_record) -> Optional[dict[str, Any]]:
+        if session_record is None:
+            return None
+        grounding_summary = getattr(session_record, "grounding_summary_json", None) or {}
+        grounding_status = getattr(session_record, "grounding_status", None)
+        selected_candidate_ids = getattr(session_record, "selected_candidate_ids_json", None) or []
+        if not grounding_summary and not grounding_status and not selected_candidate_ids:
+            return None
+        return {
+            **grounding_summary,
+            "status": grounding_status or grounding_summary.get("status", "pending_search"),
+            "selectedCandidateIds": selected_candidate_ids or grounding_summary.get("selectedCandidateIds", []) or [],
+        }
+
+    def _build_grounding_requirements_result(
+        self,
+        prompt: Optional[str],
+        grounding: dict[str, Any],
+    ) -> dict[str, Any]:
+        return {
+            "originalPrompt": prompt or "",
+            "productName": grounding.get("productName", ""),
+            "audience": grounding.get("audience", ""),
+            "style": grounding.get("styleHint", "") or "",
+            "featureHints": grounding.get("featureHints", []) or [],
+            "searchQueries": grounding.get("searchQueries", []) or [],
+            "candidateCount": len(grounding.get("candidates", []) or []),
+        }
+
+    def _build_grounding_generate_options_result(self, grounding: dict[str, Any]) -> dict[str, Any]:
+        return {
+            "status": grounding.get("status", "pending_search"),
+            "productName": grounding.get("productName", ""),
+            "selectedCandidateIds": grounding.get("selectedCandidateIds", []) or [],
+            "candidates": grounding.get("candidates", []) or [],
+            "options": grounding.get("candidates", []) or [],
         }
 
     def _build_pending_step(self, meta: StepMeta) -> AgentStep:

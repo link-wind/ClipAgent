@@ -5,7 +5,17 @@ from backend.db.repositories import (
     AgentPlanRepository,
     AgentSessionRepository,
 )
-from backend.models.agent import AgentError, AgentEvent, AgentMessage, AgentSession, AgentStatus, ClipInfo, EditPlan
+from backend.models.agent import (
+    AgentError,
+    AgentEvent,
+    AgentGroundingCandidate,
+    AgentGroundingSummary,
+    AgentMessage,
+    AgentSession,
+    AgentStatus,
+    ClipInfo,
+    EditPlan,
+)
 from backend.services.agent_step_snapshot_service import AgentStepSnapshotService
 
 
@@ -84,6 +94,7 @@ class AgentReadService:
             ),
             videoUrl=session_record.video_url,
             activeJobId=session_record.active_job_id,
+            grounding=self._build_grounding_response(session_record),
             error=(
                 AgentError(
                     message=session_record.error_message,
@@ -94,6 +105,29 @@ class AgentReadService:
             ),
             progress=session_record.progress,
             currentStep=session_record.current_step or "",
+        )
+
+    def _build_grounding_response(self, session_record) -> AgentGroundingSummary | None:
+        if not session_record.grounding_summary_json:
+            return None
+
+        grounding_json = session_record.grounding_summary_json or {}
+        return AgentGroundingSummary(
+            status=session_record.grounding_status or grounding_json.get("status", "pending_search"),
+            productName=grounding_json.get("productName", "") or "",
+            audience=grounding_json.get("audience", "") or "",
+            styleHint=grounding_json.get("styleHint", "") or "",
+            featureHints=grounding_json.get("featureHints", []) or [],
+            searchQueries=grounding_json.get("searchQueries", []) or [],
+            candidates=[
+                AgentGroundingCandidate.model_validate(candidate)
+                for candidate in grounding_json.get("candidates", []) or []
+            ],
+            selectedCandidateIds=session_record.selected_candidate_ids_json or grounding_json.get(
+                "selectedCandidateIds",
+                [],
+            )
+            or [],
         )
 
     def _build_clip_info(self, row) -> ClipInfo:
