@@ -87,6 +87,11 @@ ClipForge `master` 当前已经具备一条完整、可运行的 grounded workfl
 
 > 模型负责持续生成、维护、修订和重规划 plan；系统负责约束流程、执行计划、收集反馈，并把反馈再送回模型。
 
+这套 agent 的推荐基础设施是：
+
+- **LangChain**：模型调用、structured output、planner runtime 封装
+- **LangGraph**：stateful orchestration、checkpoint、human-in-the-loop、replan graph
+
 第一阶段要达成的产品体验是：
 
 1. 用户提交 brief 后，系统先生成一版真正的 `AgentPlan`
@@ -112,6 +117,11 @@ ClipForge `master` 当前已经具备一条完整、可运行的 grounded workfl
 而不是：
 
 > 模型驱动的一切
+
+同时，这一阶段也不要求：
+
+- 把现有 FastAPI + Celery 整体替换成 LangChain/LangGraph 自带运行时
+- 把搜索、下载、渲染全部硬改成 LangChain tool-first 模式
 
 ## Approaches Considered
 
@@ -185,7 +195,7 @@ ClipForge `master` 当前已经具备一条完整、可运行的 grounded workfl
 
 采用 **Approach B**：
 
-> 构建一个以 `AgentPlan` 为中心的 model-driven planning loop，让模型持续维护计划；同时保留 orchestrator、execution engine 和 user confirmation 这些稳定边界。
+> 构建一个以 `AgentPlan` 为中心、由 `LangChain + LangGraph` 驱动的 model-driven planning loop，让模型持续维护计划；同时保留 execution engine 和 user confirmation 这些稳定边界。
 
 这条路径既能满足“模型驱动的 agent plan”，又能最大程度复用当前 `master` 上已经稳定的执行与持久化基础。
 
@@ -202,6 +212,12 @@ ClipForge `master` 当前已经具备一条完整、可运行的 grounded workfl
 这里最重要的变化不是多调用几次模型，而是：
 
 > plan 不再是一锤子买卖，而是会随着 observation 持续演化的对象。
+
+推荐技术分工：
+
+- `LangChain`: planner LLM calls, structured output, prompt/runtime wrappers
+- `LangGraph`: planning graph, replan transitions, checkpoint/resume, approval gates
+- 现有后端服务: search providers, asset download, render execution, FastAPI, Celery
 
 ## Key Design Principles
 
@@ -221,6 +237,12 @@ ClipForge `master` 当前已经具备一条完整、可运行的 grounded workfl
 - 管用户确认闸门
 - 管 job lifecycle
 - 管重试次数和自动推进上限
+
+实现上对应为：
+
+- planner action 尽量写成 LangChain structured calls
+- workflow state 和节点跳转由 LangGraph graph 承载
+- 执行 job 仍由当前服务和 Celery 承担
 
 ### 2. AgentPlan 与 ExecutionPlan 分层
 
@@ -258,23 +280,46 @@ ClipForge `master` 当前已经具备一条完整、可运行的 grounded workfl
 - 不允许自动跳过用户确认
 - 不允许模型自己修改工作流状态机
 
+LangGraph 在这里的主要价值，是把这些边界显式固化在 graph 和 state transition 上，而不是散落在 prompt 和 if/else 里。
+
 ## Main Components
 
-### 1. `AgentSessionOrchestrator`
+### 1. `LangGraph Planning Graph`
 
-这是总调度器，负责：
+这是新的 planning 主骨架，负责定义：
+
+- `collecting_brief -> planning`
+- `planning -> awaiting_grounding_confirmation`
+- `awaiting_grounding_confirmation -> replanning`
+- `replanning -> ready_for_execution`
+- `executing_search / executing_render`
+- `execution feedback -> replanning | awaiting_user_decision | completed`
+
+它应该承担：
+
+- state schema
+- node wiring
+- conditional edges
+- checkpoint / resume
+- human approval gate
+
+推荐它成为 planning workflow 的单一来源。
+
+### 2. `AgentSessionOrchestrator`
+
+这是总调度器和外部适配层，负责：
 
 - 接 API 请求
-- 驱动 session 状态机
+- 组织 session 持久化
+- 触发或恢复 LangGraph run
 - 记录 message / current state / current plan version
-- 决定何时进入 planning、replanning、execution、awaiting_user_decision
-- 决定何时调用 planner loop
+- 对外返回 session response 聚合态
 
 它不负责思考 plan 内容。
 
 这层将由当前 `AgentSessionService` 演进而来。
 
-### 2. `PlannerLoop`
+### 3. `PlannerLoop`
 
 这是新的 planning 核心，负责：
 
@@ -295,7 +340,9 @@ ClipForge `master` 当前已经具备一条完整、可运行的 grounded workfl
 - 派生的 `ExecutionPlan`
 - 本次 change summary
 
-### 3. `PlannerRuntime`
+它更像 LangGraph 中的一组核心 node 行为，而不是一个独立接管整个流程的大而全 service。
+
+### 4. `PlannerRuntime`
 
 这是模型调用层，负责：
 
@@ -305,12 +352,22 @@ ClipForge `master` 当前已经具备一条完整、可运行的 grounded workfl
 - deterministic runtime
 - tracing 和错误归类
 
+这层推荐基于 LangChain 构建，而不是继续手写散落的 OpenAI 封装。
+
+推荐职责包括：
+
+- 使用 LangChain chat model wrapper
+- 使用 LangChain structured output / schema binding
+- 统一 planner action prompt 模板
+- 统一 planner error wrapping
+- 提供 deterministic runtime，与真实 runtime 共享输入输出 contract
+
 建议拆成：
 
 - `planner_runtime_openai.py`
 - `planner_runtime_deterministic.py`
 
-### 4. `FeedbackAdapters`
+### 5. `FeedbackAdapters`
 
 这是 planner loop 和现实执行世界之间的翻译层，负责把底层反馈整理成 planner 可消费的 observation：
 
@@ -321,7 +378,7 @@ ClipForge `master` 当前已经具备一条完整、可运行的 grounded workfl
 
 这层的目标是避免 planner 直接吃底层 provider / worker 的脏细节。
 
-### 5. `ExecutionEngine`
+### 6. `ExecutionEngine`
 
 执行层继续吃 `ExecutionPlan`，负责：
 
@@ -336,6 +393,12 @@ ClipForge `master` 当前已经具备一条完整、可运行的 grounded workfl
 - `search_service`
 - `render_service`
 - `agent_tasks.py`
+
+第一阶段不要求把它改造成 LangChain tool-first execution。更稳妥的做法是：
+
+- 保留现有后端执行服务
+- 由 LangGraph 节点通过 orchestration adapter 调用这些服务
+- 只把 planning loop 交给 LangChain/LangGraph
 
 ## Plan Model
 
@@ -456,6 +519,12 @@ class AgentObservation(BaseModel):
 
 第一阶段的 planner actions 推荐固定为 4 个。
 
+推荐实现方式：
+
+- 使用 LangChain 统一封装成 structured planner calls
+- 在 LangGraph 的不同节点中调用
+- 每个 action 都有稳定 schema，而不是自由文本解析
+
 ### 1. `build_plan_from_brief`
 
 输入：
@@ -525,6 +594,8 @@ class AgentObservation(BaseModel):
 - `planning` 和 `replanning` 是明确状态
 - `awaiting_user_decision` 用于自动推进风险过高的场景
 
+推荐用 LangGraph state 显式承载这些状态字段，而不是只靠数据库聚合态和分散 service 推导。
+
 ## Replan Policy
 
 ### 自动 replan 的场景
@@ -566,6 +637,8 @@ class AgentObservation(BaseModel):
 - 当前 progress / current step
 - 最后错误
 
+如果后续接 LangGraph checkpointer，`agent_sessions` 仍保留，但职责是产品层聚合态，不直接替代 LangGraph 的内部执行状态。
+
 ### `agent_plans`
 
 演进成 **不可变 plan version 表**。
@@ -593,6 +666,8 @@ class AgentObservation(BaseModel):
 - execution feedback
 - user revision observations
 
+即使 LangGraph checkpointer 已保留运行态，这张表仍然值得保留，因为它服务的是产品可解释性、offline eval 和 replay，而不仅仅是框架恢复。
+
 ### `agent_jobs`
 
 继续表示某个 plan version 的一次 execution attempt。
@@ -618,24 +693,28 @@ class AgentObservation(BaseModel):
 - 新增 `AgentPlan / ExecutionPlan / Observation / Feedback` 模型
 - `agent_plans` 开始支持 version 语义
 - 新增 `agent_observations`
+- 在 `backend/requirements.txt` 引入 LangChain / LangGraph 依赖
+- 搭起最小 LangGraph state schema 和 checkpointer 方案
 - 保持旧 grounded workflow 继续可跑
 
 ### Phase 1: 模型接管初版 plan
 
-- `create_session` 改由 planner loop 生成 `AgentPlan v1`
+- `create_session` 改由 LangGraph planning graph 驱动 `build_plan_from_brief`
 - 初次搜索改吃 `ExecutionPlan v1`
 - 旧 `parse_brief()` 退为 deterministic fallback
 
 ### Phase 2: grounding confirmation 触发 replan
 
 - 用户确认候选后写 observation
-- 调 `replan_after_grounding`
+- LangGraph 从 `awaiting_grounding_confirmation` 进入 `replanning`
+- 在 replanning node 调 `replan_after_grounding`
 - 产出 grounded plan v2
 
 ### Phase 3: 用户 revision 改成真正 replan
 
 - 普通自然语言修改不再只是关键词补丁
-- 改为新的 plan version
+- 改为写 observation 并触发 LangGraph replan node
+- 生成新的 plan version
 
 ### Phase 4: execution feedback 触发有限自动 replan
 
@@ -669,6 +748,11 @@ class AgentObservation(BaseModel):
 - user revision replan
 - execution feedback replan
 
+并补充：
+
+- LangChain structured output contract tests
+- deterministic runtime 和 openai runtime 的一致性测试
+
 ### 3. Policy tests
 
 验证：
@@ -684,6 +768,11 @@ class AgentObservation(BaseModel):
 - plan version 不可变
 - observation 与 plan version 关联正确
 - job 与 artifact 能关联到对应 plan version
+
+必要时再补：
+
+- LangGraph checkpoint resume 行为
+- graph state 到 session 聚合态的映射正确性
 
 ### 5. Integration tests
 
@@ -716,4 +805,4 @@ class AgentObservation(BaseModel):
 
 ## One-Sentence Definition
 
-Model-Driven Agent Plan 是 ClipForge 下一阶段的核心架构：模型持续维护 `AgentPlan`，系统收集 grounding 与 execution feedback 并回流给模型重规划，而执行链和流程边界继续保持确定性与可控性。
+Model-Driven Agent Plan 是 ClipForge 下一阶段的核心架构：基于 `LangChain + LangGraph` 让模型持续维护 `AgentPlan`，系统收集 grounding 与 execution feedback 并回流给模型重规划，而执行链和流程边界继续保持确定性与可控性。
