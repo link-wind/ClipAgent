@@ -1,0 +1,45 @@
+import unittest
+
+from backend.services.planner_models import AgentObservation, AgentPlan, ExecutionPlan
+
+
+class PlannerModelTests(unittest.TestCase):
+    def test_agent_plan_defaults_are_stable(self):
+        plan = AgentPlan(
+            title="Notion AI 产品介绍",
+            goal="生成 30 秒产品介绍视频",
+            summary="突出真实产品体验",
+        )
+
+        self.assertEqual(plan.openIssues, [])
+        self.assertEqual(plan.replanHistory, [])
+        self.assertEqual(plan.scenes, [])
+
+    def test_execution_plan_scene_supports_grounding_candidate_ids(self):
+        plan = ExecutionPlan(
+            title="Demo",
+            targetDuration=30,
+            style="科技感",
+            scenes=[
+                {
+                    "id": 1,
+                    "description": "展示首页",
+                    "searchQuery": "notion ai homepage",
+                    "duration": 6,
+                    "groundingCandidateIds": ["fixture:1"],
+                }
+            ],
+        )
+
+        self.assertEqual(plan.scenes[0].groundingCandidateIds, ["fixture:1"])
+
+    def test_observation_payload_round_trips(self):
+        observation = AgentObservation(
+            id="obs-1",
+            sessionId="session-1",
+            observationType="user_message",
+            payload={"message": "做一个产品视频"},
+            createdAt="2026-05-08T00:00:00Z",
+        )
+
+        self.assertEqual(observation.payload["message"], "做一个产品视频")
