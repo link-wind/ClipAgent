@@ -939,12 +939,16 @@ class ConfirmFlowContractTests(unittest.TestCase):
 
         queued_job_ids: list[str] = []
         session = self.session_service.create_session("做一个智能剪辑演示视频")
+        grounded_session = self.session_service.confirm_grounding_candidates(
+            session.id,
+            [candidate.id for candidate in session.grounding.candidates[:2]],
+        )
         service = AgentExecutionService(
             session_factory=self.session_factory,
             enqueue_job=queued_job_ids.append,
         )
 
-        confirmed = service.confirm_session(session.id)
+        confirmed = service.confirm_session(grounded_session.id)
 
         self.assertEqual(confirmed.status, AgentStatus.QUEUED)
         self.assertEqual(confirmed.progress, 25)
@@ -992,6 +996,10 @@ class ConfirmFlowContractTests(unittest.TestCase):
         from backend.services.agent_execution_service import AgentExecutionService
 
         session = self.session_service.create_session("做一个品牌展示短片")
+        grounding_confirmed = self.session_service.confirm_grounding_candidates(
+            session.id,
+            [candidate.id for candidate in session.grounding.candidates[:2]],
+        )
         execution_service = AgentExecutionService(
             session_factory=self.session_factory,
             enqueue_job=lambda _job_id: None,
@@ -1003,7 +1011,7 @@ class ConfirmFlowContractTests(unittest.TestCase):
                 transport=transport,
                 base_url="http://testserver",
             ) as client:
-                response = await client.post(f"/api/agent/sessions/{session.id}/confirm")
+                response = await client.post(f"/api/agent/sessions/{grounding_confirmed.id}/confirm")
                 self.assertEqual(response.status_code, 200)
                 payload = response.json()
                 self.assertEqual(payload["status"], AgentStatus.QUEUED.value)
@@ -1040,11 +1048,15 @@ class AgentExecutionWorkerTests(unittest.TestCase):
         from backend.services.agent_execution_service import AgentExecutionService
 
         session = self.session_service.create_session("做一个智能剪辑 agent 演示视频")
+        grounded_session = self.session_service.confirm_grounding_candidates(
+            session.id,
+            [candidate.id for candidate in session.grounding.candidates[:2]],
+        )
         execution_service = AgentExecutionService(
             session_factory=self.session_factory,
             enqueue_job=lambda _job_id: None,
         )
-        confirmed = execution_service.confirm_session(session.id)
+        confirmed = execution_service.confirm_session(grounded_session.id)
         return session.id, confirmed.activeJobId
 
     def test_progress_service_exposes_required_methods(self):

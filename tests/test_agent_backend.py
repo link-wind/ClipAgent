@@ -184,8 +184,10 @@ class AgentApiTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         data = response.json()
         self.assertEqual(data["status"], "plan_ready")
-        self.assertIn("plan", data)
-        self.assertGreater(len(data["plan"]["scenes"]), 0)
+        self.assertIsNone(data["plan"])
+        self.assertIn("grounding", data)
+        self.assertEqual(data["grounding"]["status"], "needs_confirmation")
+        self.assertGreater(len(data["grounding"]["candidates"]), 0)
 
     def test_create_session_api_returns_grounding_candidates_before_plan_confirmation(self):
         from backend.main import app
@@ -233,6 +235,10 @@ class AgentApiTests(unittest.TestCase):
 
         client = _make_test_client(app)
         created = client.post("/api/agent/sessions", json={"message": "做一个科技短片"}).json()
+        client.post(
+            f"/api/agent/sessions/{created['id']}/grounding/confirm",
+            json={"candidateIds": [candidate["id"] for candidate in created["grounding"]["candidates"][:2]]},
+        )
         response = client.post(
             f"/api/agent/sessions/{created['id']}/messages",
             json={"message": "更商务一点"},
@@ -248,6 +254,10 @@ class AgentApiTests(unittest.TestCase):
 
         client = _make_test_client(app)
         created = client.post("/api/agent/sessions", json={"message": "做一个科技短片"}).json()
+        client.post(
+            f"/api/agent/sessions/{created['id']}/grounding/confirm",
+            json={"candidateIds": [candidate["id"] for candidate in created["grounding"]["candidates"][:2]]},
+        )
         response = client.post(
             f"/api/agent/sessions/{created['id']}/messages",
             json={
@@ -273,6 +283,10 @@ class AgentApiTests(unittest.TestCase):
         from backend.db.repositories import AgentPlanRepository
 
         created = self.session_service.create_session("做一个科技短片")
+        self.session_service.confirm_grounding_candidates(
+            created.id,
+            [candidate.id for candidate in created.grounding.candidates[:2]],
+        )
 
         updated = self.session_service.add_user_message(
             created.id,
@@ -292,6 +306,10 @@ class AgentApiTests(unittest.TestCase):
 
     def test_add_message_updates_failed_planning_session_plan_when_scene_keywords_are_provided(self):
         created = self.session_service.create_session("做一个科技短片")
+        grounded_session = self.session_service.confirm_grounding_candidates(
+            created.id,
+            [candidate.id for candidate in created.grounding.candidates[:2]],
+        )
 
         with self.session_factory() as db:
             from backend.db.repositories import AgentSessionRepository
@@ -306,7 +324,7 @@ class AgentApiTests(unittest.TestCase):
             "重新规划并改成中文关键词：场景1：城市 车流 黄昏；场景2：咖啡 特写 手工艺",
         )
 
-        self.assertEqual(updated.plan.title, "智能剪辑短片")
+        self.assertEqual(updated.plan.title, grounded_session.plan.title)
         self.assertEqual(updated.plan.scenes[0].keywords, ["城市", "车流", "黄昏"])
         self.assertEqual(updated.plan.scenes[1].searchQuery, "咖啡 特写 手工艺")
 
