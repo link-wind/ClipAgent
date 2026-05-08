@@ -10,6 +10,8 @@ class AgentPlanRepository:
 
     def create(self, **values) -> AgentPlanRecord:
         # 创建计划记录
+        if values.get("execution_plan_json") is None:
+            values["execution_plan_json"] = {}
         record = AgentPlanRecord(**values)
         self.db.add(record)
         self.db.flush()

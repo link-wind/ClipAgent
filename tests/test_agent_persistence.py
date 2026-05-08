@@ -1,12 +1,28 @@
-import sys
-import unittest
 import importlib
 import importlib.util
+import sys
 import types
+import unittest
+from datetime import datetime
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import patch
 
-from sqlalchemy import create_engine, event, text
+from sqlalchemy import (
+    JSON,
+    Column,
+    DateTime,
+    Float,
+    ForeignKey,
+    Integer,
+    MetaData,
+    String,
+    Table,
+    create_engine,
+    event,
+    inspect,
+    text,
+)
 from sqlalchemy.orm import sessionmaker
 
 
@@ -325,14 +341,17 @@ class AgentPersistenceModelTests(unittest.TestCase):
         backend_db = self._load_db_with_models_registered()
         metadata = backend_db.Base.metadata
 
+        plan_indexes = {index.name: index for index in metadata.tables["agent_plans"].indexes}
+
         self.assertEqual(
             {index.name for index in metadata.tables["agent_messages"].indexes},
             {"idx_agent_messages_session_id_created_at"},
         )
         self.assertEqual(
-            {index.name for index in metadata.tables["agent_plans"].indexes},
+            set(plan_indexes),
             {"idx_agent_plans_session_id_version"},
         )
+        self.assertTrue(plan_indexes["idx_agent_plans_session_id_version"].unique)
         self.assertEqual(
             {index.name for index in metadata.tables["agent_observations"].indexes},
             {
@@ -396,6 +415,25 @@ class AgentPersistenceModelTests(unittest.TestCase):
             "list",
         )
 
+    def test_planner_persistence_json_columns_use_non_nullable_dict_defaults(self):
+        models = self._load_models_module()
+
+        planner_trace = models.AgentSessionRecord.__table__.columns["planner_trace_json"]
+        execution_plan = models.AgentPlanRecord.__table__.columns["execution_plan_json"]
+        observation_payload = models.AgentObservationRecord.__table__.columns["payload_json"]
+
+        self.assertFalse(planner_trace.nullable)
+        self.assertTrue(planner_trace.default.is_callable)
+        self.assertEqual(planner_trace.default.arg.__name__, "dict")
+
+        self.assertFalse(execution_plan.nullable)
+        self.assertTrue(execution_plan.default.is_callable)
+        self.assertEqual(execution_plan.default.arg.__name__, "dict")
+
+        self.assertFalse(observation_payload.nullable)
+        self.assertTrue(observation_payload.default.is_callable)
+        self.assertEqual(observation_payload.default.arg.__name__, "dict")
+
 
 class AlembicPersistenceTests(unittest.TestCase):
     def _load_migration_module(self, filename="20260502_create_agent_tables.py"):
@@ -430,11 +468,19 @@ class AlembicPersistenceTests(unittest.TestCase):
             / "versions"
             / "20260502_create_agent_tables.py"
         )
+        planner_persistence_migration = (
+            ROOT
+            / "backend"
+            / "alembic"
+            / "versions"
+            / "20260508_add_planner_persistence_foundations.py"
+        )
 
         self.assertTrue(alembic_ini.exists())
         self.assertTrue(env_py.exists())
         self.assertTrue(script_template.exists())
         self.assertTrue(migration.exists())
+        self.assertTrue(planner_persistence_migration.exists())
 
     def test_alembic_ini_uses_config_relative_paths(self):
         alembic_ini = ROOT / "backend" / "alembic.ini"
@@ -573,6 +619,407 @@ class AlembicPersistenceTests(unittest.TestCase):
             ],
         )
 
+    def test_planner_persistence_migration_declares_schema_changes_and_reversal(self):
+        module, fake_op = self._load_migration_module("20260508_add_planner_persistence_foundations.py")
+
+        module.upgrade()
+        upgrade_batches = {}
+        for batch in fake_op.batch_calls:
+            upgrade_batches.setdefault(batch.table_name, []).append(batch)
+        session_upgrade = upgrade_batches["agent_sessions"][0]
+        plan_upgrade = upgrade_batches["agent_plans"][0]
+        session_columns = {call["column"].name: call["column"] for call in session_upgrade.add_columns}
+        plan_columns = {call["column"].name: call["column"] for call in plan_upgrade.add_columns}
+        self.assertEqual(
+            set(session_columns),
+            {"current_plan_id", "planner_trace_json"},
+        )
+        self.assertEqual(
+            set(plan_columns),
+            {
+                "parent_plan_id",
+                "trigger_type",
+                "planner_mode",
+                "planner_model",
+                "execution_plan_json",
+                "change_summary",
+                "status",
+            },
+        )
+        self.assertFalse(session_columns["planner_trace_json"].nullable)
+        self.assertFalse(plan_columns["execution_plan_json"].nullable)
+        self.assertEqual(
+            {call["name"] for call in fake_op.create_tables},
+            {"agent_observations"},
+        )
+        self.assertEqual(
+            {call["name"] for call in fake_op.create_indexes},
+            {
+                "idx_agent_observations_session_id_created_at",
+                "idx_agent_observations_plan_id_created_at",
+            },
+        )
+        unique_plan_index = next(
+            call for call in plan_upgrade.create_indexes if call["name"] == "idx_agent_plans_session_id_version"
+        )
+        self.assertTrue(unique_plan_index["unique"])
+        self.assertEqual(
+            {call["name"] for call in session_upgrade.create_foreign_keys}
+            | {call["name"] for call in plan_upgrade.create_foreign_keys},
+            {
+                "fk_agent_sessions_current_plan_id",
+                "fk_agent_plans_parent_plan_id",
+            },
+        )
+        self.assertEqual(len(fake_op.execute_calls), 1)
+
+        module.downgrade()
+        downgrade_batches = {}
+        for batch in fake_op.batch_calls[2:]:
+            downgrade_batches.setdefault(batch.table_name, []).append(batch)
+        plan_downgrade = downgrade_batches["agent_plans"][0]
+        session_downgrade = downgrade_batches["agent_sessions"][0]
+        self.assertEqual(
+            {call["name"] for call in fake_op.drop_indexes},
+            {
+                "idx_agent_observations_session_id_created_at",
+                "idx_agent_observations_plan_id_created_at",
+            },
+        )
+        self.assertEqual(
+            {call["name"] for call in session_downgrade.drop_foreign_keys}
+            | {call["name"] for call in plan_downgrade.drop_foreign_keys},
+            {
+                "fk_agent_sessions_current_plan_id",
+                "fk_agent_plans_parent_plan_id",
+            },
+        )
+        self.assertEqual(
+            [call["name"] for call in fake_op.drop_tables],
+            ["agent_observations"],
+        )
+        self.assertEqual(
+            {call["name"] for call in plan_downgrade.drop_columns},
+            {
+                "status",
+                "change_summary",
+                "execution_plan_json",
+                "planner_model",
+                "planner_mode",
+                "trigger_type",
+                "parent_plan_id",
+            },
+        )
+        self.assertEqual(
+            {call["name"] for call in session_downgrade.drop_columns},
+            {"planner_trace_json", "current_plan_id"},
+        )
+
+    def test_planner_persistence_migration_uses_recreate_only_for_sqlite(self):
+        module, fake_op = self._load_migration_module("20260508_add_planner_persistence_foundations.py")
+        fake_op.bind.dialect.name = "postgresql"
+
+        module.upgrade()
+        upgrade_batches = {}
+        for batch in fake_op.batch_calls:
+            upgrade_batches.setdefault(batch.table_name, []).append(batch)
+        self.assertIsNone(upgrade_batches["agent_sessions"][0].kwargs.get("recreate"))
+        self.assertIsNone(upgrade_batches["agent_plans"][0].kwargs.get("recreate"))
+
+        module.downgrade()
+        downgrade_batches = {}
+        for batch in fake_op.batch_calls[2:]:
+            downgrade_batches.setdefault(batch.table_name, []).append(batch)
+        self.assertIsNone(downgrade_batches["agent_plans"][0].kwargs.get("recreate"))
+        self.assertIsNone(downgrade_batches["agent_sessions"][0].kwargs.get("recreate"))
+
+    def test_planner_persistence_migration_executes_and_normalizes_duplicate_versions(self):
+        metadata = MetaData()
+        agent_sessions = Table(
+            "agent_sessions",
+            metadata,
+            Column("id", String(36), primary_key=True),
+            Column("status", String(32), nullable=False),
+            Column("current_step", String(128), nullable=True),
+            Column("progress", Float(), nullable=False),
+            Column("title", String(255), nullable=True),
+            Column("video_url", String(512), nullable=True),
+            Column("error_message", String(), nullable=True),
+            Column("error_retryable_step", String(128), nullable=True),
+            Column("active_job_id", String(36), nullable=True),
+            Column("grounding_status", String(32), nullable=True),
+            Column("grounding_summary_json", JSON(), nullable=True),
+            Column("selected_candidate_ids_json", JSON(), nullable=True),
+            Column("created_at", DateTime(), nullable=False),
+            Column("updated_at", DateTime(), nullable=False),
+        )
+        agent_messages = Table(
+            "agent_messages",
+            metadata,
+            Column("id", String(36), primary_key=True),
+            Column("session_id", String(36), ForeignKey("agent_sessions.id"), nullable=False),
+            Column("role", String(32), nullable=False),
+            Column("content", String(), nullable=False),
+            Column("created_at", DateTime(), nullable=False),
+        )
+        agent_plans = Table(
+            "agent_plans",
+            metadata,
+            Column("id", String(36), primary_key=True),
+            Column("session_id", String(36), ForeignKey("agent_sessions.id"), nullable=False),
+            Column("version", Integer(), nullable=False),
+            Column("title", String(255), nullable=True),
+            Column("target_duration", Integer(), nullable=True),
+            Column("style", String(128), nullable=True),
+            Column("plan_json", JSON(), nullable=False),
+            Column("created_at", DateTime(), nullable=False),
+        )
+        agent_jobs = Table(
+            "agent_jobs",
+            metadata,
+            Column("id", String(36), primary_key=True),
+            Column("session_id", String(36), ForeignKey("agent_sessions.id"), nullable=True),
+            Column("plan_id", String(36), ForeignKey("agent_plans.id"), nullable=True),
+            Column("job_type", String(64), nullable=False),
+            Column("status", String(32), nullable=False),
+            Column("attempt_count", Integer(), nullable=False),
+            Column("max_attempts", Integer(), nullable=False),
+            Column("progress", Float(), nullable=False),
+            Column("current_step", String(128), nullable=True),
+            Column("error_message", String(), nullable=True),
+            Column("worker_id", String(128), nullable=True),
+            Column("started_at", DateTime(), nullable=True),
+            Column("finished_at", DateTime(), nullable=True),
+            Column("created_at", DateTime(), nullable=False),
+            Column("updated_at", DateTime(), nullable=False),
+        )
+        agent_events = Table(
+            "agent_events",
+            metadata,
+            Column("id", String(36), primary_key=True),
+            Column("session_id", String(36), ForeignKey("agent_sessions.id"), nullable=True),
+            Column("job_id", String(36), ForeignKey("agent_jobs.id"), nullable=True),
+            Column("event_type", String(64), nullable=False),
+            Column("step", String(128), nullable=True),
+            Column("progress", Float(), nullable=True),
+            Column("message", String(), nullable=True),
+            Column("payload_json", JSON(), nullable=True),
+            Column("created_at", DateTime(), nullable=False),
+        )
+        agent_artifacts = Table(
+            "agent_artifacts",
+            metadata,
+            Column("id", String(36), primary_key=True),
+            Column("session_id", String(36), ForeignKey("agent_sessions.id"), nullable=True),
+            Column("job_id", String(36), ForeignKey("agent_jobs.id"), nullable=True),
+            Column("artifact_type", String(64), nullable=False),
+            Column("scene_id", String(36), nullable=True),
+            Column("source_url", String(512), nullable=True),
+            Column("local_path", String(512), nullable=True),
+            Column("public_url", String(512), nullable=True),
+            Column("duration", Float(), nullable=True),
+            Column("metadata_json", JSON(), nullable=True),
+            Column("created_at", DateTime(), nullable=False),
+        )
+
+        engine = create_engine("sqlite+pysqlite:///:memory:", future=True)
+        try:
+            with engine.connect() as conn:
+                conn.execute(text("PRAGMA foreign_keys=ON"))
+                metadata.create_all(conn)
+                conn.execute(
+                    text(
+                        "CREATE INDEX idx_agent_plans_session_id_version "
+                        "ON agent_plans (session_id, version)"
+                    )
+                )
+                conn.execute(
+                    agent_sessions.insert(),
+                    [
+                        {
+                            "id": "sess-1",
+                            "status": "active",
+                            "current_step": None,
+                            "progress": 0.0,
+                            "title": "会话",
+                            "video_url": None,
+                            "error_message": None,
+                            "error_retryable_step": None,
+                            "active_job_id": None,
+                            "grounding_status": "pending_search",
+                            "grounding_summary_json": {},
+                            "selected_candidate_ids_json": [],
+                            "created_at": datetime(2026, 5, 8, 0, 0, 0),
+                            "updated_at": datetime(2026, 5, 8, 0, 0, 0),
+                        }
+                    ],
+                )
+                conn.execute(
+                    agent_plans.insert(),
+                    [
+                        {
+                            "id": "plan-1",
+                            "session_id": "sess-1",
+                            "version": 1,
+                            "title": "一",
+                            "target_duration": 30,
+                            "style": "a",
+                            "plan_json": {"steps": ["search"]},
+                            "created_at": datetime(2026, 5, 8, 0, 0, 0),
+                        },
+                        {
+                            "id": "plan-2",
+                            "session_id": "sess-1",
+                            "version": 1,
+                            "title": "二",
+                            "target_duration": 30,
+                            "style": "b",
+                            "plan_json": {"steps": ["render"]},
+                            "created_at": datetime(2026, 5, 8, 0, 0, 1),
+                        },
+                        {
+                            "id": "plan-3",
+                            "session_id": "sess-1",
+                            "version": 3,
+                            "title": "三",
+                            "target_duration": 30,
+                            "style": "c",
+                            "plan_json": {"steps": ["publish"]},
+                            "created_at": datetime(2026, 5, 8, 0, 0, 2),
+                        },
+                    ],
+                )
+                conn.execute(
+                    agent_messages.insert(),
+                    [
+                        {
+                            "id": "msg-1",
+                            "session_id": "sess-1",
+                            "role": "user",
+                            "content": "hello",
+                            "created_at": datetime(2026, 5, 8, 0, 0, 0),
+                        }
+                    ],
+                )
+                conn.execute(
+                    agent_jobs.insert(),
+                    [
+                        {
+                            "id": "job-1",
+                            "session_id": "sess-1",
+                            "plan_id": "plan-1",
+                            "job_type": "render",
+                            "status": "pending",
+                            "attempt_count": 0,
+                            "max_attempts": 1,
+                            "progress": 0.0,
+                            "current_step": None,
+                            "error_message": None,
+                            "worker_id": None,
+                            "started_at": None,
+                            "finished_at": None,
+                            "created_at": datetime(2026, 5, 8, 0, 0, 0),
+                            "updated_at": datetime(2026, 5, 8, 0, 0, 0),
+                        }
+                    ],
+                )
+                conn.execute(
+                    agent_events.insert(),
+                    [
+                        {
+                            "id": "evt-1",
+                            "session_id": "sess-1",
+                            "job_id": "job-1",
+                            "event_type": "job.progress",
+                            "step": None,
+                            "progress": 0.0,
+                            "message": None,
+                            "payload_json": {},
+                            "created_at": datetime(2026, 5, 8, 0, 0, 0),
+                        }
+                    ],
+                )
+                conn.execute(
+                    agent_artifacts.insert(),
+                    [
+                        {
+                            "id": "art-1",
+                            "session_id": "sess-1",
+                            "job_id": "job-1",
+                            "artifact_type": "clip",
+                            "scene_id": None,
+                            "source_url": None,
+                            "local_path": None,
+                            "public_url": None,
+                            "duration": None,
+                            "metadata_json": {},
+                            "created_at": datetime(2026, 5, 8, 0, 0, 0),
+                        }
+                    ],
+                )
+                conn.commit()
+
+                from alembic.operations import Operations
+                from alembic.runtime.migration import MigrationContext
+
+                migration_path = (
+                    ROOT
+                    / "backend"
+                    / "alembic"
+                    / "versions"
+                    / "20260508_add_planner_persistence_foundations.py"
+                )
+                migration_tx = conn.begin()
+                migration_context = MigrationContext.configure(conn)
+                operations = Operations(migration_context)
+                fake_alembic = types.ModuleType("alembic")
+                fake_alembic.op = operations
+                spec = importlib.util.spec_from_file_location(
+                    "clipforge_real_migration",
+                    migration_path,
+                )
+                module = importlib.util.module_from_spec(spec)
+
+                with patch.dict(sys.modules, {"alembic": fake_alembic}, clear=False):
+                    spec.loader.exec_module(module)
+                    module.upgrade()
+
+                columns = {column["name"] for column in inspect(conn).get_columns("agent_sessions")}
+                self.assertIn("current_plan_id", columns)
+                self.assertIn("planner_trace_json", columns)
+                upgraded_versions = conn.execute(
+                    text(
+                        "SELECT version, execution_plan_json FROM agent_plans "
+                        "WHERE session_id = 'sess-1' ORDER BY version"
+                    )
+                ).all()
+                self.assertEqual([row[0] for row in upgraded_versions], [1, 3, 4])
+                self.assertTrue(all(row[1] == "{}" for row in upgraded_versions))
+
+                session_trace = conn.execute(
+                    text("SELECT planner_trace_json FROM agent_sessions WHERE id = 'sess-1'")
+                ).scalar_one()
+                self.assertEqual(session_trace, "{}")
+
+                plan_columns = {column["name"]: column for column in inspect(conn).get_columns("agent_plans")}
+                session_columns = {column["name"]: column for column in inspect(conn).get_columns("agent_sessions")}
+                self.assertFalse(plan_columns["execution_plan_json"]["nullable"])
+                self.assertFalse(session_columns["planner_trace_json"]["nullable"])
+
+                index_rows = conn.execute(text("PRAGMA index_list('agent_plans')")).mappings().all()
+                plan_index = next(row for row in index_rows if row["name"] == "idx_agent_plans_session_id_version")
+                self.assertEqual(plan_index["unique"], 1)
+
+                module.downgrade()
+                downgraded_columns = {
+                    column["name"] for column in inspect(conn).get_columns("agent_sessions")
+                }
+                self.assertNotIn("current_plan_id", downgraded_columns)
+                self.assertNotIn("planner_trace_json", downgraded_columns)
+                migration_tx.commit()
+        finally:
+            engine.dispose()
+
 
 class _FakeAlembicOp:
     def __init__(self):
@@ -580,10 +1027,13 @@ class _FakeAlembicOp:
         self.create_indexes = []
         self.create_foreign_keys = []
         self.add_columns = []
+        self.execute_calls = []
         self.drop_columns = []
         self.drop_indexes = []
         self.drop_constraints = []
         self.drop_tables = []
+        self.batch_calls = []
+        self.bind = SimpleNamespace(dialect=SimpleNamespace(name="postgresql"))
 
     def create_table(self, name, *columns, **kwargs):
         self.create_tables.append({"name": name, "columns": columns, "kwargs": kwargs})
@@ -613,6 +1063,9 @@ class _FakeAlembicOp:
     def add_column(self, table_name, column, **kwargs):
         self.add_columns.append({"table_name": table_name, "name": column.name, "column": column, "kwargs": kwargs})
 
+    def execute(self, statement, **kwargs):
+        self.execute_calls.append({"statement": statement, "kwargs": kwargs})
+
     def drop_column(self, table_name, column_name, **kwargs):
         self.drop_columns.append({"table_name": table_name, "name": column_name, "kwargs": kwargs})
 
@@ -626,6 +1079,65 @@ class _FakeAlembicOp:
 
     def drop_table(self, name, **kwargs):
         self.drop_tables.append({"name": name, "kwargs": kwargs})
+
+    def batch_alter_table(self, table_name, **kwargs):
+        batch = _FakeBatchAlembicOp(table_name, kwargs)
+        self.batch_calls.append(batch)
+        return batch
+
+    def get_bind(self):
+        return self.bind
+
+
+class _FakeBatchAlembicOp:
+    def __init__(self, table_name, kwargs):
+        self.table_name = table_name
+        self.kwargs = kwargs
+        self.add_columns = []
+        self.create_foreign_keys = []
+        self.drop_foreign_keys = []
+        self.create_indexes = []
+        self.drop_indexes = []
+        self.drop_columns = []
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc, tb):
+        return False
+
+    def add_column(self, column, **kwargs):
+        self.add_columns.append({"column": column, "kwargs": kwargs})
+
+    def create_foreign_key(self, name, referent_table, local_cols, remote_cols, **kwargs):
+        self.create_foreign_keys.append(
+            {
+                "name": name,
+                "referent_table": referent_table,
+                "local_cols": tuple(local_cols),
+                "remote_cols": tuple(remote_cols),
+                "kwargs": kwargs,
+            }
+        )
+
+    def drop_constraint(self, name, type_=None, **kwargs):
+        self.drop_foreign_keys.append({"name": name, "type": type_, "kwargs": kwargs})
+
+    def drop_index(self, name, **kwargs):
+        self.drop_indexes.append({"name": name, "kwargs": kwargs})
+
+    def create_index(self, name, columns, unique=False, **kwargs):
+        self.create_indexes.append(
+            {
+                "name": name,
+                "columns": tuple(columns),
+                "unique": unique,
+                "kwargs": kwargs,
+            }
+        )
+
+    def drop_column(self, name, **kwargs):
+        self.drop_columns.append({"name": name, "kwargs": kwargs})
 
 
 class RepositoryContractTests(unittest.TestCase):
@@ -863,6 +1375,7 @@ class RepositoryBehaviorTests(unittest.TestCase):
             AgentArtifactRepository,
             AgentEventRepository,
             AgentMessageRepository,
+            AgentPlanRepository,
             AgentSessionRepository,
         )
 
@@ -870,6 +1383,7 @@ class RepositoryBehaviorTests(unittest.TestCase):
         message_repo = AgentMessageRepository(self.db)
         event_repo = AgentEventRepository(self.db)
         artifact_repo = AgentArtifactRepository(self.db)
+        plan_repo = AgentPlanRepository(self.db)
 
         session_record = session_repo.create(title="排序测试")
         self.db.commit()
@@ -936,7 +1450,31 @@ class RepositoryBehaviorTests(unittest.TestCase):
             ["art-a", "art-b"],
         )
 
-    def test_get_latest_for_session_uses_stable_tie_breaker(self):
+        plan_v2 = plan_repo.create(
+            id="plan-v2",
+            session_id=session_record.id,
+            version=2,
+            title="第二版",
+            plan_json={"steps": ["render"]},
+        )
+        plan_v1 = plan_repo.create(
+            id="plan-v1",
+            session_id=session_record.id,
+            version=1,
+            title="第一版",
+            plan_json={"steps": ["search"]},
+        )
+        fixed_plan_time = plan_v2.created_at
+        plan_v1.created_at = fixed_plan_time
+        plan_v2.created_at = fixed_plan_time
+        self.db.flush()
+        self.db.commit()
+        self.assertEqual(
+            [plan.id for plan in plan_repo.list_for_session(session_record.id)],
+            ["plan-v1", "plan-v2"],
+        )
+
+    def test_get_latest_for_session_prefers_highest_version(self):
         from backend.db.repositories import AgentPlanRepository, AgentSessionRepository
 
         session_repo = AgentSessionRepository(self.db)
@@ -948,7 +1486,7 @@ class RepositoryBehaviorTests(unittest.TestCase):
         plan_a = plan_repo.create(
             id="plan-a",
             session_id=session_record.id,
-            version=3,
+            version=2,
             title="A",
             plan_json={"steps": []},
         )
@@ -966,6 +1504,97 @@ class RepositoryBehaviorTests(unittest.TestCase):
         self.db.commit()
 
         self.assertEqual(plan_repo.get_latest_for_session(session_record.id).id, "plan-b")
+
+    def test_agent_observation_repository_persists_defaults_and_lists_in_time_order(self):
+        from backend.db.repositories import (
+            AgentObservationRepository,
+            AgentPlanRepository,
+            AgentSessionRepository,
+        )
+
+        session_repo = AgentSessionRepository(self.db)
+        plan_repo = AgentPlanRepository(self.db)
+        observation_repo = AgentObservationRepository(self.db)
+
+        session_record = session_repo.create(
+            id="obs-session",
+            title="观察测试",
+            planner_trace_json={},
+        )
+        plan_record = plan_repo.create(
+            id="obs-plan",
+            session_id=session_record.id,
+            version=1,
+            title="观察计划",
+            plan_json={"steps": []},
+            execution_plan_json={},
+        )
+        older = observation_repo.create(
+            id="obs-b",
+            session_id=session_record.id,
+            plan_id=plan_record.id,
+            observation_type="planner.note",
+            summary="后写入但排前面",
+        )
+        newer = observation_repo.create(
+            id="obs-a",
+            session_id=session_record.id,
+            plan_id=plan_record.id,
+            observation_type="planner.note",
+            summary="先写入但排后面",
+            payload_json={"source": "user"},
+        )
+        fixed_time = older.created_at
+        older.created_at = fixed_time
+        newer.created_at = fixed_time
+        self.db.flush()
+        self.db.commit()
+
+        self.assertEqual(older.payload_json, {})
+        self.assertEqual(newer.payload_json, {"source": "user"})
+        self.assertEqual(
+            [record.id for record in observation_repo.list_for_session(session_record.id)],
+            ["obs-a", "obs-b"],
+        )
+
+    def test_agent_session_repository_normalizes_planner_trace_none_to_empty_dict(self):
+        from backend.db.repositories import AgentSessionRepository
+
+        session_repo = AgentSessionRepository(self.db)
+        session_record = session_repo.create(
+            id="session-trace",
+            title="planner trace",
+            planner_trace_json=None,
+        )
+        self.db.commit()
+
+        self.assertEqual(session_repo.get(session_record.id).planner_trace_json, {})
+
+    def test_agent_plan_versions_are_unique_per_session(self):
+        from sqlalchemy.exc import IntegrityError
+        from backend.db.repositories import AgentPlanRepository, AgentSessionRepository
+
+        session_repo = AgentSessionRepository(self.db)
+        plan_repo = AgentPlanRepository(self.db)
+
+        session_record = session_repo.create(title="唯一版本测试")
+        self.db.commit()
+        plan_repo.create(
+            session_id=session_record.id,
+            version=1,
+            title="第一版",
+            plan_json={"steps": []},
+        )
+        self.db.commit()
+
+        with self.assertRaises(IntegrityError):
+            plan_repo.create(
+                session_id=session_record.id,
+                version=1,
+                title="重复版",
+                plan_json={"steps": []},
+            )
+            self.db.commit()
 
     def test_sqlite_foreign_keys_are_enabled(self):
         result = self.db.execute(text("PRAGMA foreign_keys")).scalar_one()

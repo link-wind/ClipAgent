@@ -10,6 +10,8 @@ class AgentObservationRepository:
 
     def create(self, **values) -> AgentObservationRecord:
         # 创建观察记录
+        if values.get("payload_json") is None:
+            values["payload_json"] = {}
         record = AgentObservationRecord(**values)
         self.db.add(record)
         self.db.flush()

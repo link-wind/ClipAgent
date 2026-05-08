@@ -33,10 +33,10 @@ class AgentSessionRecord(Base):
         ForeignKey("agent_plans.id"),
         nullable=True,
     )
-    planner_trace_json: Mapped[dict | None] = mapped_column(
+    planner_trace_json: Mapped[dict] = mapped_column(
         JSON,
         default=dict,
-        nullable=True,
+        nullable=False,
     )
     grounding_status: Mapped[str | None] = mapped_column(
         String(32),
@@ -82,7 +82,7 @@ class AgentMessageRecord(Base):
 class AgentPlanRecord(Base):
     __tablename__ = "agent_plans"
     __table_args__ = (
-        Index("idx_agent_plans_session_id_version", "session_id", "version"),
+        Index("idx_agent_plans_session_id_version", "session_id", "version", unique=True),
     )
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_new_uuid)
@@ -104,10 +104,10 @@ class AgentPlanRecord(Base):
     trigger_type: Mapped[str | None] = mapped_column(String(64), nullable=True)
     planner_mode: Mapped[str | None] = mapped_column(String(32), nullable=True)
     planner_model: Mapped[str | None] = mapped_column(String(128), nullable=True)
-    execution_plan_json: Mapped[dict | None] = mapped_column(
+    execution_plan_json: Mapped[dict] = mapped_column(
         JSON,
         default=dict,
-        nullable=True,
+        nullable=False,
     )
     change_summary: Mapped[str | None] = mapped_column(Text, nullable=True)
     status: Mapped[str] = mapped_column(String(32), default="draft", nullable=False)
@@ -134,7 +134,7 @@ class AgentObservationRecord(Base):
     )
     observation_type: Mapped[str] = mapped_column(String(64), nullable=False)
     summary: Mapped[str | None] = mapped_column(Text, nullable=True)
-    payload_json: Mapped[dict | None] = mapped_column(JSON, default=dict, nullable=True)
+    payload_json: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
     source_message_id: Mapped[str | None] = mapped_column(
         String(36),
         ForeignKey("agent_messages.id"),
