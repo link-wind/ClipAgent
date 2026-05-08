@@ -1802,6 +1802,34 @@ class FrontendClientContractTests(unittest.TestCase):
         self.assertIn("const nextSession = await confirmAgentSession(sessionToConfirm.id);", workspace_source)
         self.assertIn("setMessage('');", workspace_source)
 
+    def test_workspace_grounding_selection_does_not_resync_from_polling_results(self):
+        workspace_source = (ROOT / "src" / "components" / "workspace" / "BriefWorkspacePage.tsx").read_text(
+            encoding="utf-8"
+        )
+
+        self.assertIn("setSelectedCandidateIds(session?.grounding?.selectedCandidateIds ?? []);", workspace_source)
+        self.assertNotIn("}, [session?.id, session?.grounding?.selectedCandidateIds]);", workspace_source)
+        self.assertIn("setSelectedCandidateIds((current) =>", workspace_source)
+
+    def test_workspace_grounding_confirm_does_not_submit_pending_message_before_confirming(self):
+        workspace_source = (ROOT / "src" / "components" / "workspace" / "BriefWorkspacePage.tsx").read_text(
+            encoding="utf-8"
+        )
+
+        self.assertIn("const nextSession = await confirmGroundingCandidates(session.id, selectedCandidateIds);", workspace_source)
+        self.assertIn("const sessionToConfirm = pendingMessage ? await sendAgentMessage(session.id, pendingMessage) : session;", workspace_source)
+        self.assertNotIn("const sessionToConfirm = pendingMessage ? await sendAgentMessage(session.id, pendingMessage) : session;\n      const nextSession = await confirmGroundingCandidates(sessionToConfirm.id, selectedCandidateIds);", workspace_source)
+        self.assertIn("const canConfirmGrounding = awaitingGroundingConfirmation && selectedCandidateIds.length > 0 && !isSubmitting && !trimmedMessage;", workspace_source)
+
+    def test_workspace_grounding_confirmation_renders_candidate_visual_previews(self):
+        workspace_source = (ROOT / "src" / "components" / "workspace" / "BriefWorkspacePage.tsx").read_text(
+            encoding="utf-8"
+        )
+
+        self.assertIn("candidate.previewUrl || candidate.imageUrl", workspace_source)
+        self.assertIn("alt={candidate.title}", workspace_source)
+        self.assertIn("className=\"h-24 w-24", workspace_source)
+
     def test_workspace_restore_experience_can_jump_to_result_failure_or_execution(self):
         workspace_source = (ROOT / "src" / "components" / "workspace" / "BriefWorkspacePage.tsx").read_text(
             encoding="utf-8"

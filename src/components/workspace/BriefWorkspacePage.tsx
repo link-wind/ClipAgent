@@ -317,11 +317,24 @@ export default function BriefWorkspacePage() {
 
   useEffect(() => {
     setSelectedDirection('');
+    setSelectedCandidateIds(session?.grounding?.selectedCandidateIds ?? []);
   }, [session?.id]);
 
   useEffect(() => {
-    setSelectedCandidateIds(session?.grounding?.selectedCandidateIds ?? []);
-  }, [session?.id, session?.grounding?.selectedCandidateIds]);
+    if (!session) {
+      setSelectedCandidateIds([]);
+      return;
+    }
+
+    if (session?.grounding?.status === 'confirmed') {
+      setSelectedCandidateIds(session.grounding.selectedCandidateIds ?? []);
+      return;
+    }
+
+    if (session.grounding?.status !== 'needs_confirmation') {
+      setSelectedCandidateIds([]);
+    }
+  }, [session?.grounding?.status]);
 
   useEffect(() => {
     const sessionId = session?.id;
@@ -362,7 +375,7 @@ export default function BriefWorkspacePage() {
   const trimmedMessage = message.trim();
   const canSend = Boolean(trimmedMessage) && !isSubmitting;
   const awaitingGroundingConfirmation = session?.grounding?.status === 'needs_confirmation';
-  const canConfirmGrounding = awaitingGroundingConfirmation && selectedCandidateIds.length > 0 && !isSubmitting;
+  const canConfirmGrounding = awaitingGroundingConfirmation && selectedCandidateIds.length > 0 && !isSubmitting && !trimmedMessage;
   const canConfirmPlan = session?.status === 'plan_ready' && session?.grounding?.status === 'confirmed' && !isSubmitting;
 
   const submitMessage = async (event: FormEvent<HTMLFormElement>) => {
@@ -408,12 +421,9 @@ export default function BriefWorkspacePage() {
     setErrorText('');
 
     try {
-      const pendingMessage = message.trim();
-      const sessionToConfirm = pendingMessage ? await sendAgentMessage(session.id, pendingMessage) : session;
-      const nextSession = await confirmGroundingCandidates(sessionToConfirm.id, selectedCandidateIds);
+      const nextSession = await confirmGroundingCandidates(session.id, selectedCandidateIds);
       setActiveSessionId(nextSession.id);
       setSession(nextSession);
-      setMessage('');
     } catch (error) {
       setErrorText(toUserError(error, () => setSession(null)));
     } finally {
@@ -814,44 +824,61 @@ export default function BriefWorkspacePage() {
                 <div className="grid gap-3">
                   {groundingCandidates.map((candidate) => {
                     const checked = selectedCandidateIds.includes(candidate.id);
+                    const candidatePreviewUrl = candidate.previewUrl || candidate.imageUrl;
                     return (
                       <label
                         key={candidate.id}
-                        className={`grid cursor-pointer gap-2.5 rounded-lg border p-3 transition ${
+                        className={`grid gap-3 rounded-lg border p-3 transition sm:grid-cols-[6rem_minmax(0,1fr)] ${
                           checked ? 'border-accent bg-[#f6faef]' : 'border-[#e4e8e3] bg-white hover:border-[#c7d3bf]'
                         }`}
                       >
-                        <div className="flex items-start justify-between gap-3">
-                          <div className="min-w-0">
-                            <div className="flex flex-wrap items-center gap-2">
-                              <strong className="text-sm font-semibold text-ink">{candidate.title}</strong>
-                              <span className="rounded-full border border-border bg-[#f7f9f6] px-2 py-0.5 text-[11px] font-bold text-secondary">
-                                {candidate.providerLabel}
-                              </span>
-                              {candidate.isOfficial ? (
-                                <span className="rounded-full border border-[rgba(168,198,108,0.38)] bg-[#e3efd4] px-2 py-0.5 text-[11px] font-bold text-accentink">
-                                  官方候选
-                                </span>
-                              ) : null}
+                        <div className="overflow-hidden rounded-lg border border-[#e4e8e3] bg-[#f4f7f1]">
+                          {candidatePreviewUrl ? (
+                            <img
+                              src={candidate.previewUrl || candidate.imageUrl}
+                              alt={candidate.title}
+                              className="h-24 w-24 object-cover"
+                            />
+                          ) : (
+                            <div className="flex h-24 w-24 items-center justify-center px-2 text-center text-xs font-medium text-secondary">
+                              暂无预览
                             </div>
-                            <p className="mt-1 text-sm leading-6 text-secondary">{candidate.summary || '等待候选摘要。'}</p>
-                          </div>
-                          <input
-                            type="checkbox"
-                            checked={checked}
-                            onChange={() =>
-                              setSelectedCandidateIds((current) =>
-                                checked ? current.filter((item) => item !== candidate.id) : [...current, candidate.id]
-                              )
-                            }
-                            className="mt-1 h-4 w-4 rounded border-border text-accent focus:ring-accent"
-                          />
+                          )}
                         </div>
-                        <div className="grid gap-1 text-xs leading-5 text-secondary [overflow-wrap:anywhere]">
-                          <span>产品：{candidate.productName || '待识别'}</span>
-                          <span>受众：{candidate.audience || '待识别'}</span>
-                          <span>匹配度：{formatConfidence(candidate.confidence)}</span>
-                          <span>来源：{candidate.sourceUrl}</span>
+
+                        <div className="grid gap-2.5">
+                          <div className="flex items-start justify-between gap-3">
+                            <div className="min-w-0">
+                              <div className="flex flex-wrap items-center gap-2">
+                                <strong className="text-sm font-semibold text-ink">{candidate.title}</strong>
+                                <span className="rounded-full border border-border bg-[#f7f9f6] px-2 py-0.5 text-[11px] font-bold text-secondary">
+                                  {candidate.providerLabel}
+                                </span>
+                                {candidate.isOfficial ? (
+                                  <span className="rounded-full border border-[rgba(168,198,108,0.38)] bg-[#e3efd4] px-2 py-0.5 text-[11px] font-bold text-accentink">
+                                    官方候选
+                                  </span>
+                                ) : null}
+                              </div>
+                              <p className="mt-1 text-sm leading-6 text-secondary">{candidate.summary || '等待候选摘要。'}</p>
+                            </div>
+                            <input
+                              type="checkbox"
+                              checked={checked}
+                              onChange={() =>
+                                setSelectedCandidateIds((current) =>
+                                  checked ? current.filter((item) => item !== candidate.id) : [...current, candidate.id]
+                                )
+                              }
+                              className="mt-1 h-4 w-4 rounded border-border text-accent focus:ring-accent"
+                            />
+                          </div>
+                          <div className="grid gap-1 text-xs leading-5 text-secondary [overflow-wrap:anywhere]">
+                            <span>产品：{candidate.productName || '待识别'}</span>
+                            <span>受众：{candidate.audience || '待识别'}</span>
+                            <span>匹配度：{formatConfidence(candidate.confidence)}</span>
+                            <span>来源：{candidate.sourceUrl}</span>
+                          </div>
                         </div>
                       </label>
                     );
@@ -862,7 +889,12 @@ export default function BriefWorkspacePage() {
                   <Button type="button" variant="secondary" onClick={focusComposer}>
                     继续补充需求
                   </Button>
-                  <Button type="button" onClick={confirmGrounding} disabled={!canConfirmGrounding}>
+                  <Button
+                    type="button"
+                    onClick={confirmGrounding}
+                    disabled={!canConfirmGrounding}
+                    title={trimmedMessage ? '请先发送当前补充需求，再确认候选画面。' : undefined}
+                  >
                     确认这些画面
                   </Button>
                 </div>
