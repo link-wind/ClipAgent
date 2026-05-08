@@ -90,6 +90,20 @@ class ConfigTests(unittest.TestCase):
         self.assertEqual(settings.celery_broker_url, "redis://localhost:6379/0")
         self.assertEqual(settings.celery_result_backend, "redis://localhost:6379/0")
 
+    def test_planner_settings_support_default_and_override(self):
+        env = {}
+        settings = self._load_settings(env)
+        self.assertEqual(settings.planner_mode, "deterministic")
+        self.assertEqual(settings.planner_model, "gpt-4o-mini")
+
+        env = {
+            "CLIPFORGE_PLANNER_MODE": "openai",
+            "CLIPFORGE_PLANNER_MODEL": "gpt-4.1",
+        }
+        settings = self._load_settings(env)
+        self.assertEqual(settings.planner_mode, "openai")
+        self.assertEqual(settings.planner_model, "gpt-4.1")
+
 
 class DatabaseSessionTests(unittest.TestCase):
     def _load_db_package(self):
