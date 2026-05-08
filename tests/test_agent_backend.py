@@ -192,17 +192,17 @@ class AgentApiTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         data = response.json()
         self.assertEqual(data["status"], "plan_ready")
-        self.assertIsNone(data["plan"])
-        self.assertIn("grounding", data)
-        self.assertEqual(data["grounding"]["status"], "needs_confirmation")
-        self.assertGreater(len(data["grounding"]["candidates"]), 0)
+        self.assertIsNotNone(data["plan"])
+        self.assertIsNone(data["grounding"])
+        self.assertGreater(len(data["plan"]["scenes"]), 0)
 
     def test_create_session_api_returns_grounding_candidates_before_plan_confirmation(self):
         from backend.main import app
 
         client = _make_test_client(app)
+        created = client.post("/api/agent/sessions", json={}).json()
         response = client.post(
-            "/api/agent/sessions",
+            f"/api/agent/sessions/{created['id']}/messages",
             json={"message": "给 Notion AI 做一个 30 秒产品亮点视频"},
         )
 
@@ -214,12 +214,28 @@ class AgentApiTests(unittest.TestCase):
         self.assertEqual(data["grounding"]["status"], "needs_confirmation")
         self.assertGreater(len(data["grounding"]["candidates"]), 0)
 
+    def test_create_session_api_returns_model_driven_initial_plan(self):
+        from backend.main import app
+
+        client = _make_test_client(app)
+        response = client.post(
+            "/api/agent/sessions",
+            json={"message": "给 Notion AI 做一个 30 秒产品亮点视频"},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertEqual(data["status"], "plan_ready")
+        self.assertIsNotNone(data["plan"])
+        self.assertGreater(len(data["plan"]["scenes"]), 0)
+
     def test_confirm_candidates_api_builds_grounded_plan(self):
         from backend.main import app
 
         client = _make_test_client(app)
+        created = client.post("/api/agent/sessions", json={}).json()
         created = client.post(
-            "/api/agent/sessions",
+            f"/api/agent/sessions/{created['id']}/messages",
             json={"message": "给 Notion AI 做一个 30 秒产品亮点视频"},
         ).json()
         self.assertIn("grounding", created)
@@ -243,10 +259,6 @@ class AgentApiTests(unittest.TestCase):
 
         client = _make_test_client(app)
         created = client.post("/api/agent/sessions", json={"message": "做一个科技短片"}).json()
-        client.post(
-            f"/api/agent/sessions/{created['id']}/grounding/confirm",
-            json={"candidateIds": [candidate["id"] for candidate in created["grounding"]["candidates"][:2]]},
-        )
         response = client.post(
             f"/api/agent/sessions/{created['id']}/messages",
             json={"message": "更商务一点"},
@@ -262,10 +274,6 @@ class AgentApiTests(unittest.TestCase):
 
         client = _make_test_client(app)
         created = client.post("/api/agent/sessions", json={"message": "做一个科技短片"}).json()
-        client.post(
-            f"/api/agent/sessions/{created['id']}/grounding/confirm",
-            json={"candidateIds": [candidate["id"] for candidate in created["grounding"]["candidates"][:2]]},
-        )
         response = client.post(
             f"/api/agent/sessions/{created['id']}/messages",
             json={
@@ -291,18 +299,13 @@ class AgentApiTests(unittest.TestCase):
         from backend.db.repositories import AgentPlanRepository
 
         created = self.session_service.create_session("做一个科技短片")
-        self.session_service.confirm_grounding_candidates(
-            created.id,
-            [candidate.id for candidate in created.grounding.candidates[:2]],
-        )
-
         updated = self.session_service.add_user_message(
             created.id,
             "场景1：城市 车流 黄昏；场景2：咖啡 特写 手工艺；场景3：海边 日落 风景；场景4：雪山 航拍 自然",
         )
 
         self.assertEqual(updated.plan.scenes[0].keywords, ["城市", "车流", "黄昏"])
-        self.assertEqual(updated.plan.scenes[3].searchQuery, "雪山 航拍 自然")
+        self.assertEqual(updated.plan.scenes[1].searchQuery, "咖啡 特写 手工艺")
 
         with self.session_factory() as db:
             latest_plan = AgentPlanRepository(db).get_latest_for_session(created.id)
@@ -310,13 +313,13 @@ class AgentApiTests(unittest.TestCase):
         self.assertIsNotNone(latest_plan)
         self.assertEqual(latest_plan.version, 2)
         self.assertEqual(latest_plan.plan_json["scenes"][0]["keywords"], ["城市", "车流", "黄昏"])
-        self.assertEqual(latest_plan.plan_json["scenes"][2]["searchQuery"], "海边 日落 风景")
+        self.assertEqual(latest_plan.plan_json["scenes"][1]["searchQuery"], "咖啡 特写 手工艺")
 
     def test_add_message_before_grounding_confirmation_preserves_grounding_context(self):
         from backend.db.repositories import AgentPlanRepository
 
-        created = self.session_service.create_session("给 Notion AI 做一个 30 秒产品亮点视频")
-
+        created = self.session_service.create_session()
+        first = self.session_service.add_user_message(created.id, "给 Notion AI 做一个 30 秒产品亮点视频")
         updated = self.session_service.add_user_message(created.id, "整体再商务一点，目标受众改成销售团队")
 
         self.assertEqual(updated.status.value, "plan_ready")
@@ -328,6 +331,7 @@ class AgentApiTests(unittest.TestCase):
         self.assertIn("Notion", updated.grounding.searchQueries)
         self.assertIn("销售团队", updated.grounding.searchQueries)
         self.assertGreaterEqual(len(updated.messages), 4)
+        self.assertEqual(first.grounding.status, "needs_confirmation")
 
         with self.session_factory() as db:
             latest_plan = AgentPlanRepository(db).get_latest_for_session(created.id)
@@ -337,10 +341,11 @@ class AgentApiTests(unittest.TestCase):
     def test_add_message_after_grounding_confirmation_preserves_grounded_plan_for_free_text_edits(self):
         from backend.db.repositories import AgentPlanRepository
 
-        created = self.session_service.create_session("给 Notion AI 做一个 30 秒产品亮点视频")
+        created = self.session_service.create_session()
+        awaiting = self.session_service.add_user_message(created.id, "给 Notion AI 做一个 30 秒产品亮点视频")
         grounded = self.session_service.confirm_grounding_candidates(
             created.id,
-            [candidate.id for candidate in created.grounding.candidates[:2]],
+            [candidate.id for candidate in awaiting.grounding.candidates[:2]],
         )
         original_scene_keywords = [scene.keywords[:] for scene in grounded.plan.scenes]
 
@@ -365,11 +370,6 @@ class AgentApiTests(unittest.TestCase):
 
     def test_add_message_updates_failed_planning_session_plan_when_scene_keywords_are_provided(self):
         created = self.session_service.create_session("做一个科技短片")
-        grounded_session = self.session_service.confirm_grounding_candidates(
-            created.id,
-            [candidate.id for candidate in created.grounding.candidates[:2]],
-        )
-
         with self.session_factory() as db:
             from backend.db.repositories import AgentSessionRepository
 
@@ -383,15 +383,16 @@ class AgentApiTests(unittest.TestCase):
             "重新规划并改成中文关键词：场景1：城市 车流 黄昏；场景2：咖啡 特写 手工艺",
         )
 
-        self.assertEqual(updated.plan.title, grounded_session.plan.title)
+        self.assertEqual(updated.plan.title, created.plan.title)
         self.assertEqual(updated.plan.scenes[0].keywords, ["城市", "车流", "黄昏"])
         self.assertEqual(updated.plan.scenes[1].searchQuery, "咖啡 特写 手工艺")
 
     def test_confirm_candidates_rejects_repeat_confirmation_without_writing_new_plan(self):
         from backend.db.repositories import AgentPlanRepository
 
-        created = self.session_service.create_session("给 Notion AI 做一个 30 秒产品亮点视频")
-        candidate_ids = [candidate.id for candidate in created.grounding.candidates[:2]]
+        created = self.session_service.create_session()
+        awaiting = self.session_service.add_user_message(created.id, "给 Notion AI 做一个 30 秒产品亮点视频")
+        candidate_ids = [candidate.id for candidate in awaiting.grounding.candidates[:2]]
         grounded = self.session_service.confirm_grounding_candidates(created.id, candidate_ids)
 
         with self.assertRaisesRegex(RuntimeError, "awaiting confirmation"):
@@ -2138,10 +2139,6 @@ class FrontendClientContractTests(unittest.TestCase):
 
         client = _make_test_client(app)
         created = client.post("/api/agent/sessions", json={"message": "做一个科技短片"}).json()
-        client.post(
-            f"/api/agent/sessions/{created['id']}/grounding/confirm",
-            json={"candidateIds": [candidate["id"] for candidate in created["grounding"]["candidates"][:2]]},
-        )
         response = client.post(f"/api/agent/sessions/{created['id']}/confirm")
 
         self.assertEqual(response.status_code, 200)
@@ -2155,10 +2152,6 @@ class FrontendClientContractTests(unittest.TestCase):
 
         client = _make_test_client(app)
         created = client.post("/api/agent/sessions", json={"message": "做一个科技短片"}).json()
-        client.post(
-            f"/api/agent/sessions/{created['id']}/grounding/confirm",
-            json={"candidateIds": [candidate["id"] for candidate in created["grounding"]["candidates"][:2]]},
-        )
         first = client.post(f"/api/agent/sessions/{created['id']}/confirm")
         second = client.post(f"/api/agent/sessions/{created['id']}/confirm")
 

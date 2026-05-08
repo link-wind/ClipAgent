@@ -17,6 +17,7 @@ from backend.models.agent import (
     EditPlan,
 )
 from backend.services.agent_step_snapshot_service import AgentStepSnapshotService
+from backend.services.planner_projection import execution_plan_to_edit_plan
 
 
 class AgentReadService:
@@ -63,7 +64,7 @@ class AgentReadService:
 
     def build_session_response(self, session_record, message_rows, plan_row, artifact_rows, event_rows) -> AgentSession:
         # 将数据库行映射回 Pydantic 会话
-        plan = EditPlan.model_validate(plan_row.plan_json) if plan_row is not None else None
+        plan = self._build_edit_plan(plan_row)
         clip_rows = [row for row in artifact_rows if row.artifact_type == "clip"]
         return AgentSession(
             id=session_record.id,
@@ -95,6 +96,7 @@ class AgentReadService:
             videoUrl=session_record.video_url,
             activeJobId=session_record.active_job_id,
             grounding=self._build_grounding_response(session_record),
+            plannerTrace=session_record.planner_trace_json or {},
             error=(
                 AgentError(
                     message=session_record.error_message,
@@ -159,3 +161,12 @@ class AgentReadService:
             )
             for row in event_rows
         ]
+
+    def _build_edit_plan(self, plan_row) -> EditPlan | None:
+        if plan_row is None:
+            return None
+
+        execution_plan_json = getattr(plan_row, "execution_plan_json", None) or {}
+        if execution_plan_json.get("scenes"):
+            return execution_plan_to_edit_plan(execution_plan_json)
+        return EditPlan.model_validate(plan_row.plan_json)

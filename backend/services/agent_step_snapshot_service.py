@@ -2,6 +2,7 @@ from dataclasses import dataclass
 from typing import Any, Optional
 
 from backend.models.agent import AgentStep, AgentStepError, AgentStepId, EditPlan
+from backend.services.planner_projection import execution_plan_to_edit_plan
 
 
 @dataclass(frozen=True)
@@ -305,6 +306,9 @@ class AgentStepSnapshotService:
     def _extract_plan(self, plan_row) -> Optional[EditPlan]:
         if plan_row is None:
             return None
+        execution_plan_json = getattr(plan_row, "execution_plan_json", None) or {}
+        if execution_plan_json.get("scenes"):
+            return execution_plan_to_edit_plan(execution_plan_json)
         return EditPlan.model_validate(plan_row.plan_json)
 
     def _build_event_state(self, session_record, event_rows) -> dict[str, Any]:

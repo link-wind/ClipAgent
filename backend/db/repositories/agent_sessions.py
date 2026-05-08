@@ -71,3 +71,15 @@ class AgentSessionRepository:
         self.db.flush()
         self.db.refresh(record)
         return record
+
+    def set_current_plan(self, session_id: str, plan_id: str | None) -> AgentSessionRecord | None:
+        # 更新会话当前 plan 指针
+        record = self.get(session_id)
+        if record is None:
+            return None
+
+        record.current_plan_id = plan_id
+        self.db.add(record)
+        self.db.flush()
+        self.db.refresh(record)
+        return record

@@ -1640,8 +1640,13 @@ class SessionServiceBehaviorTests(unittest.TestCase):
         self.assertIsNone(AgentSession.model_fields["activeJobId"].default)
         self.assertIn("message", AgentEvent.model_fields)
 
-    def test_create_session_with_prompt_persists_session_message_and_grounding_without_plan(self):
-        from backend.db.repositories import AgentMessageRepository, AgentPlanRepository, AgentSessionRepository
+    def test_create_session_with_prompt_persists_session_message_and_initial_plan(self):
+        from backend.db.repositories import (
+            AgentMessageRepository,
+            AgentObservationRepository,
+            AgentPlanRepository,
+            AgentSessionRepository,
+        )
         from backend.models.agent import AgentStatus
         from backend.services.agent_session_service import AgentSessionService
 
@@ -1652,10 +1657,9 @@ class SessionServiceBehaviorTests(unittest.TestCase):
         self.assertEqual(len(session.messages), 2)
         self.assertEqual(session.messages[0].role, "user")
         self.assertEqual(session.messages[1].role, "assistant")
-        self.assertIsNone(session.plan)
-        self.assertIsNotNone(session.grounding)
-        self.assertEqual(session.grounding.status, "needs_confirmation")
-        self.assertEqual(session.currentStep, "等待确认候选产品画面")
+        self.assertIsNotNone(session.plan)
+        self.assertIsNone(session.grounding)
+        self.assertEqual(session.currentStep, "剪辑方案已生成")
         self.assertEqual(session.progress, 20)
 
         db = self.SessionLocal()
@@ -1663,12 +1667,14 @@ class SessionServiceBehaviorTests(unittest.TestCase):
             session_repo = AgentSessionRepository(db)
             message_repo = AgentMessageRepository(db)
             plan_repo = AgentPlanRepository(db)
+            observation_repo = AgentObservationRepository(db)
 
             session_record = session_repo.get(session.id)
             self.assertEqual(session_record.status, "plan_ready")
-            self.assertEqual(session_record.grounding_status, "needs_confirmation")
+            self.assertIsNone(session_record.grounding_status)
             self.assertEqual(len(message_repo.list_for_session(session.id)), 2)
-            self.assertIsNone(plan_repo.get_latest_for_session(session.id))
+            self.assertIsNotNone(plan_repo.get_latest_for_session(session.id))
+            self.assertEqual(len(observation_repo.list_for_session(session.id)), 1)
         finally:
             db.close()
 
@@ -1765,7 +1771,8 @@ class SessionServiceBehaviorTests(unittest.TestCase):
         from backend.services.agent_session_service import AgentSessionService
 
         service = AgentSessionService(session_factory=self.SessionLocal)
-        session = service.create_session("给 Notion AI 做一个 30 秒产品亮点视频")
+        session = service.create_session()
+        first = service.add_user_message(session.id, "给 Notion AI 做一个 30 秒产品亮点视频")
         updated = service.add_user_message(session.id, "整体再商务一点，目标受众改成销售团队")
 
         self.assertEqual(updated.status, AgentStatus.PLAN_READY)
@@ -1777,6 +1784,7 @@ class SessionServiceBehaviorTests(unittest.TestCase):
         self.assertIn("Notion", updated.grounding.searchQueries)
         self.assertIn("销售团队", updated.grounding.searchQueries)
         self.assertEqual(updated.progress, 20)
+        self.assertEqual(first.grounding.status, "needs_confirmation")
 
         db = self.SessionLocal()
         try:

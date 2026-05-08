@@ -9,6 +9,8 @@ from backend.db.repositories import (
 from backend.models.agent import AgentSession, EditPlan, PlanScene
 from backend.services.agent_read_service import AgentReadService
 from backend.services.grounding_service import grounding_service
+from backend.services.planner_orchestrator import PlannerOrchestrator
+from backend.services.planner_projection import execution_plan_to_edit_plan
 
 
 PLAN_READY_MESSAGE = "我已经生成剪辑方案，你可以继续修改或确认开始。"
@@ -32,16 +34,20 @@ class AgentSessionService:
                 session_id = session_record.id
 
                 if prompt and prompt.strip():
-                    message_repo.create(session_id=session_id, role="user", content=prompt)
-                    grounding_summary = grounding_service.build_grounding_summary(prompt)
-                    self._apply_grounding_to_session(session_record, grounding_summary)
-                    session_repo.update_grounding_state(
-                        session_id,
-                        grounding_status=grounding_summary.status,
-                        grounding_summary_json=grounding_summary.model_dump(mode="json"),
-                        selected_candidate_ids_json=[],
+                    message_record = message_repo.create(session_id=session_id, role="user", content=prompt)
+                    planner_orchestrator = PlannerOrchestrator()
+                    plan_record = planner_orchestrator.persist_initial_plan(
+                        db=db,
+                        session_record=session_record,
+                        message_record=message_record,
                     )
-                    self._append_grounding_ready_message(message_repo, session_id)
+                    session_record.grounding_status = None
+                    session_record.grounding_summary_json = {}
+                    session_record.selected_candidate_ids_json = []
+                    session_repo.set_current_plan(session_id, plan_record.id)
+                    plan = execution_plan_to_edit_plan(plan_record.execution_plan_json)
+                    self._apply_plan_to_session(session_record, plan)
+                    self._append_plan_ready_message(message_repo, session_id)
 
                 db.commit()
             except Exception:
@@ -108,6 +114,7 @@ class AgentSessionService:
                         target_duration=int(plan.targetDuration),
                         style=plan.style,
                         plan_json=plan.model_dump(mode="json"),
+                        execution_plan_json=plan.model_dump(mode="json"),
                     )
                     self._append_plan_ready_message(message_repo, session_id)
 
@@ -166,6 +173,7 @@ class AgentSessionService:
                     target_duration=int(grounded_plan.targetDuration),
                     style=grounded_plan.style,
                     plan_json=grounded_plan.model_dump(mode="json"),
+                    execution_plan_json=grounded_plan.model_dump(mode="json"),
                 )
                 self._append_plan_ready_message(message_repo, session_id)
                 db.commit()
@@ -211,12 +219,18 @@ class AgentSessionService:
         if latest_plan is None:
             return self._fallback_plan(content)
 
-        current_plan = EditPlan.model_validate(latest_plan.plan_json)
+        current_plan = self._load_edit_plan(latest_plan)
         updated_plan = self._apply_scene_keyword_updates(current_plan, content)
         if updated_plan is not None:
             return updated_plan
 
         return current_plan.model_copy(deep=True)
+
+    def _load_edit_plan(self, plan_record) -> EditPlan:
+        execution_plan_json = getattr(plan_record, "execution_plan_json", None) or {}
+        if execution_plan_json.get("scenes"):
+            return EditPlan.model_validate(execution_plan_json)
+        return EditPlan.model_validate(plan_record.plan_json)
 
     def _apply_scene_keyword_updates(self, plan: EditPlan, content: str) -> EditPlan | None:
         updates = self._extract_scene_keyword_updates(content)
