@@ -182,6 +182,7 @@ class AgentPersistenceModelTests(unittest.TestCase):
         self.assertIsNotNone(models.AgentSessionRecord)
         self.assertIsNotNone(models.AgentMessageRecord)
         self.assertIsNotNone(models.AgentPlanRecord)
+        self.assertIsNotNone(models.AgentObservationRecord)
         self.assertIsNotNone(models.AgentJobRecord)
         self.assertIsNotNone(models.AgentEventRecord)
         self.assertIsNotNone(models.AgentArtifactRecord)
@@ -196,6 +197,7 @@ class AgentPersistenceModelTests(unittest.TestCase):
         self.assertIs(tables["agent_sessions"], models.AgentSessionRecord.__table__)
         self.assertIs(tables["agent_messages"], models.AgentMessageRecord.__table__)
         self.assertIs(tables["agent_plans"], models.AgentPlanRecord.__table__)
+        self.assertIs(tables["agent_observations"], models.AgentObservationRecord.__table__)
         self.assertIs(tables["agent_jobs"], models.AgentJobRecord.__table__)
         self.assertIs(tables["agent_events"], models.AgentEventRecord.__table__)
         self.assertIs(tables["agent_artifacts"], models.AgentArtifactRecord.__table__)
@@ -215,6 +217,8 @@ class AgentPersistenceModelTests(unittest.TestCase):
                 "error_message",
                 "error_retryable_step",
                 "active_job_id",
+                "current_plan_id",
+                "planner_trace_json",
                 "grounding_status",
                 "grounding_summary_json",
                 "selected_candidate_ids_json",
@@ -242,6 +246,27 @@ class AgentPersistenceModelTests(unittest.TestCase):
                 "target_duration",
                 "style",
                 "plan_json",
+                "parent_plan_id",
+                "trigger_type",
+                "planner_mode",
+                "planner_model",
+                "execution_plan_json",
+                "change_summary",
+                "status",
+                "created_at",
+            },
+        )
+        self.assertEqual(
+            set(models.AgentObservationRecord.__table__.columns.keys()),
+            {
+                "id",
+                "session_id",
+                "plan_id",
+                "observation_type",
+                "summary",
+                "payload_json",
+                "source_message_id",
+                "source_job_id",
                 "created_at",
             },
         )
@@ -307,6 +332,13 @@ class AgentPersistenceModelTests(unittest.TestCase):
         self.assertEqual(
             {index.name for index in metadata.tables["agent_plans"].indexes},
             {"idx_agent_plans_session_id_version"},
+        )
+        self.assertEqual(
+            {index.name for index in metadata.tables["agent_observations"].indexes},
+            {
+                "idx_agent_observations_session_id_created_at",
+                "idx_agent_observations_plan_id_created_at",
+            },
         )
         self.assertEqual(
             {index.name for index in metadata.tables["agent_jobs"].indexes},

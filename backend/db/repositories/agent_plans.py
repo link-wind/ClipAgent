@@ -33,3 +33,16 @@ class AgentPlanRepository:
             .limit(1)
         )
         return self.db.scalar(stmt)
+
+    def list_for_session(self, session_id: str) -> list[AgentPlanRecord]:
+        # 按版本和创建时间稳定列出会话计划
+        stmt = (
+            select(AgentPlanRecord)
+            .where(AgentPlanRecord.session_id == session_id)
+            .order_by(
+                AgentPlanRecord.version.asc(),
+                AgentPlanRecord.created_at.asc(),
+                AgentPlanRecord.id.asc(),
+            )
+        )
+        return list(self.db.scalars(stmt))
