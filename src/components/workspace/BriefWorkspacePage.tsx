@@ -5,6 +5,7 @@ import Link from 'next/link';
 import ProductShell from '@/components/layout/ProductShell';
 import Button from '@/components/common/Button';
 import {
+  confirmGroundingCandidates,
   confirmAgentSession,
   createAgentSession,
   getAgentSession,
@@ -117,6 +118,13 @@ function asNumber(value: unknown): number {
 
 function asArray(value: unknown): unknown[] {
   return Array.isArray(value) ? value : [];
+}
+
+function formatConfidence(value: number) {
+  if (!Number.isFinite(value) || value <= 0) {
+    return '待评估';
+  }
+  return `${Math.round(value * 100)}%`
 }
 
 type WorkspaceStep = (typeof FALLBACK_WORKSPACE_STEPS)[number] | AgentSession['steps'][number];
@@ -258,6 +266,7 @@ export default function BriefWorkspacePage() {
   const [message, setMessage] = useState('');
   const [errorText, setErrorText] = useState('');
   const [selectedDirection, setSelectedDirection] = useState('');
+  const [selectedCandidateIds, setSelectedCandidateIds] = useState<string[]>([]);
   const [restoredSessionId, setRestoredSessionId] = useState<string | null>(null);
   const [hasAppliedRestoreJump, setHasAppliedRestoreJump] = useState(false);
   const executionSectionRef = useRef<HTMLElement | null>(null);
@@ -311,6 +320,10 @@ export default function BriefWorkspacePage() {
   }, [session?.id]);
 
   useEffect(() => {
+    setSelectedCandidateIds(session?.grounding?.selectedCandidateIds ?? []);
+  }, [session?.id, session?.grounding?.selectedCandidateIds]);
+
+  useEffect(() => {
     const sessionId = session?.id;
     const sessionStatus = session?.status;
 
@@ -348,7 +361,9 @@ export default function BriefWorkspacePage() {
 
   const trimmedMessage = message.trim();
   const canSend = Boolean(trimmedMessage) && !isSubmitting;
-  const canConfirm = session?.status === 'plan_ready' && !isSubmitting;
+  const awaitingGroundingConfirmation = session?.grounding?.status === 'needs_confirmation';
+  const canConfirmGrounding = awaitingGroundingConfirmation && selectedCandidateIds.length > 0 && !isSubmitting;
+  const canConfirmPlan = session?.status === 'plan_ready' && session?.grounding?.status === 'confirmed' && !isSubmitting;
 
   const submitMessage = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -384,8 +399,30 @@ export default function BriefWorkspacePage() {
     }
   };
 
+  const confirmGrounding = async () => {
+    if (!session || !canConfirmGrounding) {
+      return;
+    }
+
+    setSubmitting(true);
+    setErrorText('');
+
+    try {
+      const pendingMessage = message.trim();
+      const sessionToConfirm = pendingMessage ? await sendAgentMessage(session.id, pendingMessage) : session;
+      const nextSession = await confirmGroundingCandidates(sessionToConfirm.id, selectedCandidateIds);
+      setActiveSessionId(nextSession.id);
+      setSession(nextSession);
+      setMessage('');
+    } catch (error) {
+      setErrorText(toUserError(error, () => setSession(null)));
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
   const confirmPlan = async () => {
-    if (!session || !canConfirm) {
+    if (!session || !canConfirmPlan) {
       return;
     }
 
@@ -415,6 +452,7 @@ export default function BriefWorkspacePage() {
   const assistantMessages = sessionMessages.filter((item) => item.role === 'assistant');
   const latestAssistantMessage = assistantMessages.at(-1)?.content ?? '我会按步骤处理你的需求，每一步先显示进度，再展示结果。';
   const scenes = session?.plan?.scenes ?? [];
+  const groundingCandidates = session?.grounding?.candidates ?? [];
   const workspaceSteps = useMemo(() => {
     if (!session?.steps?.length) {
       return FALLBACK_WORKSPACE_STEPS;
@@ -672,7 +710,7 @@ export default function BriefWorkspacePage() {
                             </h3>
                           </div>
                           <span className="text-xs font-extrabold text-secondary min-[861px]:whitespace-nowrap">
-                            {session?.status === 'plan_ready' ? '可确认' : '持续更新'}
+                            {canConfirmPlan ? '可确认' : '持续更新'}
                           </span>
                         </div>
 
@@ -730,7 +768,7 @@ export default function BriefWorkspacePage() {
                             <Button type="button" variant="secondary" disabled={!session}>
                               继续修改
                             </Button>
-                            <Button type="button" onClick={confirmPlan} disabled={!canConfirm}>
+                            <Button type="button" onClick={confirmPlan} disabled={!canConfirmPlan}>
                               确认方案并生成任务
                             </Button>
                           </div>
@@ -757,6 +795,79 @@ export default function BriefWorkspacePage() {
                 );
               })}
             </section>
+
+            {awaitingGroundingConfirmation ? (
+              <section className="mx-5 mb-5 grid gap-3 rounded-lg border border-border bg-[#fbfcfa] p-4" aria-label="候选产品画面确认">
+                <div className="flex flex-col gap-3 min-[861px]:flex-row min-[861px]:items-start min-[861px]:justify-between">
+                  <div>
+                    <span className="text-xs font-bold uppercase tracking-[0.02em] text-secondary">候选产品画面确认</span>
+                    <h2 className="mt-1 text-lg font-semibold text-ink">确认这些画面是否代表正确的产品</h2>
+                    <p className="mt-1 text-sm leading-6 text-secondary">
+                      先锁定真实产品画面，再生成最终方案。已选 {selectedCandidateIds.length} 项，确认后会把这些选择写入 grounded plan。
+                    </p>
+                  </div>
+                  <span className="text-xs font-extrabold text-secondary min-[861px]:whitespace-nowrap">
+                    selectedCandidateIds: {selectedCandidateIds.length}
+                  </span>
+                </div>
+
+                <div className="grid gap-3">
+                  {groundingCandidates.map((candidate) => {
+                    const checked = selectedCandidateIds.includes(candidate.id);
+                    return (
+                      <label
+                        key={candidate.id}
+                        className={`grid cursor-pointer gap-2.5 rounded-lg border p-3 transition ${
+                          checked ? 'border-accent bg-[#f6faef]' : 'border-[#e4e8e3] bg-white hover:border-[#c7d3bf]'
+                        }`}
+                      >
+                        <div className="flex items-start justify-between gap-3">
+                          <div className="min-w-0">
+                            <div className="flex flex-wrap items-center gap-2">
+                              <strong className="text-sm font-semibold text-ink">{candidate.title}</strong>
+                              <span className="rounded-full border border-border bg-[#f7f9f6] px-2 py-0.5 text-[11px] font-bold text-secondary">
+                                {candidate.providerLabel}
+                              </span>
+                              {candidate.isOfficial ? (
+                                <span className="rounded-full border border-[rgba(168,198,108,0.38)] bg-[#e3efd4] px-2 py-0.5 text-[11px] font-bold text-accentink">
+                                  官方候选
+                                </span>
+                              ) : null}
+                            </div>
+                            <p className="mt-1 text-sm leading-6 text-secondary">{candidate.summary || '等待候选摘要。'}</p>
+                          </div>
+                          <input
+                            type="checkbox"
+                            checked={checked}
+                            onChange={() =>
+                              setSelectedCandidateIds((current) =>
+                                checked ? current.filter((item) => item !== candidate.id) : [...current, candidate.id]
+                              )
+                            }
+                            className="mt-1 h-4 w-4 rounded border-border text-accent focus:ring-accent"
+                          />
+                        </div>
+                        <div className="grid gap-1 text-xs leading-5 text-secondary [overflow-wrap:anywhere]">
+                          <span>产品：{candidate.productName || '待识别'}</span>
+                          <span>受众：{candidate.audience || '待识别'}</span>
+                          <span>匹配度：{formatConfidence(candidate.confidence)}</span>
+                          <span>来源：{candidate.sourceUrl}</span>
+                        </div>
+                      </label>
+                    );
+                  })}
+                </div>
+
+                <div className="flex flex-wrap gap-2.5">
+                  <Button type="button" variant="secondary" onClick={focusComposer}>
+                    继续补充需求
+                  </Button>
+                  <Button type="button" onClick={confirmGrounding} disabled={!canConfirmGrounding}>
+                    确认这些画面
+                  </Button>
+                </div>
+              </section>
+            ) : null}
 
             {showExecutionHandoff ? (
               <section ref={executionSectionRef} className="mx-5 mb-5 grid gap-3 rounded-lg border border-border bg-[#fbfcfa] p-4" aria-label="执行交接">
@@ -867,8 +978,13 @@ export default function BriefWorkspacePage() {
               <div className="flex flex-col gap-3 min-[861px]:flex-row min-[861px]:items-center min-[861px]:justify-between">
                 <span className="text-xs text-secondary">底部输入区用于继续补充信息、修改方案，或推动下一轮细化。</span>
                 <div className="flex flex-wrap gap-2.5">
-                  <Button type="button" variant="secondary" onClick={confirmPlan} disabled={!canConfirm}>
-                    确认方案并生成任务
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    onClick={awaitingGroundingConfirmation ? confirmGrounding : confirmPlan}
+                    disabled={awaitingGroundingConfirmation ? !canConfirmGrounding : !canConfirmPlan}
+                  >
+                    {awaitingGroundingConfirmation ? '确认这些画面' : '确认方案并生成任务'}
                   </Button>
                   <Button type="submit" disabled={!canSend}>
                     {isSubmitting ? '处理中' : '发送'}

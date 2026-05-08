@@ -70,7 +70,7 @@ class AgentSessionTests(unittest.TestCase):
         self.assertEqual(session.messages, [])
         self.assertIsNone(session.plan)
 
-    def test_create_session_with_prompt_generates_plan_ready_session(self):
+    def test_create_session_with_prompt_generates_grounding_ready_session(self):
         from backend.models.agent import AgentStatus
         from backend.services.agent_service import AgentService
 
@@ -79,10 +79,13 @@ class AgentSessionTests(unittest.TestCase):
 
         self.assertEqual(session.status, AgentStatus.PLAN_READY)
         self.assertEqual(session.messages[0].role, "user")
-        self.assertIsNotNone(session.plan)
-        self.assertGreater(len(session.plan.scenes), 0)
+        self.assertEqual(session.messages[1].role, "assistant")
+        self.assertIsNone(session.plan)
+        self.assertIsNotNone(session.grounding)
+        self.assertEqual(session.grounding.status, "needs_confirmation")
+        self.assertGreater(len(session.grounding.candidates), 0)
 
-    def test_add_user_message_to_empty_session_generates_plan(self):
+    def test_add_user_message_to_empty_session_generates_grounding_confirmation(self):
         from backend.models.agent import AgentStatus
         from backend.services.agent_service import AgentService
 
@@ -92,11 +95,13 @@ class AgentSessionTests(unittest.TestCase):
         updated = service.add_user_message(session.id, "剪一个科技发布会预热视频")
 
         self.assertEqual(updated.status, AgentStatus.PLAN_READY)
-        self.assertIsNotNone(updated.plan)
+        self.assertIsNone(updated.plan)
+        self.assertIsNotNone(updated.grounding)
+        self.assertEqual(updated.grounding.status, "needs_confirmation")
         self.assertEqual(updated.messages[0].role, "user")
         self.assertEqual(updated.messages[1].role, "assistant")
 
-    def test_add_user_message_to_plan_ready_session_appends_messages(self):
+    def test_add_user_message_before_grounding_confirmation_refreshes_candidates_without_creating_plan(self):
         from backend.models.agent import AgentStatus
         from backend.services.agent_service import AgentService
 
@@ -107,6 +112,9 @@ class AgentSessionTests(unittest.TestCase):
         updated = service.add_user_message(session.id, "改成更有未来感")
 
         self.assertEqual(updated.status, AgentStatus.PLAN_READY)
+        self.assertIsNone(updated.plan)
+        self.assertIsNotNone(updated.grounding)
+        self.assertEqual(updated.grounding.status, "needs_confirmation")
         self.assertEqual(len(updated.messages), original_message_count + 2)
         self.assertEqual(updated.messages[-2].role, "user")
         self.assertEqual(updated.messages[-1].role, "assistant")
@@ -304,6 +312,57 @@ class AgentApiTests(unittest.TestCase):
         self.assertEqual(latest_plan.plan_json["scenes"][0]["keywords"], ["城市", "车流", "黄昏"])
         self.assertEqual(latest_plan.plan_json["scenes"][2]["searchQuery"], "海边 日落 风景")
 
+    def test_add_message_before_grounding_confirmation_preserves_grounding_context(self):
+        from backend.db.repositories import AgentPlanRepository
+
+        created = self.session_service.create_session("给 Notion AI 做一个 30 秒产品亮点视频")
+
+        updated = self.session_service.add_user_message(created.id, "整体再商务一点，目标受众改成销售团队")
+
+        self.assertEqual(updated.status.value, "plan_ready")
+        self.assertIsNone(updated.plan)
+        self.assertIsNotNone(updated.grounding)
+        self.assertEqual(updated.grounding.status, "needs_confirmation")
+        self.assertEqual(updated.grounding.productName, "Notion")
+        self.assertEqual(updated.grounding.audience, "销售团队")
+        self.assertIn("Notion", updated.grounding.searchQueries)
+        self.assertIn("销售团队", updated.grounding.searchQueries)
+        self.assertGreaterEqual(len(updated.messages), 4)
+
+        with self.session_factory() as db:
+            latest_plan = AgentPlanRepository(db).get_latest_for_session(created.id)
+
+        self.assertIsNone(latest_plan)
+
+    def test_add_message_after_grounding_confirmation_preserves_grounded_plan_for_free_text_edits(self):
+        from backend.db.repositories import AgentPlanRepository
+
+        created = self.session_service.create_session("给 Notion AI 做一个 30 秒产品亮点视频")
+        grounded = self.session_service.confirm_grounding_candidates(
+            created.id,
+            [candidate.id for candidate in created.grounding.candidates[:2]],
+        )
+        original_scene_keywords = [scene.keywords[:] for scene in grounded.plan.scenes]
+
+        updated = self.session_service.add_user_message(created.id, "更商务一点，品牌感再强一点")
+
+        self.assertIsNotNone(updated.plan)
+        self.assertEqual(updated.grounding.status, "confirmed")
+        self.assertEqual(
+            [scene.keywords for scene in updated.plan.scenes],
+            original_scene_keywords,
+        )
+
+        with self.session_factory() as db:
+            latest_plan = AgentPlanRepository(db).get_latest_for_session(created.id)
+
+        self.assertIsNotNone(latest_plan)
+        self.assertEqual(latest_plan.version, 2)
+        self.assertEqual(
+            [scene["keywords"] for scene in latest_plan.plan_json["scenes"]],
+            original_scene_keywords,
+        )
+
     def test_add_message_updates_failed_planning_session_plan_when_scene_keywords_are_provided(self):
         created = self.session_service.create_session("做一个科技短片")
         grounded_session = self.session_service.confirm_grounding_candidates(
@@ -327,6 +386,23 @@ class AgentApiTests(unittest.TestCase):
         self.assertEqual(updated.plan.title, grounded_session.plan.title)
         self.assertEqual(updated.plan.scenes[0].keywords, ["城市", "车流", "黄昏"])
         self.assertEqual(updated.plan.scenes[1].searchQuery, "咖啡 特写 手工艺")
+
+    def test_confirm_candidates_rejects_repeat_confirmation_without_writing_new_plan(self):
+        from backend.db.repositories import AgentPlanRepository
+
+        created = self.session_service.create_session("给 Notion AI 做一个 30 秒产品亮点视频")
+        candidate_ids = [candidate.id for candidate in created.grounding.candidates[:2]]
+        grounded = self.session_service.confirm_grounding_candidates(created.id, candidate_ids)
+
+        with self.assertRaisesRegex(RuntimeError, "awaiting confirmation"):
+            self.session_service.confirm_grounding_candidates(created.id, candidate_ids)
+
+        with self.session_factory() as db:
+            latest_plan = AgentPlanRepository(db).get_latest_for_session(created.id)
+
+        self.assertIsNotNone(latest_plan)
+        self.assertEqual(latest_plan.version, 1)
+        self.assertEqual(grounded.grounding.selectedCandidateIds, candidate_ids)
 
     def test_get_missing_session_returns_404(self):
         from backend.main import app
@@ -446,6 +522,10 @@ class AgentExecutionContractTests(unittest.TestCase):
 
         service = AgentService()
         session = service.create_session("做一个科技短片")
+        service.confirm_grounding_candidates(
+            session.id,
+            [candidate.id for candidate in session.grounding.candidates[:2]],
+        )
 
         updated = service.confirm_session(session.id)
 
@@ -459,6 +539,10 @@ class AgentExecutionContractTests(unittest.TestCase):
 
         service = AgentService()
         session = service.create_session("做一个科技短片")
+        service.confirm_grounding_candidates(
+            session.id,
+            [candidate.id for candidate in session.grounding.candidates[:2]],
+        )
         session.status = AgentStatus.SEARCHING
         session.progress = 45
         session.currentStep = "正在下载素材"
@@ -476,6 +560,10 @@ class AgentExecutionContractTests(unittest.TestCase):
 
         service = AgentService()
         session = service.create_session("做一个科技短片")
+        service.confirm_grounding_candidates(
+            session.id,
+            [candidate.id for candidate in session.grounding.candidates[:2]],
+        )
         session.status = AgentStatus.RENDERING
         session.progress = 70
         session.currentStep = "正在合成视频"
@@ -487,7 +575,7 @@ class AgentExecutionContractTests(unittest.TestCase):
         self.assertEqual(session.progress, 70)
         self.assertEqual(session.currentStep, "正在合成视频")
 
-    def test_confirm_session_without_plan_fails_with_planning_error(self):
+    def test_confirm_session_without_plan_still_fails_with_planning_error(self):
         from backend.models.agent import AgentStatus
         from backend.services.agent_service import AgentService
 
@@ -500,7 +588,7 @@ class AgentExecutionContractTests(unittest.TestCase):
         self.assertIsNotNone(updated.error)
         self.assertEqual(updated.error.retryableStep, "planning")
 
-    def test_failed_planning_session_accepts_message_and_recovers_plan(self):
+    def test_failed_planning_session_after_empty_confirm_accepts_message_and_recovers_grounding(self):
         from backend.models.agent import AgentStatus
         from backend.services.agent_service import AgentService
 
@@ -511,7 +599,9 @@ class AgentExecutionContractTests(unittest.TestCase):
         updated = service.add_user_message(session.id, "重新生成科技短片方案")
 
         self.assertEqual(updated.status, AgentStatus.PLAN_READY)
-        self.assertIsNotNone(updated.plan)
+        self.assertIsNone(updated.plan)
+        self.assertIsNotNone(updated.grounding)
+        self.assertEqual(updated.grounding.status, "needs_confirmation")
         self.assertIsNone(updated.error)
 
     def test_failed_planning_session_with_existing_plan_regenerates_plan(self):
@@ -520,7 +610,12 @@ class AgentExecutionContractTests(unittest.TestCase):
 
         service = AgentService()
         session = service.create_session("做一个科技短片")
+        service.confirm_grounding_candidates(
+            session.id,
+            [candidate.id for candidate in session.grounding.candidates[:2]],
+        )
         original_message_count = len(session.messages)
+        original_title = session.plan.title
         session.status = AgentStatus.FAILED
         session.error = AgentError(message="规划失败", retryableStep="planning")
 
@@ -529,7 +624,7 @@ class AgentExecutionContractTests(unittest.TestCase):
         self.assertEqual(updated.status, AgentStatus.PLAN_READY)
         self.assertIsNone(updated.error)
         self.assertIsNotNone(updated.plan)
-        self.assertEqual(updated.plan.title, "智能剪辑短片")
+        self.assertEqual(updated.plan.title, original_title)
         self.assertEqual(len(updated.messages), original_message_count + 2)
         self.assertEqual(updated.messages[-2].role, "user")
         self.assertEqual(updated.messages[-1].role, "assistant")
@@ -1898,10 +1993,12 @@ class FrontendClientContractTests(unittest.TestCase):
         self.assertIn("video_url=", content)
         self.assertIn("output_path=", content)
 
-    def test_run_fixture_smoke_script_updates_plan_with_fixture_keywords_before_confirm(self):
+    def test_run_fixture_smoke_script_confirms_grounding_before_plan_keyword_update_and_confirm(self):
         script_path = ROOT / "scripts" / "run_fixture_smoke.py"
         content = script_path.read_text(encoding="utf-8")
 
+        self.assertIn("/grounding/confirm", content)
+        self.assertIn("candidateIds", content)
         self.assertIn("/messages", content)
         self.assertIn("场景1：城市 黄昏 车流", content)
         self.assertIn("场景2：咖啡 特写 手工艺", content)
@@ -1928,6 +2025,10 @@ class FrontendClientContractTests(unittest.TestCase):
 
         service = AgentService()
         session = service.create_session("做一个科技短片")
+        service.confirm_grounding_candidates(
+            session.id,
+            [candidate.id for candidate in session.grounding.candidates[:2]],
+        )
         service.confirm_session(session.id)
 
         updated = asyncio.run(service.run_confirmed_session(session.id, fake_search, fake_render))
@@ -1957,6 +2058,10 @@ class FrontendClientContractTests(unittest.TestCase):
 
         service = AgentService()
         session = service.create_session("用 deterministic fixture smoke 跑一条演示短片")
+        service.confirm_grounding_candidates(
+            session.id,
+            [candidate.id for candidate in session.grounding.candidates[:2]],
+        )
         service.confirm_session(session.id)
 
         updated = asyncio.run(service.run_confirmed_session(session.id, fake_search, fake_render))
@@ -1980,6 +2085,10 @@ class FrontendClientContractTests(unittest.TestCase):
 
         service = AgentService()
         session = service.create_session("做一个科技短片")
+        service.confirm_grounding_candidates(
+            session.id,
+            [candidate.id for candidate in session.grounding.candidates[:2]],
+        )
         service.confirm_session(session.id)
 
         updated = asyncio.run(service.run_confirmed_session(session.id, fake_search, fake_render))
@@ -2001,6 +2110,10 @@ class FrontendClientContractTests(unittest.TestCase):
 
         client = _make_test_client(app)
         created = client.post("/api/agent/sessions", json={"message": "做一个科技短片"}).json()
+        client.post(
+            f"/api/agent/sessions/{created['id']}/grounding/confirm",
+            json={"candidateIds": [candidate["id"] for candidate in created["grounding"]["candidates"][:2]]},
+        )
         response = client.post(f"/api/agent/sessions/{created['id']}/confirm")
 
         self.assertEqual(response.status_code, 200)
@@ -2014,6 +2127,10 @@ class FrontendClientContractTests(unittest.TestCase):
 
         client = _make_test_client(app)
         created = client.post("/api/agent/sessions", json={"message": "做一个科技短片"}).json()
+        client.post(
+            f"/api/agent/sessions/{created['id']}/grounding/confirm",
+            json={"candidateIds": [candidate["id"] for candidate in created["grounding"]["candidates"][:2]]},
+        )
         first = client.post(f"/api/agent/sessions/{created['id']}/confirm")
         second = client.post(f"/api/agent/sessions/{created['id']}/confirm")
 

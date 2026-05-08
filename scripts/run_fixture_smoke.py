@@ -83,6 +83,17 @@ def main() -> int:
             {"message": args.brief},
         )
         session_id = created["id"]
+        grounding = created.get("grounding") or {}
+        candidates = grounding.get("candidates") or []
+        candidate_ids = [candidate.get("id") for candidate in candidates[:2] if candidate.get("id")]
+        if not candidate_ids:
+            return print_failure("candidate_missing", "session 创建后没有可确认的 grounding candidates", session_payload=created)
+
+        request_json(
+            "POST",
+            f"{api_origin}/api/agent/sessions/{session_id}/grounding/confirm",
+            {"candidateIds": candidate_ids},
+        )
 
         request_json(
             "POST",

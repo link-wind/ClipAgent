@@ -757,6 +757,27 @@ class RepositoryBehaviorTests(unittest.TestCase):
         self.assertEqual(len(artifacts), 1)
         self.assertEqual(artifacts[0].artifact_type, "clip")
 
+        session_repo.update_grounding_state(
+            session_record.id,
+            grounding_status="confirmed",
+            grounding_summary_json={"status": "confirmed", "candidates": [{"id": "fixture:1"}]},
+            selected_candidate_ids_json=["fixture:1"],
+        )
+        artifact_repo.create(
+            session_id=session_record.id,
+            job_id=job_record.id,
+            artifact_type="candidate_visual",
+            public_url="/output/candidate.jpg",
+        )
+        self.db.commit()
+
+        updated_session = session_repo.get(session_record.id)
+        self.assertEqual(updated_session.grounding_status, "confirmed")
+        self.assertEqual(updated_session.selected_candidate_ids_json, ["fixture:1"])
+        candidate_artifacts = artifact_repo.list_candidate_visuals_for_session(session_record.id)
+        self.assertEqual(len(candidate_artifacts), 1)
+        self.assertEqual(candidate_artifacts[0].artifact_type, "candidate_visual")
+
     def test_update_status_returns_none_for_missing_job(self):
         from backend.db.repositories import AgentJobRepository
 
@@ -944,7 +965,7 @@ class SessionServiceBehaviorTests(unittest.TestCase):
         self.assertIsNone(AgentSession.model_fields["activeJobId"].default)
         self.assertIn("message", AgentEvent.model_fields)
 
-    def test_create_session_with_prompt_persists_session_message_and_plan(self):
+    def test_create_session_with_prompt_persists_session_message_and_grounding_without_plan(self):
         from backend.db.repositories import AgentMessageRepository, AgentPlanRepository, AgentSessionRepository
         from backend.models.agent import AgentStatus
         from backend.services.agent_session_service import AgentSessionService
@@ -956,8 +977,10 @@ class SessionServiceBehaviorTests(unittest.TestCase):
         self.assertEqual(len(session.messages), 2)
         self.assertEqual(session.messages[0].role, "user")
         self.assertEqual(session.messages[1].role, "assistant")
-        self.assertIsNotNone(session.plan)
-        self.assertEqual(session.currentStep, "剪辑方案已生成")
+        self.assertIsNone(session.plan)
+        self.assertIsNotNone(session.grounding)
+        self.assertEqual(session.grounding.status, "needs_confirmation")
+        self.assertEqual(session.currentStep, "等待确认候选产品画面")
         self.assertEqual(session.progress, 20)
 
         db = self.SessionLocal()
@@ -968,9 +991,9 @@ class SessionServiceBehaviorTests(unittest.TestCase):
 
             session_record = session_repo.get(session.id)
             self.assertEqual(session_record.status, "plan_ready")
-            self.assertEqual(session_record.title, session.plan.title)
+            self.assertEqual(session_record.grounding_status, "needs_confirmation")
             self.assertEqual(len(message_repo.list_for_session(session.id)), 2)
-            self.assertEqual(plan_repo.get_latest_for_session(session.id).title, session.plan.title)
+            self.assertIsNone(plan_repo.get_latest_for_session(session.id))
         finally:
             db.close()
 
@@ -1061,17 +1084,23 @@ class SessionServiceBehaviorTests(unittest.TestCase):
         self.assertEqual(len(session.events), 1)
         self.assertEqual(session.events[0].message, "正在渲染")
 
-    def test_add_user_message_persists_message_and_creates_plan_when_missing_or_needed(self):
+    def test_add_user_message_persists_message_and_merges_grounding_context_until_confirmed(self):
         from backend.db.repositories import AgentMessageRepository, AgentPlanRepository, AgentSessionRepository
         from backend.models.agent import AgentStatus
         from backend.services.agent_session_service import AgentSessionService
 
         service = AgentSessionService(session_factory=self.SessionLocal)
-        session = service.create_session()
-        updated = service.add_user_message(session.id, "改成更适合社媒传播的风格")
+        session = service.create_session("给 Notion AI 做一个 30 秒产品亮点视频")
+        updated = service.add_user_message(session.id, "整体再商务一点，目标受众改成销售团队")
 
         self.assertEqual(updated.status, AgentStatus.PLAN_READY)
-        self.assertIsNotNone(updated.plan)
+        self.assertIsNone(updated.plan)
+        self.assertIsNotNone(updated.grounding)
+        self.assertEqual(updated.grounding.status, "needs_confirmation")
+        self.assertEqual(updated.grounding.productName, "Notion")
+        self.assertEqual(updated.grounding.audience, "销售团队")
+        self.assertIn("Notion", updated.grounding.searchQueries)
+        self.assertIn("销售团队", updated.grounding.searchQueries)
         self.assertEqual(updated.progress, 20)
 
         db = self.SessionLocal()
@@ -1080,24 +1109,28 @@ class SessionServiceBehaviorTests(unittest.TestCase):
             message_repo = AgentMessageRepository(db)
             plan_repo = AgentPlanRepository(db)
 
-            self.assertEqual(len(message_repo.list_for_session(session.id)), 2)
-            self.assertIsNotNone(plan_repo.get_latest_for_session(session.id))
-
+            self.assertEqual(len(message_repo.list_for_session(session.id)), 4)
+            self.assertIsNone(plan_repo.get_latest_for_session(session.id))
             session_record = session_repo.get(session.id)
-            session_record.status = "plan_ready"
-            db.commit()
+            self.assertEqual(session_record.grounding_status, "needs_confirmation")
         finally:
             db.close()
 
+        grounded = service.confirm_grounding_candidates(
+            session.id,
+            [candidate.id for candidate in updated.grounding.candidates[:2]],
+        )
         updated_again = service.add_user_message(session.id, "再加一点品牌感")
         self.assertEqual(updated_again.status, AgentStatus.PLAN_READY)
+        self.assertEqual(updated_again.grounding.status, "confirmed")
+        self.assertEqual(updated_again.plan.title, grounded.plan.title)
 
         db = self.SessionLocal()
         try:
             message_repo = AgentMessageRepository(db)
             plan_repo = AgentPlanRepository(db)
 
-            self.assertEqual(len(message_repo.list_for_session(session.id)), 4)
+            self.assertEqual(len(message_repo.list_for_session(session.id)), 7)
             self.assertEqual(plan_repo.get_latest_for_session(session.id).version, 2)
         finally:
             db.close()

@@ -33,3 +33,13 @@ class AgentArtifactRepository:
             .order_by(AgentArtifactRecord.created_at.asc(), AgentArtifactRecord.id.asc())
         )
         return list(self.db.scalars(stmt))
+
+    def list_candidate_visuals_for_session(self, session_id: str) -> list[AgentArtifactRecord]:
+        # 按时间顺序列出会话候选画面产物
+        stmt = (
+            select(AgentArtifactRecord)
+            .where(AgentArtifactRecord.session_id == session_id)
+            .where(AgentArtifactRecord.artifact_type == "candidate_visual")
+            .order_by(AgentArtifactRecord.created_at.asc(), AgentArtifactRecord.id.asc())
+        )
+        return list(self.db.scalars(stmt))

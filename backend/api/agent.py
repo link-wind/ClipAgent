@@ -25,6 +25,10 @@ class MessageRequest(BaseModel):
     message: str
 
 
+class GroundingConfirmRequest(BaseModel):
+    candidateIds: list[str]
+
+
 @router.post("/sessions", response_model=AgentSession)
 async def create_session(request: SessionCreateRequest):
     session = session_service.create_session(request.message)
@@ -44,6 +48,17 @@ async def get_session(session_id: str):
 async def add_message(session_id: str, request: MessageRequest):
     try:
         session = session_service.add_user_message(session_id, request.message)
+        return agent_service.sync_session(session)
+    except KeyError:
+        raise HTTPException(status_code=404, detail="Session not found")
+    except (RuntimeError, ValueError) as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
+
+@router.post("/sessions/{session_id}/grounding/confirm", response_model=AgentSession)
+async def confirm_grounding_candidates(session_id: str, request: GroundingConfirmRequest):
+    try:
+        session = session_service.confirm_grounding_candidates(session_id, request.candidateIds)
         return agent_service.sync_session(session)
     except KeyError:
         raise HTTPException(status_code=404, detail="Session not found")

@@ -90,6 +90,38 @@ export interface AgentStep {
   finishedAt: string | null
 }
 
+export type GroundingStatus = 'pending_search' | 'needs_confirmation' | 'confirmed'
+
+export interface AgentGroundingCandidate {
+  id: string
+  title: string
+  imageUrl: string
+  sourceUrl: string
+  previewUrl: string
+  sourceType: string
+  provider: string
+  providerLabel: string
+  isOfficial: boolean
+  confidence: number
+  summary: string
+  diagnostics: Record<string, unknown>
+  productName: string
+  audience: string
+  styleHint: string
+  featureHints: string[]
+}
+
+export interface AgentGroundingSummary {
+  status: GroundingStatus
+  productName: string
+  audience: string
+  styleHint: string
+  featureHints: string[]
+  searchQueries: string[]
+  candidates: AgentGroundingCandidate[]
+  selectedCandidateIds: string[]
+}
+
 export interface AgentSession {
   id: string
   status: AgentStatus
@@ -102,6 +134,7 @@ export interface AgentSession {
   activeJobId: string | null
   progress: number
   currentStep: string
+  grounding: AgentGroundingSummary | null
   error: AgentErrorInfo | null
 }
 
@@ -172,6 +205,15 @@ export function confirmAgentSession(sessionId: string): Promise<AgentSession> {
 
   return requestJson<AgentSession>(`/api/agent/sessions/${encodedSessionId}/confirm`, {
     method: 'POST',
+  })
+}
+
+export function confirmGroundingCandidates(sessionId: string, candidateIds: string[]): Promise<AgentSession> {
+  const encodedSessionId = encodeURIComponent(sessionId)
+
+  return requestJson<AgentSession>(`/api/agent/sessions/${encodedSessionId}/grounding/confirm`, {
+    method: 'POST',
+    body: { candidateIds },
   })
 }
 

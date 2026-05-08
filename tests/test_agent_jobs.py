@@ -989,6 +989,29 @@ class ConfirmFlowContractTests(unittest.TestCase):
         ):
             service.confirm_session(session.id)
 
+    def test_confirm_grounding_rejects_repeat_confirmation_after_job_is_queued(self):
+        from backend.db.repositories import AgentPlanRepository
+        from backend.services.agent_execution_service import AgentExecutionService
+
+        session = self.session_service.create_session("给 Notion AI 做一个 30 秒产品亮点视频")
+        candidate_ids = [candidate.id for candidate in session.grounding.candidates[:2]]
+        grounded_session = self.session_service.confirm_grounding_candidates(session.id, candidate_ids)
+        service = AgentExecutionService(
+            session_factory=self.session_factory,
+            enqueue_job=lambda _job_id: None,
+        )
+
+        confirmed = service.confirm_session(grounded_session.id)
+
+        with self.assertRaisesRegex(RuntimeError, "awaiting confirmation"):
+            self.session_service.confirm_grounding_candidates(confirmed.id, candidate_ids)
+
+        with self.session_factory() as db:
+            latest_plan = AgentPlanRepository(db).get_latest_for_session(session.id)
+
+        self.assertIsNotNone(latest_plan)
+        self.assertEqual(latest_plan.version, 1)
+
     def test_confirm_endpoint_returns_queued_session(self):
         import backend.api.agent as agent_api_module
         from backend.main import app
