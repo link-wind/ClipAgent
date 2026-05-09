@@ -7,6 +7,19 @@ from backend.services.planner_models import (
     UserRevisionFeedback,
 )
 
+_KNOWN_FAILURE_CATEGORIES = {
+    "platform_blocked",
+    "no_inventory",
+    "download_transient",
+    "generic_retry",
+}
+
+_KNOWN_REWRITE_STRATEGIES = {
+    "stock_footage_fallback",
+    "inventory_broaden",
+    "candidate_alternative",
+}
+
 
 def _classify_execution_failure(failure_reason: str) -> str:
     text = (failure_reason or "").lower()
@@ -35,7 +48,7 @@ def _rewrite_strategy_for_failure_category(category: str) -> str:
 
 def _resolve_failure_category(execution_feedback: SearchExecutionFeedback) -> str:
     structured_category = (execution_feedback.failureCategory or "").strip()
-    if structured_category:
+    if structured_category in _KNOWN_FAILURE_CATEGORIES:
         return structured_category
     return _classify_execution_failure(execution_feedback.failureReason)
 
@@ -45,7 +58,7 @@ def _resolve_rewrite_strategy(
     failure_category: str,
 ) -> str:
     structured_strategy = (execution_feedback.retryStrategyHint or "").strip()
-    if structured_strategy:
+    if structured_strategy in _KNOWN_REWRITE_STRATEGIES:
         return structured_strategy
     return _rewrite_strategy_for_failure_category(failure_category)
 
