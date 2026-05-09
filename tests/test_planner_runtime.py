@@ -110,6 +110,47 @@ class PlannerRuntimeTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "scene ids"):
             runtime.build_plan_from_brief("给 Notion AI 做一个视频")
 
+    def test_langchain_runtime_rejects_non_positive_agent_scene_duration(self):
+        from backend.services.planner_runtime_langchain import LangChainPlannerRuntime
+
+        fake_llm = _FakeChatModel(
+            result=InitialPlanningResult(
+                agentPlan={
+                    "title": "Notion AI 产品介绍",
+                    "goal": "给 Notion AI 做一个视频",
+                    "summary": "适合销售演示的开场视频",
+                    "scenes": [
+                        {
+                            "id": 1,
+                            "purpose": "建立产品认知",
+                            "description": "展示 Notion AI 界面",
+                            "keywords": ["product", "interface"],
+                            "duration": 0,
+                        }
+                    ],
+                },
+                executionPlan={
+                    "title": "Notion AI 产品介绍",
+                    "targetDuration": 12,
+                    "style": "干净商务",
+                    "scenes": [
+                        {
+                            "id": 1,
+                            "description": "展示 Notion AI 界面",
+                            "keywords": ["product", "interface"],
+                            "searchQuery": "product interface",
+                            "duration": 6,
+                        }
+                    ],
+                },
+            )
+        )
+
+        runtime = LangChainPlannerRuntime(model_name="gpt-4o-mini", llm=fake_llm)
+
+        with self.assertRaisesRegex(ValueError, "duration"):
+            runtime.build_plan_from_brief("给 Notion AI 做一个视频")
+
     def test_langchain_runtime_bubbles_up_model_failures(self):
         from backend.services.planner_runtime_langchain import LangChainPlannerRuntime
 

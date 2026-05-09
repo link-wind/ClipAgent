@@ -111,6 +111,8 @@ class LangChainPlannerRuntime:
         for scene in agent_plan.scenes:
             if not scene.keywords:
                 raise ValueError("agent scene keywords are required")
+            if scene.duration <= 0:
+                raise ValueError("agent scene duration must be greater than 0")
 
         execution_duration_sum = 0.0
         for scene in execution_plan.scenes:
