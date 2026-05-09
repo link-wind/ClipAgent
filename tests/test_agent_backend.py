@@ -2115,6 +2115,13 @@ class FrontendClientContractTests(unittest.TestCase):
         self.assertIn("fixture,pexels,youtube", readme)
         self.assertIn("pexels,youtube", readme)
 
+    def test_readme_documents_langchain_planner_default(self):
+        readme = (ROOT / "README.md").read_text(encoding="utf-8")
+
+        self.assertIn("CLIPFORGE_PLANNER_MODE", readme)
+        self.assertIn("默认 `langchain`", readme)
+        self.assertIn("设为 `deterministic`", readme)
+
     def test_run_fixture_smoke_script_declares_cli_contract_markers(self):
         script_path = ROOT / "scripts" / "run_fixture_smoke.py"
         content = script_path.read_text(encoding="utf-8")
