@@ -8,6 +8,49 @@ from backend.services.planner_models import (
 )
 
 
+def _classify_execution_failure(failure_reason: str) -> str:
+    text = (failure_reason or "").lower()
+    if any(
+        token in text
+        for token in ("po token", "sign in", "not a bot", "challenge", "signature", "401", "403")
+    ):
+        return "platform_blocked"
+    if any(
+        token in failure_reason
+        for token in ("没有返回候选素材", "没有可下载候选素材", "没有下载到可用素材")
+    ):
+        return "no_inventory"
+    if any(token in text for token in ("download failed", "timeout", "connection reset")):
+        return "download_transient"
+    return "generic_retry"
+
+
+def _rewrite_strategy_for_failure_category(category: str) -> str:
+    if category == "platform_blocked":
+        return "stock_footage_fallback"
+    if category == "no_inventory":
+        return "inventory_broaden"
+    return "candidate_alternative"
+
+
+def _rewrite_keywords_for_failed_scene(scene_keywords: list[str], category: str) -> list[str]:
+    core_keywords = [keyword for keyword in scene_keywords[:2] if keyword]
+    keyword_set = set(core_keywords)
+
+    if category == "platform_blocked":
+        if {"product", "interface"} & keyword_set:
+            return ["software", "dashboard", "laptop"]
+        if {"feature", "workflow"} & keyword_set:
+            return ["team", "workflow", "laptop"]
+        lead = core_keywords[:1] or ["product"]
+        return [*lead, "stock", "footage"]
+
+    if category == "no_inventory":
+        return [*core_keywords, "generic"]
+
+    return [*core_keywords, "alternative"]
+
+
 class DeterministicPlannerRuntime:
     def build_plan_from_brief(self, brief: str) -> tuple[AgentPlan, ExecutionPlan]:
         title = "智能剪辑短片"
@@ -198,11 +241,16 @@ class DeterministicPlannerRuntime:
         execution_feedback: SearchExecutionFeedback,
     ) -> tuple[AgentPlan, ExecutionPlan, str]:
         failed_scene_ids = set(execution_feedback.failedSceneIds)
+        failure_category = _classify_execution_failure(execution_feedback.failureReason)
+        rewrite_strategy = _rewrite_strategy_for_failure_category(failure_category)
 
         updated_execution_scenes = []
         for scene in current_execution.scenes:
             if scene.id in failed_scene_ids:
-                next_keywords = [*scene.keywords[:2], "alternative"]
+                next_keywords = _rewrite_keywords_for_failed_scene(
+                    scene.keywords,
+                    failure_category,
+                )
                 updated_execution_scenes.append(
                     scene.model_copy(
                         update={
@@ -217,11 +265,15 @@ class DeterministicPlannerRuntime:
         updated_agent_scenes = []
         for scene in current_agent.scenes:
             if scene.id in failed_scene_ids:
+                next_keywords = _rewrite_keywords_for_failed_scene(
+                    scene.keywords,
+                    failure_category,
+                )
                 updated_agent_scenes.append(
                     scene.model_copy(
                         update={
                             "status": "draft",
-                            "keywords": [*scene.keywords[:2], "alternative"],
+                            "keywords": next_keywords,
                         }
                     )
                 )
@@ -239,6 +291,8 @@ class DeterministicPlannerRuntime:
                         "summary": "基于执行失败反馈重写检索查询",
                         "failedSceneIds": sorted(failed_scene_ids),
                         "failureReason": execution_feedback.failureReason,
+                        "failureCategory": failure_category,
+                        "rewriteStrategy": rewrite_strategy,
                     },
                 ],
             }
