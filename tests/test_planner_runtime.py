@@ -164,6 +164,53 @@ class PlannerRuntimeTests(unittest.TestCase):
         self.assertEqual(next_agent.replanHistory[-1]["failureCategory"], "platform_blocked")
         self.assertEqual(next_agent.replanHistory[-1]["rewriteStrategy"], "stock_footage_fallback")
 
+    def test_deterministic_runtime_platform_blocked_partial_keyword_match_uses_conservative_fallback(self):
+        from backend.services.planner_models import SearchExecutionFeedback
+        from backend.services.planner_runtime_deterministic import (
+            DeterministicPlannerRuntime,
+        )
+
+        runtime = DeterministicPlannerRuntime()
+        current_agent, current_execution = runtime.build_plan_from_brief(
+            "给 Notion AI 做一个 30 秒产品亮点视频"
+        )
+        current_agent = current_agent.model_copy(
+            update={
+                "scenes": [
+                    current_agent.scenes[0].model_copy(
+                        update={"keywords": ["product", "mobile"]}
+                    ),
+                    current_agent.scenes[1].model_copy(deep=True),
+                ]
+            }
+        )
+        current_execution = current_execution.model_copy(
+            update={
+                "scenes": [
+                    current_execution.scenes[0].model_copy(
+                        update={
+                            "keywords": ["product", "mobile"],
+                            "searchQuery": "product mobile",
+                        }
+                    ),
+                    current_execution.scenes[1].model_copy(deep=True),
+                ]
+            }
+        )
+
+        _next_agent, next_execution, _change_summary = runtime.replan_after_execution_feedback(
+            current_agent=current_agent,
+            current_execution=current_execution,
+            execution_feedback=SearchExecutionFeedback(
+                failedSceneIds=[1],
+                failureReason="YouTube 当前要求 PO Token，公开视频下载被平台策略限制。",
+                retryable=True,
+            ),
+        )
+
+        self.assertEqual(next_execution.scenes[0].keywords, ["product", "stock", "footage"])
+        self.assertEqual(next_execution.scenes[0].searchQuery, "product stock footage")
+
     def test_deterministic_runtime_broadens_no_inventory_scene_without_dropping_core_intent(self):
         from backend.services.planner_models import SearchExecutionFeedback
         from backend.services.planner_runtime_deterministic import (

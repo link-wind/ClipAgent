@@ -38,9 +38,9 @@ def _rewrite_keywords_for_failed_scene(scene_keywords: list[str], category: str)
     keyword_set = set(core_keywords)
 
     if category == "platform_blocked":
-        if {"product", "interface"} & keyword_set:
+        if {"product", "interface"} <= keyword_set:
             return ["software", "dashboard", "laptop"]
-        if {"feature", "workflow"} & keyword_set:
+        if {"feature", "workflow"} <= keyword_set:
             return ["team", "workflow", "laptop"]
         lead = core_keywords[:1] or ["product"]
         return [*lead, "stock", "footage"]
