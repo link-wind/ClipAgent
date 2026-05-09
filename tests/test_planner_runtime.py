@@ -1,8 +1,152 @@
 import unittest
-from unittest.mock import patch
+from unittest.mock import Mock, patch
+
+from backend.services.planner_models import InitialPlanningResult
+
+
+class _FakeStructuredPlanner:
+    def __init__(self, result=None, error: Exception | None = None):
+        self.result = result
+        self.error = error
+
+    def invoke(self, _messages):
+        if self.error is not None:
+            raise self.error
+        return self.result
+
+
+class _FakeChatModel:
+    def __init__(self, result=None, error: Exception | None = None):
+        self.result = result
+        self.error = error
+        self.schema = None
+
+    def with_structured_output(self, schema):
+        self.schema = schema
+        return _FakeStructuredPlanner(result=self.result, error=self.error)
 
 
 class PlannerRuntimeTests(unittest.TestCase):
+    def test_langchain_runtime_builds_initial_plan_from_structured_output(self):
+        from backend.services.planner_runtime_langchain import LangChainPlannerRuntime
+
+        fake_llm = _FakeChatModel(
+            result=InitialPlanningResult(
+                agentPlan={
+                    "title": " Notion AI 产品介绍 ",
+                    "goal": " 给 Notion AI 做一个视频 ",
+                    "summary": " 适合销售演示的开场视频 ",
+                    "scenes": [
+                        {
+                            "id": 1,
+                            "purpose": "建立产品认知",
+                            "description": "展示 Notion AI 界面",
+                            "keywords": [" product ", " interface "],
+                            "duration": 6,
+                        }
+                    ],
+                },
+                executionPlan={
+                    "title": " Notion AI 产品介绍 ",
+                    "targetDuration": 12,
+                    "style": " 干净商务 ",
+                    "scenes": [
+                        {
+                            "id": 1,
+                            "description": "展示 Notion AI 界面",
+                            "keywords": ["product", "interface"],
+                            "searchQuery": "  product   interface  ",
+                            "duration": 6,
+                        }
+                    ],
+                },
+            )
+        )
+
+        runtime = LangChainPlannerRuntime(model_name="gpt-4o-mini", llm=fake_llm)
+        agent_plan, execution_plan = runtime.build_plan_from_brief("给 Notion AI 做一个视频")
+
+        self.assertEqual(agent_plan.title, "Notion AI 产品介绍")
+        self.assertEqual(execution_plan.scenes[0].searchQuery, "product interface")
+
+    def test_langchain_runtime_rejects_mismatched_scene_ids(self):
+        from backend.services.planner_runtime_langchain import LangChainPlannerRuntime
+
+        fake_llm = _FakeChatModel(
+            result=InitialPlanningResult(
+                agentPlan={
+                    "title": "Notion AI 产品介绍",
+                    "goal": "给 Notion AI 做一个视频",
+                    "summary": "适合销售演示的开场视频",
+                    "scenes": [
+                        {
+                            "id": 1,
+                            "purpose": "建立产品认知",
+                            "description": "展示 Notion AI 界面",
+                            "keywords": ["product", "interface"],
+                            "duration": 6,
+                        }
+                    ],
+                },
+                executionPlan={
+                    "title": "Notion AI 产品介绍",
+                    "targetDuration": 12,
+                    "style": "干净商务",
+                    "scenes": [
+                        {
+                            "id": 2,
+                            "description": "展示 Notion AI 界面",
+                            "keywords": ["product", "interface"],
+                            "searchQuery": "product interface",
+                            "duration": 6,
+                        }
+                    ],
+                },
+            )
+        )
+
+        runtime = LangChainPlannerRuntime(model_name="gpt-4o-mini", llm=fake_llm)
+
+        with self.assertRaisesRegex(ValueError, "scene ids"):
+            runtime.build_plan_from_brief("给 Notion AI 做一个视频")
+
+    def test_langchain_runtime_bubbles_up_model_failures(self):
+        from backend.services.planner_runtime_langchain import LangChainPlannerRuntime
+
+        runtime = LangChainPlannerRuntime(
+            model_name="gpt-4o-mini",
+            llm=_FakeChatModel(error=RuntimeError("LangChain planning failed")),
+        )
+
+        with self.assertRaisesRegex(RuntimeError, "LangChain planning failed"):
+            runtime.build_plan_from_brief("给 Notion AI 做一个视频")
+
+    def test_langchain_runtime_delegates_grounding_replan_to_deterministic_runtime(self):
+        from backend.services.planner_runtime_langchain import LangChainPlannerRuntime
+
+        deterministic_delegate = Mock()
+        deterministic_delegate.replan_after_grounding.return_value = (
+            "agent",
+            "execution",
+            "summary",
+        )
+
+        runtime = LangChainPlannerRuntime(
+            model_name="gpt-4o-mini",
+            llm=_FakeChatModel(result=None),
+            deterministic_delegate=deterministic_delegate,
+        )
+
+        result = runtime.replan_after_grounding(
+            current_agent=Mock(),
+            current_execution=Mock(),
+            grounding_feedback=Mock(),
+            confirmation_feedback=Mock(),
+        )
+
+        self.assertEqual(result, ("agent", "execution", "summary"))
+        deterministic_delegate.replan_after_grounding.assert_called_once()
+
     def test_deterministic_runtime_builds_stable_two_scene_plan(self):
         from backend.services.planner_runtime_deterministic import (
             DeterministicPlannerRuntime,
