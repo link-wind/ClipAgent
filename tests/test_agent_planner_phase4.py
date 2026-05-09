@@ -80,3 +80,47 @@ class AgentPlannerPhase4Tests(unittest.TestCase):
             self.assertEqual(jobs[0].status, "queued")
             self.assertEqual(jobs[0].plan_id, plans[-1].id)
             self.assertEqual(session_record.current_plan_id, plans[-1].id)
+
+    def test_execution_feedback_replan_persists_platform_blocked_query_rewrite(self):
+        session_service = AgentSessionService(session_factory=self.session_factory)
+        execution_service = AgentExecutionService(
+            session_factory=self.session_factory,
+            enqueue_job=lambda _job_id: None,
+        )
+
+        session = session_service.create_session("给 Notion AI 做一个 30 秒产品亮点视频")
+        confirmed = execution_service.confirm_session(session.id)
+        job_id = confirmed.activeJobId
+
+        class FakeSceneSearchFailure(RuntimeError):
+            def __init__(self, message: str, failed_scene_ids: list[int]):
+                super().__init__(message)
+                self.failed_scene_ids = failed_scene_ids
+
+        async def failing_search_runner(_session_id, _scenes):
+            raise FakeSceneSearchFailure(
+                "YouTube 当前要求 PO Token，公开视频下载被平台策略限制。",
+                [1],
+            )
+
+        with patch("backend.tasks.agent_tasks.SessionLocal", self.session_factory), patch(
+            "backend.tasks.agent_tasks.search_and_download_agent_clips",
+            failing_search_runner,
+        ):
+            run_agent_job(job_id)
+
+        with self.session_factory() as db:
+            plans = AgentPlanRepository(db).list_for_session(session.id)
+
+        self.assertEqual(
+            plans[-1].execution_plan_json["scenes"][0]["searchQuery"],
+            "software dashboard laptop",
+        )
+        self.assertEqual(
+            plans[-1].plan_json["replanHistory"][-1]["failureCategory"],
+            "platform_blocked",
+        )
+        self.assertEqual(
+            plans[-1].plan_json["replanHistory"][-1]["rewriteStrategy"],
+            "stock_footage_fallback",
+        )
