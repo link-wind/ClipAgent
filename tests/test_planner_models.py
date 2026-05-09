@@ -43,3 +43,24 @@ class PlannerModelTests(unittest.TestCase):
         )
 
         self.assertEqual(observation.payload["message"], "做一个产品视频")
+
+    def test_grounding_feedback_contract_defaults(self):
+        from backend.services.planner_models import (
+            CandidateConfirmationFeedback,
+            GroundingFeedback,
+        )
+
+        feedback = GroundingFeedback(
+            productName="Notion",
+            audience="销售团队",
+            styleHint="快节奏社媒短片",
+            selectedCandidateIds=["fixture:1", "fixture:2"],
+            candidates=[{"id": "fixture:1", "title": "Notion product demo"}],
+        )
+        confirmation = CandidateConfirmationFeedback(
+            selectedCandidateIds=["fixture:1", "fixture:2"],
+            confirmationSource="user_select",
+        )
+
+        self.assertEqual(feedback.selectedCandidateIds, ["fixture:1", "fixture:2"])
+        self.assertEqual(confirmation.confirmationSource, "user_select")

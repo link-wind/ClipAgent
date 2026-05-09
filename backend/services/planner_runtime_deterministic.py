@@ -1,4 +1,9 @@
-from backend.services.planner_models import AgentPlan, ExecutionPlan
+from backend.services.planner_models import (
+    AgentPlan,
+    CandidateConfirmationFeedback,
+    ExecutionPlan,
+    GroundingFeedback,
+)
 
 
 class DeterministicPlannerRuntime:
@@ -48,3 +53,65 @@ class DeterministicPlannerRuntime:
             ],
         )
         return plan, execution
+
+    def replan_after_grounding(
+        self,
+        *,
+        current_agent: AgentPlan,
+        current_execution: ExecutionPlan,
+        grounding_feedback: GroundingFeedback,
+        confirmation_feedback: CandidateConfirmationFeedback,
+    ) -> tuple[AgentPlan, ExecutionPlan, str]:
+        selected_ids = (
+            confirmation_feedback.selectedCandidateIds
+            or grounding_feedback.selectedCandidateIds
+        )
+        style = grounding_feedback.styleHint or current_execution.style
+        feature_hints = grounding_feedback.featureHints or ["product", "workflow"]
+
+        next_execution = current_execution.model_copy(
+            update={
+                "style": style,
+                "scenes": [
+                    scene.model_copy(
+                        update={
+                            "keywords": feature_hints[:2] or scene.keywords,
+                            "searchQuery": " ".join(feature_hints[:2] or scene.keywords),
+                            "groundingCandidateIds": selected_ids,
+                        }
+                    )
+                    for scene in current_execution.scenes
+                ],
+            }
+        )
+        next_agent = current_agent.model_copy(
+            update={
+                "replanHistory": [
+                    *current_agent.replanHistory,
+                    {
+                        "triggerType": "grounding_confirmation",
+                        "selectedCandidateIds": selected_ids,
+                        "summary": "基于候选确认完成重规划",
+                    },
+                ],
+                "scenes": [
+                    scene.model_copy(
+                        update={
+                            "groundingCandidateIds": selected_ids,
+                            "status": "grounded",
+                        }
+                    )
+                    for scene in current_agent.scenes
+                ],
+                "grounding": {
+                    **current_agent.grounding,
+                    "selectedCandidateIds": selected_ids,
+                    "productName": grounding_feedback.productName,
+                    "audience": grounding_feedback.audience,
+                    "styleHint": style,
+                    "featureHints": grounding_feedback.featureHints or current_agent.grounding.get("featureHints", []),
+                    "candidates": grounding_feedback.candidates,
+                },
+            }
+        )
+        return next_agent, next_execution, "grounding 确认后已重规划"

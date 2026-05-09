@@ -13,3 +13,28 @@ class PlannerGraphTests(unittest.TestCase):
         self.assertEqual(state["status"], "planning_complete")
         self.assertIn("agentPlan", state)
         self.assertIn("executionPlan", state)
+
+    def test_run_grounding_replan_returns_replanning_complete_state(self):
+        from backend.services.planner_graph import run_grounding_replan
+        from backend.services.planner_runtime_deterministic import DeterministicPlannerRuntime
+
+        runtime = DeterministicPlannerRuntime()
+        current_agent, current_execution = runtime.build_plan_from_brief("做一个产品视频")
+        state = run_grounding_replan(
+            session_id="session-1",
+            current_agent_plan=current_agent.model_dump(mode="json"),
+            current_execution_plan=current_execution.model_dump(mode="json"),
+            grounding_feedback={
+                "productName": "Notion",
+                "selectedCandidateIds": ["fixture:1"],
+                "candidates": [{"id": "fixture:1", "title": "Notion demo"}],
+            },
+            confirmation_feedback={
+                "selectedCandidateIds": ["fixture:1"],
+                "confirmationSource": "user_select",
+            },
+        )
+
+        self.assertEqual(state["status"], "replanning_complete")
+        self.assertEqual(state["triggerType"], "grounding_confirmation")
+        self.assertIn("changeSummary", state)

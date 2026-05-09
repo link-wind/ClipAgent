@@ -148,13 +148,56 @@ class AgentSessionService:
                 if missing_candidate_ids:
                     raise ValueError("Unknown grounding candidate id")
 
-                grounded_plan = self._build_grounded_plan_from_candidates(
-                    prompt=session_record.title or "",
-                    grounding_summary=grounding_summary,
-                    candidate_ids=candidate_ids,
-                )
+                latest_plan = plan_repo.get_latest_for_session(session_id)
+                if latest_plan is None:
+                    messages = message_repo.list_for_session(session_id)
+                    latest_user_message = next(
+                        (message for message in reversed(messages) if message.role == "user"),
+                        None,
+                    )
+                    if latest_user_message is None:
+                        grounded_plan = self._build_grounded_plan_from_candidates(
+                            prompt=session_record.title or "",
+                            grounding_summary=grounding_summary,
+                            candidate_ids=candidate_ids,
+                        )
+                        self._apply_plan_to_session(session_record, grounded_plan)
+                        next_plan = plan_repo.create(
+                            session_id=session_id,
+                            version=1,
+                            title=grounded_plan.title,
+                            target_duration=int(grounded_plan.targetDuration),
+                            style=grounded_plan.style,
+                            plan_json=grounded_plan.model_dump(mode="json"),
+                            execution_plan_json=grounded_plan.model_dump(mode="json"),
+                        )
+                    else:
+                        planner_orchestrator = PlannerOrchestrator()
+                        initial_plan = planner_orchestrator.persist_initial_plan(
+                            db=db,
+                            session_record=session_record,
+                            message_record=latest_user_message,
+                        )
+                        session_repo.set_current_plan(session_id, initial_plan.id)
+                        next_plan = planner_orchestrator.persist_grounding_replan(
+                            db=db,
+                            session_record=session_record,
+                            candidate_ids=candidate_ids,
+                        )
+                        grounded_plan = execution_plan_to_edit_plan(next_plan.execution_plan_json)
+                        self._apply_plan_to_session(session_record, grounded_plan)
+                        session_repo.set_current_plan(session_id, next_plan.id)
+                else:
+                    planner_orchestrator = PlannerOrchestrator()
+                    next_plan = planner_orchestrator.persist_grounding_replan(
+                        db=db,
+                        session_record=session_record,
+                        candidate_ids=candidate_ids,
+                    )
+                    grounded_plan = execution_plan_to_edit_plan(next_plan.execution_plan_json)
+                    self._apply_plan_to_session(session_record, grounded_plan)
+                    session_repo.set_current_plan(session_id, next_plan.id)
 
-                self._apply_plan_to_session(session_record, grounded_plan)
                 session_repo.update_grounding_state(
                     session_id,
                     grounding_status="confirmed",
@@ -164,16 +207,6 @@ class AgentSessionService:
                         "selectedCandidateIds": candidate_ids,
                     },
                     selected_candidate_ids_json=candidate_ids,
-                )
-                next_version = 1 if plan_repo.get_latest_for_session(session_id) is None else plan_repo.get_latest_for_session(session_id).version + 1
-                plan_repo.create(
-                    session_id=session_id,
-                    version=next_version,
-                    title=grounded_plan.title,
-                    target_duration=int(grounded_plan.targetDuration),
-                    style=grounded_plan.style,
-                    plan_json=grounded_plan.model_dump(mode="json"),
-                    execution_plan_json=grounded_plan.model_dump(mode="json"),
                 )
                 self._append_plan_ready_message(message_repo, session_id)
                 db.commit()

@@ -362,7 +362,7 @@ class AgentApiTests(unittest.TestCase):
             latest_plan = AgentPlanRepository(db).get_latest_for_session(created.id)
 
         self.assertIsNotNone(latest_plan)
-        self.assertEqual(latest_plan.version, 2)
+        self.assertEqual(latest_plan.version, 3)
         self.assertEqual(
             [scene["keywords"] for scene in latest_plan.plan_json["scenes"]],
             original_scene_keywords,
@@ -402,7 +402,7 @@ class AgentApiTests(unittest.TestCase):
             latest_plan = AgentPlanRepository(db).get_latest_for_session(created.id)
 
         self.assertIsNotNone(latest_plan)
-        self.assertEqual(latest_plan.version, 1)
+        self.assertEqual(latest_plan.version, 2)
         self.assertEqual(grounded.grounding.selectedCandidateIds, candidate_ids)
 
     def test_get_missing_session_returns_404(self):

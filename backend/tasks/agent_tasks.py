@@ -4,6 +4,7 @@ from backend.db.repositories import AgentJobRepository, AgentPlanRepository
 from backend.models.agent import ClipInfo, EditPlan
 from backend.services.agent_progress_service import AgentProgressService
 from backend.services.asset_providers.metadata import pop_clip_metadata
+from backend.services.planner_projection import execution_plan_to_edit_plan
 from backend.services.search_service import search_and_download_agent_clips
 from backend.tasks.celery_app import celery_app
 
@@ -40,7 +41,11 @@ def run_agent_job(job_id: str) -> None:
             if plan_record is None:
                 raise RuntimeError("任务缺少可执行计划")
 
-            plan = EditPlan.model_validate(plan_record.plan_json)
+            execution_plan_json = getattr(plan_record, "execution_plan_json", None) or {}
+            if execution_plan_json.get("scenes"):
+                plan = execution_plan_to_edit_plan(execution_plan_json)
+            else:
+                plan = EditPlan.model_validate(plan_record.plan_json)
             progress_service.mark_job_running(session_id, job_id)
             db.commit()
 

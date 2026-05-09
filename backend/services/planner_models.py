@@ -61,3 +61,17 @@ class AgentObservation(BaseModel):
     payload: dict = Field(default_factory=dict)
     summary: str = ""
     createdAt: str
+
+
+class GroundingFeedback(BaseModel):
+    productName: str = ""
+    audience: str = ""
+    styleHint: str = ""
+    featureHints: list[str] = Field(default_factory=list)
+    selectedCandidateIds: list[str] = Field(default_factory=list)
+    candidates: list[dict] = Field(default_factory=list)
+
+
+class CandidateConfirmationFeedback(BaseModel):
+    selectedCandidateIds: list[str] = Field(default_factory=list)
+    confirmationSource: Literal["user_select", "api_confirm"] = "api_confirm"

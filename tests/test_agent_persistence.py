@@ -1814,7 +1814,7 @@ class SessionServiceBehaviorTests(unittest.TestCase):
             plan_repo = AgentPlanRepository(db)
 
             self.assertEqual(len(message_repo.list_for_session(session.id)), 7)
-            self.assertEqual(plan_repo.get_latest_for_session(session.id).version, 2)
+            self.assertEqual(plan_repo.get_latest_for_session(session.id).version, 3)
         finally:
             db.close()
 
