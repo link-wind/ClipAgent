@@ -131,3 +131,92 @@ class PlannerRuntimeTests(unittest.TestCase):
             ["product", "interface", "alternative"],
         )
         self.assertGreaterEqual(len(next_agent.replanHistory), 1)
+
+    def test_deterministic_runtime_rewrites_platform_blocked_scene_to_stock_fallback_query(self):
+        from backend.services.planner_models import SearchExecutionFeedback
+        from backend.services.planner_runtime_deterministic import (
+            DeterministicPlannerRuntime,
+        )
+
+        runtime = DeterministicPlannerRuntime()
+        current_agent, current_execution = runtime.build_plan_from_brief(
+            "给 Notion AI 做一个 30 秒产品亮点视频"
+        )
+
+        next_agent, next_execution, _change_summary = runtime.replan_after_execution_feedback(
+            current_agent=current_agent,
+            current_execution=current_execution,
+            execution_feedback=SearchExecutionFeedback(
+                failedSceneIds=[1],
+                failureReason="YouTube 当前要求 PO Token，公开视频下载被平台策略限制。",
+                retryable=True,
+            ),
+        )
+
+        self.assertEqual(
+            next_execution.scenes[0].searchQuery,
+            "software dashboard laptop",
+        )
+        self.assertEqual(
+            next_execution.scenes[0].keywords,
+            ["software", "dashboard", "laptop"],
+        )
+        self.assertEqual(next_agent.replanHistory[-1]["failureCategory"], "platform_blocked")
+        self.assertEqual(next_agent.replanHistory[-1]["rewriteStrategy"], "stock_footage_fallback")
+
+    def test_deterministic_runtime_broadens_no_inventory_scene_without_dropping_core_intent(self):
+        from backend.services.planner_models import SearchExecutionFeedback
+        from backend.services.planner_runtime_deterministic import (
+            DeterministicPlannerRuntime,
+        )
+
+        runtime = DeterministicPlannerRuntime()
+        current_agent, current_execution = runtime.build_plan_from_brief(
+            "给 Notion AI 做一个 30 秒产品亮点视频"
+        )
+
+        next_agent, next_execution, _change_summary = runtime.replan_after_execution_feedback(
+            current_agent=current_agent,
+            current_execution=current_execution,
+            execution_feedback=SearchExecutionFeedback(
+                failedSceneIds=[2],
+                failureReason="pexels: 没有可下载候选素材",
+                retryable=True,
+            ),
+        )
+
+        self.assertEqual(
+            next_execution.scenes[1].searchQuery,
+            "feature workflow generic",
+        )
+        self.assertEqual(
+            next_execution.scenes[1].keywords,
+            ["feature", "workflow", "generic"],
+        )
+        self.assertEqual(next_agent.replanHistory[-1]["failureCategory"], "no_inventory")
+        self.assertEqual(next_agent.replanHistory[-1]["rewriteStrategy"], "inventory_broaden")
+
+    def test_deterministic_runtime_only_rewrites_failed_scenes_after_execution_feedback(self):
+        from backend.services.planner_models import SearchExecutionFeedback
+        from backend.services.planner_runtime_deterministic import (
+            DeterministicPlannerRuntime,
+        )
+
+        runtime = DeterministicPlannerRuntime()
+        current_agent, current_execution = runtime.build_plan_from_brief(
+            "给 Notion AI 做一个 30 秒产品亮点视频"
+        )
+
+        _next_agent, next_execution, _change_summary = runtime.replan_after_execution_feedback(
+            current_agent=current_agent,
+            current_execution=current_execution,
+            execution_feedback=SearchExecutionFeedback(
+                failedSceneIds=[1],
+                failureReason="YouTube said: Sign in to confirm you're not a bot.",
+                retryable=True,
+            ),
+        )
+
+        self.assertEqual(next_execution.scenes[0].searchQuery, "software dashboard laptop")
+        self.assertEqual(next_execution.scenes[1].searchQuery, current_execution.scenes[1].searchQuery)
+        self.assertEqual(next_execution.scenes[1].keywords, current_execution.scenes[1].keywords)
