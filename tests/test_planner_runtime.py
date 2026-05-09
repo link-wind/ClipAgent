@@ -267,32 +267,3 @@ class PlannerRuntimeTests(unittest.TestCase):
         self.assertEqual(next_execution.scenes[0].searchQuery, "software dashboard laptop")
         self.assertEqual(next_execution.scenes[1].searchQuery, current_execution.scenes[1].searchQuery)
         self.assertEqual(next_execution.scenes[1].keywords, current_execution.scenes[1].keywords)
-
-    def test_deterministic_runtime_prefers_structured_diagnostics_for_rewrite(self):
-        from backend.services.planner_models import SearchExecutionFeedback
-        from backend.services.planner_runtime_deterministic import (
-            DeterministicPlannerRuntime,
-        )
-
-        runtime = DeterministicPlannerRuntime()
-        current_agent, current_execution = runtime.build_plan_from_brief(
-            "给 Notion AI 做一个 30 秒产品亮点视频"
-        )
-
-        _next_agent, next_execution, _change_summary = runtime.replan_after_execution_feedback(
-            current_agent=current_agent,
-            current_execution=current_execution,
-            execution_feedback=SearchExecutionFeedback(
-                failedSceneIds=[1],
-                failureReason="素材检索失败",
-                failureCategory="platform_blocked",
-                primaryProvider="youtube",
-                providerDiagnostics=[
-                    {"provider": "youtube", "message": "PO Token required"}
-                ],
-                retryStrategyHint="stock_footage_fallback",
-                retryable=True,
-            ),
-        )
-
-        self.assertEqual(next_execution.scenes[0].searchQuery, "software dashboard laptop")

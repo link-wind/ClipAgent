@@ -95,7 +95,7 @@ class PlannerModelTests(unittest.TestCase):
 
         feedback = SearchExecutionFeedback(
             failedSceneIds=[1],
-            failureReason="YouTube 当前要求 PO Token，公开视频下载被平台策略限制。",
+            failureReason="",
             failureCategory="platform_blocked",
             primaryProvider="youtube",
             providerDiagnostics=[
@@ -114,6 +114,12 @@ class PlannerModelTests(unittest.TestCase):
             retryStrategyHint="stock_footage_fallback",
         )
 
+        self.assertEqual(feedback.failureReason, "")
         self.assertEqual(feedback.failureCategory, "platform_blocked")
         self.assertEqual(feedback.primaryProvider, "youtube")
+        self.assertEqual(
+            feedback.providerDiagnostics[0]["message"],
+            "YouTube 当前要求 PO Token，公开视频下载被平台策略限制。",
+        )
+        self.assertEqual(feedback.sceneDiagnostics[0]["sceneId"], 1)
         self.assertEqual(feedback.retryStrategyHint, "stock_footage_fallback")
