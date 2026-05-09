@@ -53,6 +53,11 @@ class ExecutionPlan(BaseModel):
     scenes: list[ExecutionScene] = Field(default_factory=list)
 
 
+class InitialPlanningResult(BaseModel):
+    agentPlan: AgentPlan
+    executionPlan: ExecutionPlan
+
+
 class AgentObservation(BaseModel):
     id: str
     sessionId: str

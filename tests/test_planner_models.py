@@ -4,6 +4,44 @@ from backend.services.planner_models import AgentObservation, AgentPlan, Executi
 
 
 class PlannerModelTests(unittest.TestCase):
+    def test_initial_planning_result_wraps_agent_and_execution_plan(self):
+        from backend.services.planner_models import InitialPlanningResult
+
+        result = InitialPlanningResult(
+            agentPlan={
+                "title": "Notion AI 产品介绍",
+                "goal": "生成 30 秒产品介绍视频",
+                "summary": "突出真实产品体验",
+                "scenes": [
+                    {
+                        "id": 1,
+                        "description": "展示产品首页",
+                        "keywords": ["product", "interface"],
+                        "duration": 6,
+                    }
+                ],
+            },
+            executionPlan={
+                "title": "Notion AI 产品介绍",
+                "targetDuration": 30,
+                "style": "快节奏社媒短片",
+                "scenes": [
+                    {
+                        "id": 1,
+                        "description": "展示产品首页",
+                        "keywords": ["product", "interface"],
+                        "searchQuery": "product interface",
+                        "duration": 6,
+                    }
+                ],
+            },
+        )
+
+        self.assertEqual(result.agentPlan.title, "Notion AI 产品介绍")
+        self.assertEqual(
+            result.executionPlan.scenes[0].searchQuery, "product interface"
+        )
+
     def test_agent_plan_defaults_are_stable(self):
         plan = AgentPlan(
             title="Notion AI 产品介绍",
