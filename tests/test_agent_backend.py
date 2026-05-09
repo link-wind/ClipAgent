@@ -1086,6 +1086,46 @@ class AgentExecutionContractTests(unittest.TestCase):
         self.assertEqual(message.count("缺少 PEXELS_API_KEY，已跳过 Pexels 素材源"), 1)
         self.assertNotIn("pexels: 没有返回候选素材", message)
 
+    def test_all_scene_failures_expose_structured_diagnostics(self):
+        from backend.services.search_service import AgentSceneSearchFailure
+
+        exc = AgentSceneSearchFailure(
+            "没有下载到可用素材",
+            failed_scene_ids=[1, 2],
+            failure_category="no_inventory",
+            primary_provider="youtube",
+            provider_diagnostics=[
+                {"provider": "youtube", "message": "没有返回候选素材"},
+            ],
+            scene_diagnostics=[
+                {
+                    "sceneId": 1,
+                    "retryable": True,
+                    "summary": "youtube returned no candidates",
+                }
+            ],
+            retry_strategy_hint="inventory_broaden",
+        )
+
+        self.assertEqual(exc.failed_scene_ids, [1, 2])
+        self.assertEqual(exc.failure_category, "no_inventory")
+        self.assertEqual(exc.primary_provider, "youtube")
+        self.assertEqual(
+            exc.provider_diagnostics,
+            [{"provider": "youtube", "message": "没有返回候选素材"}],
+        )
+        self.assertEqual(
+            exc.scene_diagnostics,
+            [
+                {
+                    "sceneId": 1,
+                    "retryable": True,
+                    "summary": "youtube returned no candidates",
+                }
+            ],
+        )
+        self.assertEqual(exc.retry_strategy_hint, "inventory_broaden")
+
     def test_repeated_scene_provider_failures_are_collapsed_into_summary(self):
         from backend.models.agent import PlanScene
         from backend.services import search_service

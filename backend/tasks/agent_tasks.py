@@ -12,6 +12,39 @@ SessionLocal = None
 render_video = None
 
 
+def _build_worker_failure_payload(exc: Exception, retryable_step: str) -> dict[str, object]:
+    payload: dict[str, object] = {"retryableStep": retryable_step}
+
+    failed_scene_ids = getattr(exc, "failed_scene_ids", None)
+    if failed_scene_ids is None:
+        return payload
+
+    payload.update(
+        {
+            "failedSceneIds": list(failed_scene_ids),
+            "failureReason": str(exc),
+            "retryable": True,
+            "feedbackSource": "worker_failure",
+        }
+    )
+    failure_category = getattr(exc, "failure_category", None)
+    if failure_category:
+        payload["failureCategory"] = failure_category
+    primary_provider = getattr(exc, "primary_provider", None)
+    if primary_provider:
+        payload["primaryProvider"] = primary_provider
+    provider_diagnostics = getattr(exc, "provider_diagnostics", None)
+    if provider_diagnostics:
+        payload["providerDiagnostics"] = list(provider_diagnostics)
+    scene_diagnostics = getattr(exc, "scene_diagnostics", None)
+    if scene_diagnostics:
+        payload["sceneDiagnostics"] = list(scene_diagnostics)
+    retry_strategy_hint = getattr(exc, "retry_strategy_hint", None)
+    if retry_strategy_hint:
+        payload["retryStrategyHint"] = retry_strategy_hint
+    return payload
+
+
 @celery_app.task(name="backend.tasks.agent_tasks.run_agent_job")
 def run_agent_job(job_id: str) -> None:
     global SessionLocal
@@ -123,6 +156,12 @@ def run_agent_job(job_id: str) -> None:
                     message=str(exc),
                     retryable_step=retryable_step,
                 )
+                failure_payload = _build_worker_failure_payload(exc, retryable_step)
+                latest_events = progress_service.event_repo.list_for_job(job_id)
+                if latest_events:
+                    latest_event = latest_events[-1]
+                    if latest_event.event_type == "job_failed":
+                        latest_event.payload_json = failure_payload
                 db.commit()
             else:
                 raise

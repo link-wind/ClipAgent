@@ -362,11 +362,15 @@ class ArtifactTrimMetadataTests(unittest.TestCase):
         from backend.services.agent_execution_service import AgentExecutionService
 
         session = self.session_service.create_session("做一个智能剪辑 agent 演示视频")
+        grounded_session = self.session_service.confirm_grounding_candidates(
+            session.id,
+            [candidate.id for candidate in session.grounding.candidates[:2]],
+        )
         execution_service = AgentExecutionService(
             session_factory=self.session_factory,
             enqueue_job=lambda _job_id: None,
         )
-        confirmed = execution_service.confirm_session(session.id)
+        confirmed = execution_service.confirm_session(grounded_session.id)
         return session.id, confirmed.activeJobId
 
     def test_run_agent_job_persists_trim_metadata_in_artifacts(self):
@@ -1213,6 +1217,67 @@ class AgentExecutionWorkerTests(unittest.TestCase):
         self.assertEqual(session.status, AgentStatus.FAILED)
         self.assertEqual(session.error.message, "素材检索失败")
         self.assertEqual(session.currentStep, "处理失败：素材检索失败")
+
+    def test_run_agent_job_persists_structured_failure_diagnostics_in_job_failed_event(self):
+        from backend.db.repositories import AgentEventRepository
+        from backend.tasks.agent_tasks import run_agent_job
+
+        session_id, job_id = self._create_queued_job()
+
+        class FakeSceneSearchFailure(RuntimeError):
+            def __init__(self, message: str, failed_scene_ids: list[int]):
+                super().__init__(message)
+                self.failed_scene_ids = failed_scene_ids
+                self.failure_category = "no_inventory"
+                self.primary_provider = "youtube"
+                self.provider_diagnostics = [
+                    {"provider": "youtube", "message": "没有返回候选素材"}
+                ]
+                self.scene_diagnostics = [
+                    {
+                        "sceneId": 1,
+                        "retryable": True,
+                        "summary": "youtube returned no candidates",
+                    }
+                ]
+                self.retry_strategy_hint = "inventory_broaden"
+
+        async def failing_search_runner(_session_id, _scenes):
+            raise FakeSceneSearchFailure("没有下载到可用素材", [1])
+
+        with patch("backend.tasks.agent_tasks.SessionLocal", self.session_factory), patch(
+            "backend.tasks.agent_tasks.search_and_download_agent_clips",
+            failing_search_runner,
+        ):
+            run_agent_job(job_id)
+
+        with self.session_factory() as db:
+            event_rows = AgentEventRepository(db).list_for_session(session_id)
+
+        failed_event = next(row for row in event_rows if row.event_type == "job_failed")
+        self.assertEqual(
+            failed_event.payload_json,
+            {
+                "failedSceneIds": [1],
+                "failureReason": "没有下载到可用素材",
+                "failureCategory": "no_inventory",
+                "primaryProvider": "youtube",
+                "providerDiagnostics": [
+                    {"provider": "youtube", "message": "没有返回候选素材"}
+                ],
+                "sceneDiagnostics": [
+                    {
+                        "sceneId": 1,
+                        "retryable": True,
+                        "summary": "youtube returned no candidates",
+                    }
+                ],
+                "retryStrategyHint": "inventory_broaden",
+                "retryable": True,
+                "feedbackSource": "worker_failure",
+                "retryableStep": "searching",
+            },
+        )
 
     def test_run_agent_job_truncates_failed_current_step_but_keeps_full_error_message(self):
         from backend.db.repositories import AgentJobRepository
