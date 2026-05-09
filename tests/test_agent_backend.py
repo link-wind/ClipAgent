@@ -8,11 +8,15 @@ from unittest.mock import AsyncMock, patch
 
 import httpx
 from sqlalchemy import create_engine, event
+from sqlalchemy import func
+from sqlalchemy import select
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
 import backend.api.agent as agent_api_module
+from backend.config import get_settings
 from backend.db.base import Base
+from backend.db.models import AgentPlanRecord, AgentSessionRecord
 from backend.services.agent_execution_service import AgentExecutionService
 from backend.services.agent_read_service import AgentReadService
 from backend.services.agent_session_service import AgentSessionService
@@ -23,7 +27,7 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 
-def _make_test_client(app):
+def _make_test_client(app, raise_server_exceptions=True):
     from fastapi.testclient import TestClient
 
     original_init = httpx.Client.__init__
@@ -35,7 +39,7 @@ def _make_test_client(app):
 
     httpx.Client.__init__ = compatible_init
     try:
-        return TestClient(app)
+        return TestClient(app, raise_server_exceptions=raise_server_exceptions)
     finally:
         httpx.Client.__init__ = original_init
 
@@ -228,6 +232,54 @@ class AgentApiTests(unittest.TestCase):
         self.assertEqual(data["status"], "plan_ready")
         self.assertIsNotNone(data["plan"])
         self.assertGreater(len(data["plan"]["scenes"]), 0)
+
+    def test_create_session_rolls_back_when_langchain_planning_fails(self):
+        class FailingRuntime:
+            def build_plan_from_brief(self, _brief):
+                raise RuntimeError("LangChain planning failed")
+
+        with (
+            patch.dict("os.environ", {"CLIPFORGE_PLANNER_MODE": "langchain"}, clear=False),
+            patch(
+                "backend.services.planner_graph.get_planner_runtime",
+                return_value=FailingRuntime(),
+            ),
+        ):
+            get_settings.cache_clear()
+            with self.assertRaisesRegex(RuntimeError, "LangChain planning failed"):
+                self.session_service.create_session("给 Notion AI 做一个 30 秒产品亮点视频")
+
+        get_settings.cache_clear()
+        with self.session_factory() as db:
+            session_count = db.scalar(select(func.count()).select_from(AgentSessionRecord))
+            plan_count = db.scalar(select(func.count()).select_from(AgentPlanRecord))
+
+        self.assertEqual(session_count, 0)
+        self.assertEqual(plan_count, 0)
+
+    def test_create_session_api_returns_500_when_langchain_planning_fails(self):
+        from backend.main import app
+
+        class FailingRuntime:
+            def build_plan_from_brief(self, _brief):
+                raise RuntimeError("LangChain planning failed")
+
+        with (
+            patch.dict("os.environ", {"CLIPFORGE_PLANNER_MODE": "langchain"}, clear=False),
+            patch(
+                "backend.services.planner_graph.get_planner_runtime",
+                return_value=FailingRuntime(),
+            ),
+        ):
+            get_settings.cache_clear()
+            client = _make_test_client(app, raise_server_exceptions=False)
+            response = client.post(
+                "/api/agent/sessions",
+                json={"message": "给 Notion AI 做一个 30 秒产品亮点视频"},
+            )
+
+        get_settings.cache_clear()
+        self.assertEqual(response.status_code, 500)
 
     def test_confirm_candidates_api_builds_grounded_plan(self):
         from backend.main import app
