@@ -1,3 +1,5 @@
+import importlib
+import sys
 import unittest
 from unittest.mock import Mock, patch
 
@@ -242,6 +244,37 @@ class PlannerRuntimeTests(unittest.TestCase):
             runtime = get_planner_runtime()
             self.assertEqual(runtime.__class__.__name__, "DeterministicPlannerRuntime")
             get_settings.cache_clear()
+
+    def test_selector_reads_current_settings_after_backend_config_reload(self):
+        import backend.services.planner_runtime as planner_runtime
+        import backend.services.planner_runtime_langchain as planner_runtime_langchain
+
+        class LangChainPlannerRuntime:
+            def __init__(self, model_name):
+                self.model_name = model_name
+
+        with patch.dict("os.environ", {"CLIPFORGE_PLANNER_MODE": "deterministic"}, clear=True):
+            from backend.config import get_settings
+
+            get_settings.cache_clear()
+            importlib.reload(planner_runtime)
+            self.assertEqual(
+                planner_runtime.get_planner_runtime().__class__.__name__,
+                "DeterministicPlannerRuntime",
+            )
+
+        sys.modules.pop("backend.config", None)
+        with patch.dict("os.environ", {}, clear=True):
+            reloaded_config = importlib.import_module("backend.config")
+            reloaded_config.get_settings.cache_clear()
+            with patch.object(
+                planner_runtime_langchain,
+                "LangChainPlannerRuntime",
+                LangChainPlannerRuntime,
+            ):
+                runtime = planner_runtime.get_planner_runtime()
+                self.assertEqual(runtime.__class__.__name__, "LangChainPlannerRuntime")
+            reloaded_config.get_settings.cache_clear()
 
     def test_deterministic_runtime_replans_after_grounding(self):
         from backend.services.planner_models import (

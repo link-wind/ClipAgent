@@ -1,8 +1,9 @@
-from backend.config import get_settings
 from backend.services.planner_runtime_deterministic import DeterministicPlannerRuntime
 
 
 def get_planner_runtime():
+    from backend.config import get_settings
+
     settings = get_settings()
     if settings.planner_mode == "deterministic":
         return DeterministicPlannerRuntime()

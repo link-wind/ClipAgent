@@ -246,10 +246,12 @@ class AgentApiTests(unittest.TestCase):
             ),
         ):
             get_settings.cache_clear()
-            with self.assertRaisesRegex(RuntimeError, "LangChain planning failed"):
-                self.session_service.create_session("给 Notion AI 做一个 30 秒产品亮点视频")
+            try:
+                with self.assertRaisesRegex(RuntimeError, "LangChain planning failed"):
+                    self.session_service.create_session("给 Notion AI 做一个 30 秒产品亮点视频")
+            finally:
+                get_settings.cache_clear()
 
-        get_settings.cache_clear()
         with self.session_factory() as db:
             session_count = db.scalar(select(func.count()).select_from(AgentSessionRecord))
             plan_count = db.scalar(select(func.count()).select_from(AgentPlanRecord))
@@ -272,14 +274,17 @@ class AgentApiTests(unittest.TestCase):
             ),
         ):
             get_settings.cache_clear()
-            client = _make_test_client(app, raise_server_exceptions=False)
-            response = client.post(
-                "/api/agent/sessions",
-                json={"message": "给 Notion AI 做一个 30 秒产品亮点视频"},
-            )
+            try:
+                client = _make_test_client(app, raise_server_exceptions=False)
+                response = client.post(
+                    "/api/agent/sessions",
+                    json={"message": "给 Notion AI 做一个 30 秒产品亮点视频"},
+                )
+            finally:
+                get_settings.cache_clear()
 
-        get_settings.cache_clear()
         self.assertEqual(response.status_code, 500)
+        self.assertEqual(response.text, "Internal Server Error")
 
     def test_confirm_candidates_api_builds_grounded_plan(self):
         from backend.main import app
