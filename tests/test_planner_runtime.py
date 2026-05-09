@@ -102,3 +102,32 @@ class PlannerRuntimeTests(unittest.TestCase):
         self.assertEqual(next_execution.scenes[0].searchQuery, "城市 车流 黄昏")
         self.assertEqual(next_agent.understanding.audience, "销售团队")
         self.assertGreaterEqual(len(next_agent.replanHistory), 1)
+
+    def test_deterministic_runtime_replans_after_execution_feedback(self):
+        from backend.services.planner_models import SearchExecutionFeedback
+        from backend.services.planner_runtime_deterministic import (
+            DeterministicPlannerRuntime,
+        )
+
+        runtime = DeterministicPlannerRuntime()
+        current_agent, current_execution = runtime.build_plan_from_brief(
+            "给 Notion AI 做一个 30 秒产品亮点视频"
+        )
+
+        next_agent, next_execution, change_summary = runtime.replan_after_execution_feedback(
+            current_agent=current_agent,
+            current_execution=current_execution,
+            execution_feedback=SearchExecutionFeedback(
+                failedSceneIds=[1],
+                failureReason="素材检索失败",
+                retryable=True,
+            ),
+        )
+
+        self.assertIn("execution", change_summary)
+        self.assertEqual(next_execution.scenes[0].searchQuery, "product interface alternative")
+        self.assertEqual(
+            next_execution.scenes[0].keywords,
+            ["product", "interface", "alternative"],
+        )
+        self.assertGreaterEqual(len(next_agent.replanHistory), 1)

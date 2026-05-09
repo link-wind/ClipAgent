@@ -76,3 +76,16 @@ class PlannerModelTests(unittest.TestCase):
         self.assertEqual(feedback.message, "整体再商务一点，品牌感再强一点")
         self.assertEqual(feedback.sceneKeywordUpdates[1], ["城市", "车流", "黄昏"])
         self.assertEqual(feedback.revisionSource, "user_message")
+
+    def test_search_execution_feedback_defaults(self):
+        from backend.services.planner_models import SearchExecutionFeedback
+
+        feedback = SearchExecutionFeedback(
+            failedSceneIds=[1, 2],
+            failureReason="素材检索失败",
+            retryable=True,
+        )
+
+        self.assertEqual(feedback.failedSceneIds, [1, 2])
+        self.assertEqual(feedback.failureReason, "素材检索失败")
+        self.assertEqual(feedback.feedbackSource, "worker_failure")

@@ -5,6 +5,7 @@ from backend.services.planner_models import (
     CandidateConfirmationFeedback,
     ExecutionPlan,
     GroundingFeedback,
+    SearchExecutionFeedback,
     UserRevisionFeedback,
 )
 
@@ -40,4 +41,15 @@ class OpenAIPlannerRuntime:
     ) -> tuple[AgentPlan, ExecutionPlan, str]:
         raise NotImplementedError(
             "OpenAI user revision replanning runtime is enabled in later tasks of the rollout"
+        )
+
+    def replan_after_execution_feedback(
+        self,
+        *,
+        current_agent: AgentPlan,
+        current_execution: ExecutionPlan,
+        execution_feedback: SearchExecutionFeedback,
+    ) -> tuple[AgentPlan, ExecutionPlan, str]:
+        raise NotImplementedError(
+            "OpenAI execution feedback replanning runtime is enabled in later tasks of the rollout"
         )

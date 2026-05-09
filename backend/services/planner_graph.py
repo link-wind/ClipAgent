@@ -7,6 +7,7 @@ from backend.services.planner_models import (
     CandidateConfirmationFeedback,
     ExecutionPlan,
     GroundingFeedback,
+    SearchExecutionFeedback,
     UserRevisionFeedback,
 )
 from backend.services.planner_runtime import get_planner_runtime
@@ -22,6 +23,7 @@ class PlanningState(TypedDict, total=False):
     groundingFeedback: dict
     confirmationFeedback: dict
     revisionFeedback: dict
+    executionFeedback: dict
     changeSummary: str
 
 
@@ -77,6 +79,25 @@ def _replan_after_user_revision_node(state: PlanningState) -> PlanningState:
     }
 
 
+def _replan_after_execution_feedback_node(state: PlanningState) -> PlanningState:
+    runtime = get_planner_runtime()
+    current_agent = AgentPlan.model_validate(state["agentPlan"])
+    current_execution = ExecutionPlan.model_validate(state["executionPlan"])
+    next_agent, next_execution, change_summary = runtime.replan_after_execution_feedback(
+        current_agent=current_agent,
+        current_execution=current_execution,
+        execution_feedback=SearchExecutionFeedback.model_validate(state["executionFeedback"]),
+    )
+    return {
+        **state,
+        "status": "replanning_complete",
+        "triggerType": "execution_feedback",
+        "agentPlan": next_agent.model_dump(mode="json"),
+        "executionPlan": next_execution.model_dump(mode="json"),
+        "changeSummary": change_summary,
+    }
+
+
 def build_planning_graph():
     graph = StateGraph(PlanningState)
     graph.add_node("build_plan", _build_plan_node)
@@ -98,6 +119,14 @@ def build_user_revision_replan_graph():
     graph.add_node("replan_after_user_revision", _replan_after_user_revision_node)
     graph.add_edge(START, "replan_after_user_revision")
     graph.add_edge("replan_after_user_revision", END)
+    return graph.compile()
+
+
+def build_execution_feedback_replan_graph():
+    graph = StateGraph(PlanningState)
+    graph.add_node("replan_after_execution_feedback", _replan_after_execution_feedback_node)
+    graph.add_edge(START, "replan_after_execution_feedback")
+    graph.add_edge("replan_after_execution_feedback", END)
     return graph.compile()
 
 
@@ -142,5 +171,24 @@ def run_user_revision_replan(
             "agentPlan": current_agent_plan,
             "executionPlan": current_execution_plan,
             "revisionFeedback": revision_feedback,
+        }
+    )
+
+
+def run_execution_feedback_replan(
+    session_id: str,
+    current_agent_plan: dict,
+    current_execution_plan: dict,
+    execution_feedback: dict,
+) -> PlanningState:
+    graph = build_execution_feedback_replan_graph()
+    return graph.invoke(
+        {
+            "sessionId": session_id,
+            "status": "replanning",
+            "triggerType": "execution_feedback",
+            "agentPlan": current_agent_plan,
+            "executionPlan": current_execution_plan,
+            "executionFeedback": execution_feedback,
         }
     )

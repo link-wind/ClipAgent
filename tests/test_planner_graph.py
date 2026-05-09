@@ -60,3 +60,26 @@ class PlannerGraphTests(unittest.TestCase):
         self.assertEqual(state["status"], "replanning_complete")
         self.assertEqual(state["triggerType"], "user_revision")
         self.assertIn("changeSummary", state)
+
+    def test_run_execution_feedback_replan_returns_replanning_complete_state(self):
+        from backend.services.planner_graph import run_execution_feedback_replan
+        from backend.services.planner_runtime_deterministic import DeterministicPlannerRuntime
+
+        runtime = DeterministicPlannerRuntime()
+        current_agent, current_execution = runtime.build_plan_from_brief("做一个产品视频")
+
+        state = run_execution_feedback_replan(
+            session_id="session-1",
+            current_agent_plan=current_agent.model_dump(mode="json"),
+            current_execution_plan=current_execution.model_dump(mode="json"),
+            execution_feedback={
+                "failedSceneIds": [1],
+                "failureReason": "素材检索失败",
+                "retryable": True,
+                "feedbackSource": "worker_failure",
+            },
+        )
+
+        self.assertEqual(state["status"], "replanning_complete")
+        self.assertEqual(state["triggerType"], "execution_feedback")
+        self.assertIn("changeSummary", state)

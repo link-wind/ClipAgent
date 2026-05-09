@@ -3,6 +3,7 @@ from backend.services.planner_models import (
     CandidateConfirmationFeedback,
     ExecutionPlan,
     GroundingFeedback,
+    SearchExecutionFeedback,
     UserRevisionFeedback,
 )
 
@@ -188,3 +189,58 @@ class DeterministicPlannerRuntime:
             }
         )
         return next_agent, next_execution, "revision 驱动的计划重规划已完成"
+
+    def replan_after_execution_feedback(
+        self,
+        *,
+        current_agent: AgentPlan,
+        current_execution: ExecutionPlan,
+        execution_feedback: SearchExecutionFeedback,
+    ) -> tuple[AgentPlan, ExecutionPlan, str]:
+        failed_scene_ids = set(execution_feedback.failedSceneIds)
+
+        updated_execution_scenes = []
+        for scene in current_execution.scenes:
+            if scene.id in failed_scene_ids:
+                next_keywords = [*scene.keywords[:2], "alternative"]
+                updated_execution_scenes.append(
+                    scene.model_copy(
+                        update={
+                            "keywords": next_keywords,
+                            "searchQuery": " ".join(next_keywords),
+                        }
+                    )
+                )
+            else:
+                updated_execution_scenes.append(scene.model_copy(deep=True))
+
+        updated_agent_scenes = []
+        for scene in current_agent.scenes:
+            if scene.id in failed_scene_ids:
+                updated_agent_scenes.append(
+                    scene.model_copy(
+                        update={
+                            "status": "draft",
+                            "keywords": [*scene.keywords[:2], "alternative"],
+                        }
+                    )
+                )
+            else:
+                updated_agent_scenes.append(scene.model_copy(deep=True))
+
+        next_execution = current_execution.model_copy(update={"scenes": updated_execution_scenes})
+        next_agent = current_agent.model_copy(
+            update={
+                "scenes": updated_agent_scenes,
+                "replanHistory": [
+                    *current_agent.replanHistory,
+                    {
+                        "triggerType": "execution_feedback",
+                        "summary": "基于执行失败反馈重写检索查询",
+                        "failedSceneIds": sorted(failed_scene_ids),
+                        "failureReason": execution_feedback.failureReason,
+                    },
+                ],
+            }
+        )
+        return next_agent, next_execution, "execution feedback 驱动的重规划已完成"

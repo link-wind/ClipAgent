@@ -194,3 +194,30 @@ class AgentProgressService:
             progress=session_record.progress,
             payload={"retryableStep": retryable_step},
         )
+
+    def mark_job_requeued_after_replan(
+        self,
+        session_id: str,
+        failed_job_id: str,
+        replacement_job_id: str,
+    ):
+        # 标记会话已根据失败反馈重新规划并重新入队
+        session_record = self.session_repo.get(session_id)
+        session_record.status = "queued"
+        session_record.progress = 25
+        session_record.current_step = "任务已重新规划并重新入队"
+        session_record.active_job_id = replacement_job_id
+        session_record.error_message = None
+        session_record.error_retryable_step = None
+        self.record_event(
+            session_id=session_id,
+            job_id=replacement_job_id,
+            event_type="job_requeued_after_replan",
+            step="queued",
+            message="执行失败后已自动重规划并重新入队",
+            progress=25,
+            payload={
+                "failedJobId": failed_job_id,
+                "replacementJobId": replacement_job_id,
+            },
+        )

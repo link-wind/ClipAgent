@@ -1,16 +1,21 @@
 import asyncio
 
-from backend.db.repositories import AgentJobRepository, AgentPlanRepository
+from backend.db.repositories import AgentJobRepository, AgentPlanRepository, AgentSessionRepository
 from backend.models.agent import ClipInfo, EditPlan
 from backend.services.agent_progress_service import AgentProgressService
 from backend.services.asset_providers.metadata import pop_clip_metadata
 from backend.services.planner_projection import execution_plan_to_edit_plan
+from backend.services.planner_orchestrator import PlannerOrchestrator
 from backend.services.search_service import search_and_download_agent_clips
 from backend.tasks.celery_app import celery_app
 
 
 SessionLocal = None
 render_video = None
+
+
+def _should_attempt_execution_replan(retryable_step: str) -> bool:
+    return retryable_step == "searching"
 
 
 @celery_app.task(name="backend.tasks.agent_tasks.run_agent_job")
@@ -122,6 +127,50 @@ def run_agent_job(job_id: str) -> None:
             if job_record is not None and job_record.session_id:
                 progress_service = AgentProgressService(db)
                 retryable_step = "rendering" if job_record.progress >= 80 else "searching"
+                if _should_attempt_execution_replan(retryable_step):
+                    session_record = AgentSessionRepository(db).get(job_record.session_id)
+                    if session_record is not None:
+                        try:
+                            planner_orchestrator = PlannerOrchestrator()
+                            next_plan = planner_orchestrator.persist_execution_feedback_replan(
+                                db=db,
+                                session_record=session_record,
+                                failed_job_record=job_record,
+                                execution_feedback={
+                                    "failedSceneIds": [],
+                                    "failureReason": str(exc),
+                                    "retryable": True,
+                                    "feedbackSource": "worker_failure",
+                                },
+                            )
+                            progress_service.mark_job_failed(
+                                session_id=job_record.session_id,
+                                job_id=job_id,
+                                message=str(exc),
+                                retryable_step=retryable_step,
+                            )
+                            replacement_job = job_repo.create(
+                                session_id=job_record.session_id,
+                                plan_id=next_plan.id,
+                                job_type=job_record.job_type,
+                                status="queued",
+                                progress=0,
+                                current_step="任务已重新入队",
+                                max_attempts=job_record.max_attempts,
+                            )
+                            progress_service.mark_job_requeued_after_replan(
+                                session_id=job_record.session_id,
+                                failed_job_id=job_id,
+                                replacement_job_id=replacement_job.id,
+                            )
+                            db.commit()
+                            return
+                        except Exception:
+                            db.rollback()
+                            job_record = job_repo.get(job_id)
+                            if job_record is None or not job_record.session_id:
+                                raise
+                            progress_service = AgentProgressService(db)
                 progress_service.mark_job_failed(
                     session_id=job_record.session_id,
                     job_id=job_id,

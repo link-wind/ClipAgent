@@ -463,6 +463,31 @@ class AgentApiP0ContractTests(unittest.TestCase):
         self.assertEqual(failed_session.steps[6].status, "pending")
         self.assertEqual(failed_session.steps[7].status, "pending")
 
+    def test_failed_search_replan_keeps_session_in_queued_state_with_new_active_job(self):
+        from backend.tasks.agent_tasks import run_agent_job
+
+        session = self.session_service.create_session("做一个智能剪辑 agent 演示视频")
+        execution_service = AgentExecutionService(
+            session_factory=self.session_factory,
+            enqueue_job=lambda _job_id: None,
+        )
+        confirmed_session = execution_service.confirm_session(session.id)
+
+        async def failing_search_runner(_session_id, _scenes):
+            raise RuntimeError("素材检索失败")
+
+        with patch("backend.tasks.agent_tasks.SessionLocal", self.session_factory), patch(
+            "backend.tasks.agent_tasks.search_and_download_agent_clips",
+            failing_search_runner,
+        ):
+            run_agent_job(confirmed_session.activeJobId)
+
+        reloaded = self.read_service.read_session(session.id)
+        self.assertEqual(reloaded.status.value, "queued")
+        self.assertEqual(reloaded.currentStep, "任务已重新规划并重新入队")
+        self.assertIsNotNone(reloaded.activeJobId)
+        self.assertNotEqual(reloaded.activeJobId, confirmed_session.activeJobId)
+
     def test_agent_event_history_endpoint_returns_persisted_events(self):
         async def _run():
             session = self.session_service.create_session("做一个可恢复的智能剪辑任务")

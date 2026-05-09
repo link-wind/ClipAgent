@@ -81,3 +81,16 @@ class UserRevisionFeedback(BaseModel):
     message: str
     sceneKeywordUpdates: dict[int, list[str]] = Field(default_factory=dict)
     revisionSource: Literal["user_message", "api_message"] = "user_message"
+
+
+class SearchExecutionFeedback(BaseModel):
+    failedSceneIds: list[int] = Field(default_factory=list)
+    failureReason: str = ""
+    retryable: bool = True
+    feedbackSource: Literal["worker_failure", "api_retry"] = "worker_failure"
+
+
+class RenderReadinessFeedback(BaseModel):
+    missingSceneIds: list[int] = Field(default_factory=list)
+    summary: str = ""
+    retryable: bool = True

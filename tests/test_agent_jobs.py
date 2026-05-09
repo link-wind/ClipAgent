@@ -1197,16 +1197,59 @@ class AgentExecutionWorkerTests(unittest.TestCase):
             self.assertEqual(job_record.error_message, "素材检索失败")
 
             event_types = [row.event_type for row in event_repo.list_for_session(session_id)]
-            self.assertEqual(event_types, ["job_queued", "job_started", "job_failed"])
+            self.assertEqual(
+                event_types,
+                ["job_queued", "job_started", "job_failed", "job_requeued_after_replan"],
+            )
 
         session = AgentReadService(session_factory=self.session_factory).read_session(session_id)
-        self.assertEqual(session.status, AgentStatus.FAILED)
-        self.assertEqual(session.error.message, "素材检索失败")
-        self.assertEqual(session.currentStep, "处理失败：素材检索失败")
+        self.assertEqual(session.status, AgentStatus.QUEUED)
+        self.assertIsNone(session.error)
+        self.assertEqual(session.currentStep, "任务已重新规划并重新入队")
+
+    def test_run_agent_job_requeues_replanned_job_after_retryable_search_failure(self):
+        from backend.db.repositories import AgentEventRepository, AgentJobRepository, AgentPlanRepository
+        from backend.models.agent import AgentStatus
+        from backend.services.agent_read_service import AgentReadService
+        from backend.tasks.agent_tasks import run_agent_job
+
+        session_id, job_id = self._create_queued_job()
+
+        async def failing_search_runner(_session_id, _scenes):
+            raise RuntimeError("素材检索失败")
+
+        with patch("backend.tasks.agent_tasks.SessionLocal", self.session_factory), patch(
+            "backend.tasks.agent_tasks.search_and_download_agent_clips",
+            failing_search_runner,
+        ):
+            run_agent_job(job_id)
+
+        with self.session_factory() as db:
+            job_repo = AgentJobRepository(db)
+            plan_repo = AgentPlanRepository(db)
+            event_repo = AgentEventRepository(db)
+
+            jobs = job_repo.list_recent(limit=10)
+            latest_plan = plan_repo.list_for_session(session_id)[-1]
+            event_types = [row.event_type for row in event_repo.list_for_session(session_id)]
+
+            original_job = next(job for job in jobs if job.id == job_id)
+            replacement_job = jobs[0]
+
+            self.assertEqual(original_job.status, "failed")
+            self.assertEqual(latest_plan.trigger_type, "execution_feedback")
+            self.assertEqual(replacement_job.status, "queued")
+            self.assertEqual(replacement_job.plan_id, latest_plan.id)
+            self.assertIn("job_requeued_after_replan", event_types)
+
+        session = AgentReadService(session_factory=self.session_factory).read_session(session_id)
+        self.assertEqual(session.status, AgentStatus.QUEUED)
+        self.assertEqual(session.currentStep, "任务已重新规划并重新入队")
+        self.assertIsNotNone(session.activeJobId)
+        self.assertNotEqual(session.activeJobId, job_id)
 
     def test_run_agent_job_truncates_failed_current_step_but_keeps_full_error_message(self):
         from backend.db.repositories import AgentJobRepository
-        from backend.models.agent import AgentStatus
         from backend.services.agent_read_service import AgentReadService
         from backend.tasks.agent_tasks import run_agent_job
 
@@ -1230,10 +1273,9 @@ class AgentExecutionWorkerTests(unittest.TestCase):
             self.assertTrue(job_record.current_step.startswith("处理失败："))
 
         session = AgentReadService(session_factory=self.session_factory).read_session(session_id)
-        self.assertEqual(session.status, AgentStatus.FAILED)
-        self.assertEqual(session.error.message, long_error_message)
-        self.assertLessEqual(len(session.currentStep), 128)
-        self.assertTrue(session.currentStep.startswith("处理失败："))
+        self.assertEqual(session.status.value, "queued")
+        self.assertIsNone(session.error)
+        self.assertEqual(session.currentStep, "任务已重新规划并重新入队")
 
     def test_run_agent_job_persists_failure_state_when_render_service_import_fails(self):
         from backend.db.repositories import AgentEventRepository, AgentJobRepository

@@ -3,6 +3,7 @@ from datetime import datetime, timezone
 from backend.config import get_settings
 from backend.db.repositories import AgentObservationRepository, AgentPlanRepository
 from backend.services.planner_graph import (
+    run_execution_feedback_replan,
     run_grounding_replan,
     run_initial_planning,
     run_user_revision_replan,
@@ -152,5 +153,66 @@ class PlannerOrchestrator:
         session_record.planner_trace_json = {
             "lastPlanningState": state["status"],
             "triggerType": state["triggerType"],
+        }
+        return next_plan
+
+    def persist_execution_feedback_replan(
+        self,
+        db,
+        session_record,
+        failed_job_record,
+        execution_feedback: dict,
+    ):
+        plan_repo = AgentPlanRepository(db)
+        observation_repo = AgentObservationRepository(db)
+        settings = get_settings()
+
+        latest_plan = plan_repo.get_latest_for_session(session_record.id)
+        if latest_plan is None:
+            raise RuntimeError("Execution feedback replan requires an existing plan version")
+
+        planner_trace = session_record.planner_trace_json or {}
+        auto_replan_count = int(planner_trace.get("autoExecutionReplanCount", 0) or 0)
+        if auto_replan_count >= 1:
+            raise RuntimeError("Execution feedback replan limit reached")
+
+        state = run_execution_feedback_replan(
+            session_id=session_record.id,
+            current_agent_plan=latest_plan.plan_json,
+            current_execution_plan=latest_plan.execution_plan_json,
+            execution_feedback=execution_feedback,
+        )
+
+        observation_repo.create(
+            session_id=session_record.id,
+            plan_id=latest_plan.id,
+            observation_type="execution_feedback",
+            summary="执行失败反馈触发自动重规划",
+            payload_json=execution_feedback,
+            source_job_id=failed_job_record.id,
+        )
+
+        next_plan = plan_repo.create(
+            session_id=session_record.id,
+            version=latest_plan.version + 1,
+            parent_plan_id=latest_plan.id,
+            trigger_type="execution_feedback",
+            planner_mode=settings.planner_mode,
+            planner_model=settings.planner_model,
+            title=state["executionPlan"]["title"],
+            target_duration=int(state["executionPlan"]["targetDuration"]),
+            style=state["executionPlan"]["style"],
+            plan_json=state["agentPlan"],
+            execution_plan_json=state["executionPlan"],
+            change_summary=state["changeSummary"],
+            status="ready",
+        )
+
+        session_record.current_plan_id = next_plan.id
+        session_record.planner_trace_json = {
+            **planner_trace,
+            "lastPlanningState": state["status"],
+            "triggerType": state["triggerType"],
+            "autoExecutionReplanCount": auto_replan_count + 1,
         }
         return next_plan
