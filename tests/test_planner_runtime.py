@@ -132,6 +132,74 @@ class PlannerRuntimeTests(unittest.TestCase):
         )
         self.assertGreaterEqual(len(next_agent.replanHistory), 1)
 
+    def test_deterministic_runtime_prefers_structured_diagnostics_for_rewrite(self):
+        from backend.services.planner_models import SearchExecutionFeedback
+        from backend.services.planner_runtime_deterministic import (
+            DeterministicPlannerRuntime,
+        )
+
+        runtime = DeterministicPlannerRuntime()
+        current_agent, current_execution = runtime.build_plan_from_brief(
+            "给 Notion AI 做一个 30 秒产品亮点视频"
+        )
+
+        next_agent, next_execution, _change_summary = runtime.replan_after_execution_feedback(
+            current_agent=current_agent,
+            current_execution=current_execution,
+            execution_feedback=SearchExecutionFeedback(
+                failedSceneIds=[1],
+                failureReason="素材检索失败",
+                failureCategory="platform_blocked",
+                retryStrategyHint="stock_footage_fallback",
+                retryable=True,
+            ),
+        )
+
+        self.assertEqual(
+            next_execution.scenes[0].searchQuery,
+            "software dashboard laptop",
+        )
+        self.assertEqual(
+            next_execution.scenes[0].keywords,
+            ["software", "dashboard", "laptop"],
+        )
+        self.assertEqual(next_agent.replanHistory[-1]["failureCategory"], "platform_blocked")
+        self.assertEqual(next_agent.replanHistory[-1]["rewriteStrategy"], "stock_footage_fallback")
+
+    def test_deterministic_runtime_uses_structured_failure_category_before_text_reason(self):
+        from backend.services.planner_models import SearchExecutionFeedback
+        from backend.services.planner_runtime_deterministic import (
+            DeterministicPlannerRuntime,
+        )
+
+        runtime = DeterministicPlannerRuntime()
+        current_agent, current_execution = runtime.build_plan_from_brief(
+            "给 Notion AI 做一个 30 秒产品亮点视频"
+        )
+
+        next_agent, next_execution, _change_summary = runtime.replan_after_execution_feedback(
+            current_agent=current_agent,
+            current_execution=current_execution,
+            execution_feedback=SearchExecutionFeedback(
+                failedSceneIds=[1],
+                failureReason="素材检索失败",
+                failureCategory="no_inventory",
+                retryStrategyHint="inventory_broaden",
+                retryable=True,
+            ),
+        )
+
+        self.assertEqual(
+            next_execution.scenes[0].searchQuery,
+            "product interface generic",
+        )
+        self.assertEqual(
+            next_execution.scenes[0].keywords,
+            ["product", "interface", "generic"],
+        )
+        self.assertEqual(next_agent.replanHistory[-1]["failureCategory"], "no_inventory")
+        self.assertEqual(next_agent.replanHistory[-1]["rewriteStrategy"], "inventory_broaden")
+
     def test_deterministic_runtime_rewrites_platform_blocked_scene_to_stock_fallback_query(self):
         from backend.services.planner_models import SearchExecutionFeedback
         from backend.services.planner_runtime_deterministic import (

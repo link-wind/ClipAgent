@@ -33,11 +33,28 @@ def _rewrite_strategy_for_failure_category(category: str) -> str:
     return "candidate_alternative"
 
 
-def _rewrite_keywords_for_failed_scene(scene_keywords: list[str], category: str) -> list[str]:
+def _resolve_failure_category(execution_feedback: SearchExecutionFeedback) -> str:
+    structured_category = (execution_feedback.failureCategory or "").strip()
+    if structured_category:
+        return structured_category
+    return _classify_execution_failure(execution_feedback.failureReason)
+
+
+def _resolve_rewrite_strategy(
+    execution_feedback: SearchExecutionFeedback,
+    failure_category: str,
+) -> str:
+    structured_strategy = (execution_feedback.retryStrategyHint or "").strip()
+    if structured_strategy:
+        return structured_strategy
+    return _rewrite_strategy_for_failure_category(failure_category)
+
+
+def _rewrite_keywords_for_failed_scene(scene_keywords: list[str], rewrite_strategy: str) -> list[str]:
     core_keywords = [keyword for keyword in scene_keywords[:2] if keyword]
     keyword_set = set(core_keywords)
 
-    if category == "platform_blocked":
+    if rewrite_strategy == "stock_footage_fallback":
         if {"product", "interface"} <= keyword_set:
             return ["software", "dashboard", "laptop"]
         if {"feature", "workflow"} <= keyword_set:
@@ -45,7 +62,7 @@ def _rewrite_keywords_for_failed_scene(scene_keywords: list[str], category: str)
         lead = core_keywords[:1] or ["product"]
         return [*lead, "stock", "footage"]
 
-    if category == "no_inventory":
+    if rewrite_strategy == "inventory_broaden":
         return [*core_keywords, "generic"]
 
     return [*core_keywords, "alternative"]
@@ -241,15 +258,18 @@ class DeterministicPlannerRuntime:
         execution_feedback: SearchExecutionFeedback,
     ) -> tuple[AgentPlan, ExecutionPlan, str]:
         failed_scene_ids = set(execution_feedback.failedSceneIds)
-        failure_category = _classify_execution_failure(execution_feedback.failureReason)
-        rewrite_strategy = _rewrite_strategy_for_failure_category(failure_category)
+        failure_category = _resolve_failure_category(execution_feedback)
+        rewrite_strategy = _resolve_rewrite_strategy(
+            execution_feedback,
+            failure_category,
+        )
 
         updated_execution_scenes = []
         for scene in current_execution.scenes:
             if scene.id in failed_scene_ids:
                 next_keywords = _rewrite_keywords_for_failed_scene(
                     scene.keywords,
-                    failure_category,
+                    rewrite_strategy,
                 )
                 updated_execution_scenes.append(
                     scene.model_copy(
@@ -267,7 +287,7 @@ class DeterministicPlannerRuntime:
             if scene.id in failed_scene_ids:
                 next_keywords = _rewrite_keywords_for_failed_scene(
                     scene.keywords,
-                    failure_category,
+                    rewrite_strategy,
                 )
                 updated_agent_scenes.append(
                     scene.model_copy(
