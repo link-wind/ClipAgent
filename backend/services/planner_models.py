@@ -75,3 +75,9 @@ class GroundingFeedback(BaseModel):
 class CandidateConfirmationFeedback(BaseModel):
     selectedCandidateIds: list[str] = Field(default_factory=list)
     confirmationSource: Literal["user_select", "api_confirm"] = "api_confirm"
+
+
+class UserRevisionFeedback(BaseModel):
+    message: str
+    sceneKeywordUpdates: dict[int, list[str]] = Field(default_factory=dict)
+    revisionSource: Literal["user_message", "api_message"] = "user_message"

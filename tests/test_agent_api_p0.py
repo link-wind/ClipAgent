@@ -207,11 +207,12 @@ class AgentApiP0ContractTests(unittest.TestCase):
 
                 message_response = await client.post(
                     f"/api/agent/sessions/{session_id}/messages",
-                    json={"message": "再加一点品牌感"},
+                    json={"message": "再加一点品牌感，更商务一点"},
                 )
                 self.assertEqual(message_response.status_code, 200)
                 updated_session = message_response.json()
                 self.assertEqual(updated_session["status"], "plan_ready")
+                self.assertEqual(updated_session["plan"]["style"], "商务演示风格")
                 self.assertEqual(len(updated_session["messages"]), 5)
                 self.assertEqual(updated_session["messages"][-1]["role"], "assistant")
 

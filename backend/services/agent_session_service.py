@@ -77,7 +77,7 @@ class AgentSessionService:
                 if not self._is_editable(session_record):
                     raise RuntimeError(f"Session is not editable while {session_record.status}")
 
-                message_repo.create(session_id=session_id, role="user", content=content)
+                message_record = message_repo.create(session_id=session_id, role="user", content=content)
                 latest_plan = plan_repo.get_latest_for_session(session_id)
                 if self._should_start_grounding(session_record, latest_plan):
                     grounding_summary = grounding_service.build_grounding_summary(
@@ -95,6 +95,21 @@ class AgentSessionService:
                     db.commit()
                     return self.read_service.read_session(session_id)
 
+                if latest_plan is not None:
+                    planner_orchestrator = PlannerOrchestrator()
+                    next_plan = planner_orchestrator.persist_user_revision_replan(
+                        db=db,
+                        session_record=session_record,
+                        message_record=message_record,
+                        scene_keyword_updates=self._extract_scene_keyword_updates(content),
+                    )
+                    plan = execution_plan_to_edit_plan(next_plan.execution_plan_json)
+                    self._apply_plan_to_session(session_record, plan)
+                    session_repo.set_current_plan(session_id, next_plan.id)
+                    self._append_plan_ready_message(message_repo, session_id)
+                    db.commit()
+                    return self.read_service.read_session(session_id)
+
                 should_create_plan = (
                     latest_plan is None
                     or session_record.status == "plan_ready"
@@ -104,10 +119,9 @@ class AgentSessionService:
                     )
                 )
                 if should_create_plan:
-                    plan = self._build_next_plan(latest_plan, content)
-                    self._apply_plan_to_session(session_record, plan)
-                    next_version = 1 if latest_plan is None else latest_plan.version + 1
-                    plan_repo.create(
+                    plan = self._build_next_plan(content)
+                    next_version = 1
+                    created_plan = plan_repo.create(
                         session_id=session_id,
                         version=next_version,
                         title=plan.title,
@@ -116,6 +130,8 @@ class AgentSessionService:
                         plan_json=plan.model_dump(mode="json"),
                         execution_plan_json=plan.model_dump(mode="json"),
                     )
+                    session_repo.set_current_plan(session_id, created_plan.id)
+                    self._apply_plan_to_session(session_record, plan)
                     self._append_plan_ready_message(message_repo, session_id)
 
                 db.commit()
@@ -248,50 +264,14 @@ class AgentSessionService:
             and session_record.error_retryable_step == "planning"
         )
 
-    def _build_next_plan(self, latest_plan, content: str) -> EditPlan:
-        if latest_plan is None:
-            return self._fallback_plan(content)
-
-        current_plan = self._load_edit_plan(latest_plan)
-        updated_plan = self._apply_scene_keyword_updates(current_plan, content)
-        if updated_plan is not None:
-            return updated_plan
-
-        return current_plan.model_copy(deep=True)
+    def _build_next_plan(self, content: str) -> EditPlan:
+        return self._fallback_plan(content)
 
     def _load_edit_plan(self, plan_record) -> EditPlan:
         execution_plan_json = getattr(plan_record, "execution_plan_json", None) or {}
         if execution_plan_json.get("scenes"):
             return EditPlan.model_validate(execution_plan_json)
         return EditPlan.model_validate(plan_record.plan_json)
-
-    def _apply_scene_keyword_updates(self, plan: EditPlan, content: str) -> EditPlan | None:
-        updates = self._extract_scene_keyword_updates(content)
-        if not updates:
-            return None
-
-        updated_scenes: list[PlanScene] = []
-        changed = False
-        for scene in plan.scenes:
-            keywords = updates.get(scene.id)
-            if not keywords:
-                updated_scenes.append(scene.model_copy(deep=True))
-                continue
-
-            changed = True
-            updated_scenes.append(
-                scene.model_copy(
-                    update={
-                        "keywords": keywords,
-                        "searchQuery": " ".join(keywords),
-                    }
-                )
-            )
-
-        if not changed:
-            return None
-
-        return plan.model_copy(update={"scenes": updated_scenes})
 
     def _extract_scene_keyword_updates(self, content: str) -> dict[int, list[str]]:
         updates: dict[int, list[str]] = {}

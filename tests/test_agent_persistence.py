@@ -1818,6 +1818,30 @@ class SessionServiceBehaviorTests(unittest.TestCase):
         finally:
             db.close()
 
+    def test_add_user_message_after_plan_persists_revision_observation_and_updates_current_plan(self):
+        from backend.db.repositories import AgentObservationRepository, AgentPlanRepository, AgentSessionRepository
+        from backend.services.agent_session_service import AgentSessionService
+
+        service = AgentSessionService(session_factory=self.SessionLocal)
+        session = service.create_session("给 Notion AI 做一个 30 秒产品亮点视频")
+        updated = service.add_user_message(session.id, "整体再商务一点，目标受众改成销售团队")
+
+        self.assertEqual(updated.plan.style, "商务演示风格")
+
+        db = self.SessionLocal()
+        try:
+            plan_repo = AgentPlanRepository(db)
+            observation_repo = AgentObservationRepository(db)
+            session_repo = AgentSessionRepository(db)
+
+            plans = plan_repo.list_for_session(session.id)
+            self.assertEqual(plans[-1].trigger_type, "user_revision")
+            self.assertEqual(plans[-1].parent_plan_id, plans[-2].id)
+            self.assertEqual(observation_repo.list_for_session(session.id)[-1].observation_type, "user_revision")
+            self.assertEqual(session_repo.get(session.id).current_plan_id, plans[-1].id)
+        finally:
+            db.close()
+
     def test_add_user_message_rejects_non_editable_session_states(self):
         from backend.db.repositories import AgentSessionRepository
         from backend.services.agent_session_service import AgentSessionService

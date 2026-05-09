@@ -7,6 +7,7 @@ from backend.services.planner_models import (
     CandidateConfirmationFeedback,
     ExecutionPlan,
     GroundingFeedback,
+    UserRevisionFeedback,
 )
 from backend.services.planner_runtime import get_planner_runtime
 
@@ -20,6 +21,7 @@ class PlanningState(TypedDict, total=False):
     executionPlan: dict
     groundingFeedback: dict
     confirmationFeedback: dict
+    revisionFeedback: dict
     changeSummary: str
 
 
@@ -56,6 +58,25 @@ def _replan_after_grounding_node(state: PlanningState) -> PlanningState:
     }
 
 
+def _replan_after_user_revision_node(state: PlanningState) -> PlanningState:
+    runtime = get_planner_runtime()
+    current_agent = AgentPlan.model_validate(state["agentPlan"])
+    current_execution = ExecutionPlan.model_validate(state["executionPlan"])
+    next_agent, next_execution, change_summary = runtime.replan_after_user_revision(
+        current_agent=current_agent,
+        current_execution=current_execution,
+        revision_feedback=UserRevisionFeedback.model_validate(state["revisionFeedback"]),
+    )
+    return {
+        **state,
+        "status": "replanning_complete",
+        "triggerType": "user_revision",
+        "agentPlan": next_agent.model_dump(mode="json"),
+        "executionPlan": next_execution.model_dump(mode="json"),
+        "changeSummary": change_summary,
+    }
+
+
 def build_planning_graph():
     graph = StateGraph(PlanningState)
     graph.add_node("build_plan", _build_plan_node)
@@ -69,6 +90,14 @@ def build_grounding_replan_graph():
     graph.add_node("replan_after_grounding", _replan_after_grounding_node)
     graph.add_edge(START, "replan_after_grounding")
     graph.add_edge("replan_after_grounding", END)
+    return graph.compile()
+
+
+def build_user_revision_replan_graph():
+    graph = StateGraph(PlanningState)
+    graph.add_node("replan_after_user_revision", _replan_after_user_revision_node)
+    graph.add_edge(START, "replan_after_user_revision")
+    graph.add_edge("replan_after_user_revision", END)
     return graph.compile()
 
 
@@ -94,5 +123,24 @@ def run_grounding_replan(
             "executionPlan": current_execution_plan,
             "groundingFeedback": grounding_feedback,
             "confirmationFeedback": confirmation_feedback,
+        }
+    )
+
+
+def run_user_revision_replan(
+    session_id: str,
+    current_agent_plan: dict,
+    current_execution_plan: dict,
+    revision_feedback: dict,
+) -> PlanningState:
+    graph = build_user_revision_replan_graph()
+    return graph.invoke(
+        {
+            "sessionId": session_id,
+            "status": "replanning",
+            "triggerType": "user_revision",
+            "agentPlan": current_agent_plan,
+            "executionPlan": current_execution_plan,
+            "revisionFeedback": revision_feedback,
         }
     )

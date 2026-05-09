@@ -313,7 +313,7 @@ class AgentApiTests(unittest.TestCase):
         self.assertIsNotNone(latest_plan)
         self.assertEqual(latest_plan.version, 2)
         self.assertEqual(latest_plan.plan_json["scenes"][0]["keywords"], ["城市", "车流", "黄昏"])
-        self.assertEqual(latest_plan.plan_json["scenes"][1]["searchQuery"], "咖啡 特写 手工艺")
+        self.assertEqual(latest_plan.execution_plan_json["scenes"][1]["searchQuery"], "咖啡 特写 手工艺")
 
     def test_add_message_before_grounding_confirmation_preserves_grounding_context(self):
         from backend.db.repositories import AgentPlanRepository
@@ -338,35 +338,29 @@ class AgentApiTests(unittest.TestCase):
 
         self.assertIsNone(latest_plan)
 
-    def test_add_message_after_grounding_confirmation_preserves_grounded_plan_for_free_text_edits(self):
+    def test_add_message_after_grounding_confirmation_triggers_revision_replan(self):
         from backend.db.repositories import AgentPlanRepository
 
         created = self.session_service.create_session()
         awaiting = self.session_service.add_user_message(created.id, "给 Notion AI 做一个 30 秒产品亮点视频")
-        grounded = self.session_service.confirm_grounding_candidates(
+        self.session_service.confirm_grounding_candidates(
             created.id,
             [candidate.id for candidate in awaiting.grounding.candidates[:2]],
         )
-        original_scene_keywords = [scene.keywords[:] for scene in grounded.plan.scenes]
 
         updated = self.session_service.add_user_message(created.id, "更商务一点，品牌感再强一点")
 
         self.assertIsNotNone(updated.plan)
         self.assertEqual(updated.grounding.status, "confirmed")
-        self.assertEqual(
-            [scene.keywords for scene in updated.plan.scenes],
-            original_scene_keywords,
-        )
+        self.assertEqual(updated.plan.style, "商务演示风格")
 
         with self.session_factory() as db:
             latest_plan = AgentPlanRepository(db).get_latest_for_session(created.id)
 
         self.assertIsNotNone(latest_plan)
         self.assertEqual(latest_plan.version, 3)
-        self.assertEqual(
-            [scene["keywords"] for scene in latest_plan.plan_json["scenes"]],
-            original_scene_keywords,
-        )
+        self.assertEqual(latest_plan.trigger_type, "user_revision")
+        self.assertEqual(latest_plan.execution_plan_json["style"], "商务演示风格")
 
     def test_add_message_updates_failed_planning_session_plan_when_scene_keywords_are_provided(self):
         created = self.session_service.create_session("做一个科技短片")

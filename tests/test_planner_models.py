@@ -64,3 +64,15 @@ class PlannerModelTests(unittest.TestCase):
 
         self.assertEqual(feedback.selectedCandidateIds, ["fixture:1", "fixture:2"])
         self.assertEqual(confirmation.confirmationSource, "user_select")
+
+    def test_user_revision_feedback_defaults(self):
+        from backend.services.planner_models import UserRevisionFeedback
+
+        feedback = UserRevisionFeedback(
+            message="整体再商务一点，品牌感再强一点",
+            sceneKeywordUpdates={1: ["城市", "车流", "黄昏"]},
+        )
+
+        self.assertEqual(feedback.message, "整体再商务一点，品牌感再强一点")
+        self.assertEqual(feedback.sceneKeywordUpdates[1], ["城市", "车流", "黄昏"])
+        self.assertEqual(feedback.revisionSource, "user_message")
