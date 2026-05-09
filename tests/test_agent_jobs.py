@@ -1248,6 +1248,33 @@ class AgentExecutionWorkerTests(unittest.TestCase):
         self.assertIsNotNone(session.activeJobId)
         self.assertNotEqual(session.activeJobId, job_id)
 
+    def test_run_agent_job_dispatches_replanned_job_after_retryable_search_failure(self):
+        from backend.db.repositories import AgentJobRepository
+        from backend.tasks.agent_tasks import run_agent_job
+
+        session_id, job_id = self._create_queued_job()
+        dispatched_job_ids: list[str] = []
+
+        async def failing_search_runner(_session_id, _scenes):
+            raise RuntimeError("素材检索失败")
+
+        with patch("backend.tasks.agent_tasks.SessionLocal", self.session_factory), patch(
+            "backend.tasks.agent_tasks.search_and_download_agent_clips",
+            failing_search_runner,
+        ), patch(
+            "backend.tasks.agent_tasks.dispatch_agent_job",
+            side_effect=dispatched_job_ids.append,
+            create=True,
+        ):
+            run_agent_job(job_id)
+
+        with self.session_factory() as db:
+            jobs = AgentJobRepository(db).list_recent(limit=10)
+            replacement_job = next(job for job in jobs if job.id != job_id)
+
+        self.assertEqual(len(dispatched_job_ids), 1)
+        self.assertEqual(dispatched_job_ids[0], replacement_job.id)
+
     def test_run_agent_job_truncates_failed_current_step_but_keeps_full_error_message(self):
         from backend.db.repositories import AgentJobRepository
         from backend.services.agent_read_service import AgentReadService

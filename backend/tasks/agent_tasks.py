@@ -18,6 +18,13 @@ def _should_attempt_execution_replan(retryable_step: str) -> bool:
     return retryable_step == "searching"
 
 
+def dispatch_agent_job(job_id: str) -> None:
+    # 单元测试里的 fake celery task 可能只暴露普通函数，此时由测试自行 patch 此 helper。
+    delay = getattr(run_agent_job, "delay", None)
+    if callable(delay):
+        delay(job_id)
+
+
 @celery_app.task(name="backend.tasks.agent_tasks.run_agent_job")
 def run_agent_job(job_id: str) -> None:
     global SessionLocal
@@ -164,6 +171,7 @@ def run_agent_job(job_id: str) -> None:
                                 replacement_job_id=replacement_job.id,
                             )
                             db.commit()
+                            dispatch_agent_job(replacement_job.id)
                             return
                         except Exception:
                             db.rollback()
