@@ -213,8 +213,28 @@ class PlannerRuntimeTests(unittest.TestCase):
 
         self.assertEqual(agent_plan.goal, "生成产品介绍视频")
 
-    def test_selector_returns_deterministic_runtime_by_default(self):
+    def test_selector_returns_langchain_runtime_by_default(self):
         with patch.dict("os.environ", {}, clear=True):
+            from backend.config import get_settings
+            from backend.services.planner_runtime import get_planner_runtime
+            import backend.services.planner_runtime_langchain as planner_runtime_langchain
+
+            class LangChainPlannerRuntime:
+                def __init__(self, model_name):
+                    self.model_name = model_name
+
+            get_settings.cache_clear()
+            with patch.object(
+                planner_runtime_langchain,
+                "LangChainPlannerRuntime",
+                LangChainPlannerRuntime,
+            ):
+                runtime = get_planner_runtime()
+                self.assertEqual(runtime.__class__.__name__, "LangChainPlannerRuntime")
+            get_settings.cache_clear()
+
+    def test_selector_returns_deterministic_runtime_when_overridden(self):
+        with patch.dict("os.environ", {"CLIPFORGE_PLANNER_MODE": "deterministic"}, clear=True):
             from backend.config import get_settings
             from backend.services.planner_runtime import get_planner_runtime
 

@@ -38,6 +38,6 @@ def get_settings() -> Settings:
         celery_broker_url=os.getenv("CELERY_BROKER_URL", redis_url),
         celery_result_backend=os.getenv("CELERY_RESULT_BACKEND", redis_url),
         celery_queue=os.getenv("CLIPFORGE_CELERY_QUEUE", "clipforge-agent"),
-        planner_mode=os.getenv("CLIPFORGE_PLANNER_MODE", "deterministic"),
+        planner_mode=os.getenv("CLIPFORGE_PLANNER_MODE", "langchain"),
         planner_model=os.getenv("CLIPFORGE_PLANNER_MODEL", "gpt-4o-mini"),
     )

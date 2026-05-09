@@ -1,5 +1,6 @@
 import importlib
 import importlib.util
+import os
 import sys
 import types
 import unittest
@@ -109,15 +110,15 @@ class ConfigTests(unittest.TestCase):
     def test_planner_settings_support_default_and_override(self):
         env = {}
         settings = self._load_settings(env)
-        self.assertEqual(settings.planner_mode, "deterministic")
+        self.assertEqual(settings.planner_mode, "langchain")
         self.assertEqual(settings.planner_model, "gpt-4o-mini")
 
         env = {
-            "CLIPFORGE_PLANNER_MODE": "openai",
+            "CLIPFORGE_PLANNER_MODE": "deterministic",
             "CLIPFORGE_PLANNER_MODEL": "gpt-4.1",
         }
         settings = self._load_settings(env)
-        self.assertEqual(settings.planner_mode, "openai")
+        self.assertEqual(settings.planner_mode, "deterministic")
         self.assertEqual(settings.planner_model, "gpt-4.1")
 
 
@@ -1623,12 +1624,24 @@ class SessionServiceBehaviorTests(unittest.TestCase):
         from backend.db.base import Base
         import backend.db.models  # noqa: F401
 
+        self._planner_mode_before = os.environ.get("CLIPFORGE_PLANNER_MODE")
+        os.environ["CLIPFORGE_PLANNER_MODE"] = "deterministic"
+        from backend.config import get_settings
+
+        get_settings.cache_clear()
         self.engine = create_engine("sqlite+pysqlite:///:memory:", future=True)
         event.listen(self.engine, "connect", RepositoryBehaviorTests._enable_sqlite_foreign_keys)
         Base.metadata.create_all(self.engine)
         self.SessionLocal = sessionmaker(bind=self.engine, autoflush=False, autocommit=False, future=True)
 
     def tearDown(self):
+        from backend.config import get_settings
+
+        if self._planner_mode_before is None:
+            os.environ.pop("CLIPFORGE_PLANNER_MODE", None)
+        else:
+            os.environ["CLIPFORGE_PLANNER_MODE"] = self._planner_mode_before
+        get_settings.cache_clear()
         self.engine.dispose()
 
     def test_agent_session_schema_includes_events_and_active_job_id(self):

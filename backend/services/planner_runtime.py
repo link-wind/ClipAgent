@@ -7,6 +7,9 @@ def get_planner_runtime():
     if settings.planner_mode == "deterministic":
         return DeterministicPlannerRuntime()
 
-    from backend.services.planner_runtime_openai import OpenAIPlannerRuntime
+    if settings.planner_mode == "langchain":
+        from backend.services.planner_runtime_langchain import LangChainPlannerRuntime
 
-    return OpenAIPlannerRuntime(model_name=settings.planner_model)
+        return LangChainPlannerRuntime(model_name=settings.planner_model)
+
+    raise ValueError(f"Unknown planner mode: {settings.planner_mode}")
