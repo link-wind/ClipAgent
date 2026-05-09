@@ -1,6 +1,6 @@
-from typing import Literal
+from typing import Any, Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 
 class BriefUnderstanding(BaseModel):
@@ -86,8 +86,29 @@ class UserRevisionFeedback(BaseModel):
 class SearchExecutionFeedback(BaseModel):
     failedSceneIds: list[int] = Field(default_factory=list)
     failureReason: str = ""
+    failureCategory: str = ""
+    primaryProvider: str = ""
+    providerDiagnostics: list[dict[str, Any]] = Field(default_factory=list)
+    sceneDiagnostics: list[dict[str, Any]] = Field(default_factory=list)
+    retryStrategyHint: str = ""
     retryable: bool = True
     feedbackSource: Literal["worker_failure", "api_retry"] = "worker_failure"
+
+    @model_validator(mode="after")
+    def hydrate_failure_reason_from_structured_diagnostics(self) -> "SearchExecutionFeedback":
+        if self.failureCategory != "platform_blocked":
+            return self
+
+        provider_messages = [
+            str(diagnostic.get("message", "")).strip()
+            for diagnostic in self.providerDiagnostics
+            if isinstance(diagnostic, dict)
+        ]
+        provider_messages = [message for message in provider_messages if message]
+        if provider_messages:
+            self.failureReason = "\n".join(provider_messages)
+
+        return self
 
 
 class RenderReadinessFeedback(BaseModel):

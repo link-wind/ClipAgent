@@ -89,3 +89,31 @@ class PlannerModelTests(unittest.TestCase):
         self.assertEqual(feedback.failedSceneIds, [1, 2])
         self.assertEqual(feedback.failureReason, "素材检索失败")
         self.assertEqual(feedback.feedbackSource, "worker_failure")
+
+    def test_search_execution_feedback_supports_structured_diagnostics(self):
+        from backend.services.planner_models import SearchExecutionFeedback
+
+        feedback = SearchExecutionFeedback(
+            failedSceneIds=[1],
+            failureReason="YouTube 当前要求 PO Token，公开视频下载被平台策略限制。",
+            failureCategory="platform_blocked",
+            primaryProvider="youtube",
+            providerDiagnostics=[
+                {
+                    "provider": "youtube",
+                    "message": "YouTube 当前要求 PO Token，公开视频下载被平台策略限制。",
+                }
+            ],
+            sceneDiagnostics=[
+                {
+                    "sceneId": 1,
+                    "retryable": True,
+                    "summary": "YouTube blocked the download path",
+                }
+            ],
+            retryStrategyHint="stock_footage_fallback",
+        )
+
+        self.assertEqual(feedback.failureCategory, "platform_blocked")
+        self.assertEqual(feedback.primaryProvider, "youtube")
+        self.assertEqual(feedback.retryStrategyHint, "stock_footage_fallback")
