@@ -1133,6 +1133,75 @@ class AgentExecutionContractTests(unittest.TestCase):
         self.assertNotIn("brand mood", message)
         self.assertNotIn("pexels: 没有返回候选素材", message)
 
+    def test_all_scene_failures_expose_structured_diagnostics(self):
+        from backend.models.agent import PlanScene
+        from backend.services import search_service
+
+        scenes = [
+            PlanScene(
+                id=1,
+                description="产品使用场景",
+                keywords=["product", "workflow"],
+                duration=6,
+                searchQuery="product workflow",
+            ),
+            PlanScene(
+                id=2,
+                description="产品细节特写",
+                keywords=["product", "detail"],
+                duration=6,
+                searchQuery="product detail",
+            ),
+        ]
+
+        with patch("backend.services.search_service.get_asset_provider_order", return_value=["pexels"]), patch(
+            "backend.services.search_service.get_pexels_config",
+        ) as mock_pexels_config, patch(
+            "backend.services.search_service.search_pexels_candidates",
+        ) as mock_pexels_search:
+            mock_pexels_config.return_value.enabled = True
+            mock_pexels_config.return_value.api_key = "pexels-key"
+            mock_pexels_search.side_effect = [
+                RuntimeError("Pexels 搜索失败：HTTP 401 Unauthorized for query product workflow"),
+                RuntimeError("Pexels 搜索失败：HTTP 401 Unauthorized for query product detail"),
+            ]
+
+            with self.assertRaises(RuntimeError) as ctx:
+                asyncio.run(search_service.search_and_download_agent_clips("session", scenes))
+
+        self.assertEqual(getattr(ctx.exception, "failed_scene_ids", None), [1, 2])
+        self.assertEqual(getattr(ctx.exception, "failure_category", None), "no_inventory")
+        self.assertEqual(getattr(ctx.exception, "primary_provider", None), "pexels")
+        self.assertEqual(
+            getattr(ctx.exception, "provider_diagnostics", None),
+            [
+                {
+                    "provider": "pexels",
+                    "message": "Pexels 搜索失败：HTTP 401 Unauthorized for query product workflow",
+                },
+                {
+                    "provider": "pexels",
+                    "message": "Pexels 搜索失败：HTTP 401 Unauthorized for query product detail",
+                },
+            ],
+        )
+        self.assertEqual(
+            getattr(ctx.exception, "scene_diagnostics", None),
+            [
+                {
+                    "sceneId": 1,
+                    "retryable": True,
+                    "summary": "Pexels 搜索失败：HTTP 401 Unauthorized for query product workflow",
+                },
+                {
+                    "sceneId": 2,
+                    "retryable": True,
+                    "summary": "Pexels 搜索失败：HTTP 401 Unauthorized for query product detail",
+                },
+            ],
+        )
+        self.assertEqual(getattr(ctx.exception, "retry_strategy_hint", None), "inventory_broaden")
+
     def test_asset_candidate_exposes_legacy_video_info(self):
         from backend.services.asset_providers.types import AssetCandidate
 

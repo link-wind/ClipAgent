@@ -20,6 +20,31 @@ from backend.services.asset_providers.youtube import search_youtube_candidates
 DOWNLOADS_DIR = "backend/downloads"
 
 
+class AgentSceneSearchFailure(RuntimeError):
+    def __init__(
+        self,
+        message: str,
+        *,
+        failed_scene_ids: list[int],
+        failure_category: str | None = None,
+        primary_provider: str | None = None,
+        provider_diagnostics: list[dict] | None = None,
+        scene_diagnostics: list[dict] | None = None,
+        retry_strategy_hint: str | None = None,
+    ) -> None:
+        super().__init__(message)
+        unique_scene_ids: list[int] = []
+        for scene_id in failed_scene_ids:
+            if scene_id not in unique_scene_ids:
+                unique_scene_ids.append(scene_id)
+        self.failed_scene_ids = unique_scene_ids
+        self.failure_category = failure_category
+        self.primary_provider = primary_provider
+        self.provider_diagnostics = provider_diagnostics or []
+        self.scene_diagnostics = scene_diagnostics or []
+        self.retry_strategy_hint = retry_strategy_hint
+
+
 def normalize_duration(value: object) -> float:
     """统一时长值，避免空值和负数。"""
     try:
@@ -228,12 +253,18 @@ async def search_and_download_agent_clips(
     """搜索并下载 Agent 场景素材，返回本地路径和公开 URL。"""
     clips: List[AgentClipInfo] = []
     provider_errors: list[tuple[str, str]] = []
+    failed_scene_ids: list[int] = []
+    scene_diagnostics: list[dict] = []
+    provider_diagnostics: list[dict] = []
+    provider_failure_counts: dict[str, int] = {}
 
     for scene in scenes:
         if progress_callback:
             progress_callback(AgentClipInfo, scene.id)
 
         keywords = build_scene_keywords(scene)
+        scene_downloaded = False
+        scene_provider_diagnostics: list[dict] = []
         for provider_name in get_asset_provider_order():
             candidates: list[AssetCandidate] | None = None
             if provider_name == "fixture":
@@ -243,7 +274,15 @@ async def search_and_download_agent_clips(
                 try:
                     candidates = search_fixture_candidates(keywords, max_results=3)
                 except Exception as exc:
-                    provider_errors.append(("fixture", str(exc)))
+                    message = str(exc)
+                    provider_errors.append(("fixture", message))
+                    scene_provider_diagnostics.append(
+                        {
+                            "provider": "fixture",
+                            "message": message,
+                        }
+                    )
+                    continue
 
             if provider_name == "youtube":
                 if not get_youtube_config().enabled:
@@ -251,7 +290,15 @@ async def search_and_download_agent_clips(
                 try:
                     candidates = search_youtube_candidates(keywords, max_results=3)
                 except Exception as exc:
-                    provider_errors.append(("youtube", summarize_download_error(exc)))
+                    message = summarize_download_error(exc)
+                    provider_errors.append(("youtube", message))
+                    scene_provider_diagnostics.append(
+                        {
+                            "provider": "youtube",
+                            "message": message,
+                        }
+                    )
+                    continue
 
             if provider_name == "pexels":
                 pexels_config = get_pexels_config()
@@ -259,12 +306,34 @@ async def search_and_download_agent_clips(
                     try:
                         candidates = search_pexels_candidates(keywords, max_results=3)
                     except Exception as exc:
-                        provider_errors.append(("pexels", str(exc)))
+                        message = str(exc)
+                        provider_errors.append(("pexels", message))
+                        scene_provider_diagnostics.append(
+                            {
+                                "provider": "pexels",
+                                "message": message,
+                            }
+                        )
+                        continue
                 elif pexels_config.enabled:
-                    provider_errors.append(("pexels", "缺少 PEXELS_API_KEY，已跳过 Pexels 素材源"))
+                    message = "缺少 PEXELS_API_KEY，已跳过 Pexels 素材源"
+                    provider_errors.append(("pexels", message))
+                    scene_provider_diagnostics.append(
+                        {
+                            "provider": "pexels",
+                            "message": message,
+                        }
+                    )
                     continue
             if not candidates:
-                provider_errors.append((provider_name, "没有返回候选素材"))
+                message = "没有返回候选素材"
+                provider_errors.append((provider_name, message))
+                scene_provider_diagnostics.append(
+                    {
+                        "provider": provider_name,
+                        "message": message,
+                    }
+                )
                 continue
 
             last_error: Optional[str] = None
@@ -294,16 +363,57 @@ async def search_and_download_agent_clips(
                         trimDuration=trim_duration,
                     )
                 )
+                scene_downloaded = True
                 break
             else:
                 print(f"Download skipped for scene {scene.id}: {last_error or '没有可用候选素材'}")
-                provider_errors.append((provider_name, last_error or "没有可下载候选素材"))
+                message = last_error or "没有可下载候选素材"
+                provider_errors.append((provider_name, message))
+                scene_provider_diagnostics.append(
+                    {
+                        "provider": provider_name,
+                        "message": message,
+                    }
+                )
                 continue
-            break
-        else:
-            continue
+            if scene_downloaded:
+                break
+
+        if not scene_downloaded:
+            failed_scene_ids.append(scene.id)
+            scene_summary = "没有下载到可用素材"
+            if scene_provider_diagnostics:
+                scene_summary = scene_provider_diagnostics[-1]["message"]
+            scene_diagnostics.append(
+                {
+                    "sceneId": scene.id,
+                    "retryable": True,
+                    "summary": scene_summary,
+                }
+            )
+            for diagnostic in scene_provider_diagnostics:
+                provider_name = str(diagnostic.get("provider") or "")
+                if not provider_name:
+                    continue
+                provider_failure_counts[provider_name] = provider_failure_counts.get(provider_name, 0) + 1
+                if diagnostic not in provider_diagnostics:
+                    provider_diagnostics.append(diagnostic)
 
     if not clips:
-        raise RuntimeError(provider_failure_message(provider_errors))
+        primary_provider = None
+        if provider_failure_counts:
+            primary_provider = max(
+                provider_failure_counts.items(),
+                key=lambda item: (item[1], item[0] == "youtube"),
+            )[0]
+        raise AgentSceneSearchFailure(
+            provider_failure_message(provider_errors),
+            failed_scene_ids=failed_scene_ids,
+            failure_category="no_inventory",
+            primary_provider=primary_provider,
+            provider_diagnostics=provider_diagnostics,
+            scene_diagnostics=scene_diagnostics,
+            retry_strategy_hint="inventory_broaden",
+        )
 
     return clips

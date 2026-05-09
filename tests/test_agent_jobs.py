@@ -1275,6 +1275,86 @@ class AgentExecutionWorkerTests(unittest.TestCase):
         self.assertEqual(len(dispatched_job_ids), 1)
         self.assertEqual(dispatched_job_ids[0], replacement_job.id)
 
+    def test_run_agent_job_persists_structured_diagnostics_in_execution_feedback_replan(self):
+        from backend.db.repositories import AgentObservationRepository
+        from backend.services.planner_orchestrator import PlannerOrchestrator
+        from backend.tasks.agent_tasks import run_agent_job
+
+        session_id, job_id = self._create_queued_job()
+
+        class FakeSceneSearchFailure(RuntimeError):
+            def __init__(self, message: str, failed_scene_ids: list[int]):
+                super().__init__(message)
+                self.failed_scene_ids = failed_scene_ids
+                self.failure_category = "no_inventory"
+                self.primary_provider = "youtube"
+                self.provider_diagnostics = [
+                    {"provider": "youtube", "message": "没有返回候选素材"}
+                ]
+                self.scene_diagnostics = [
+                    {
+                        "sceneId": 2,
+                        "retryable": True,
+                        "summary": "youtube returned no candidates",
+                    }
+                ]
+                self.retry_strategy_hint = "inventory_broaden"
+
+        async def failing_search_runner(_session_id, _scenes):
+            raise FakeSceneSearchFailure("scene 2 素材检索失败", [2])
+
+        captured_execution_feedback: dict[str, object] = {}
+        original_persist = PlannerOrchestrator.persist_execution_feedback_replan
+
+        def capture_execution_feedback(self, db, session_record, failed_job_record, execution_feedback):
+            captured_execution_feedback.clear()
+            captured_execution_feedback.update(execution_feedback)
+            return original_persist(
+                self,
+                db=db,
+                session_record=session_record,
+                failed_job_record=failed_job_record,
+                execution_feedback=execution_feedback,
+            )
+
+        with patch("backend.tasks.agent_tasks.SessionLocal", self.session_factory), patch(
+            "backend.tasks.agent_tasks.search_and_download_agent_clips",
+            failing_search_runner,
+        ), patch.object(
+            PlannerOrchestrator,
+            "persist_execution_feedback_replan",
+            autospec=True,
+            side_effect=capture_execution_feedback,
+        ):
+            run_agent_job(job_id)
+
+        with self.session_factory() as db:
+            observations = AgentObservationRepository(db).list_for_session(session_id)
+            execution_feedback = next(row for row in observations if row.observation_type == "execution_feedback")
+
+        expected_feedback = {
+            "failedSceneIds": [2],
+            "failureReason": "scene 2 素材检索失败",
+            "failureCategory": "no_inventory",
+            "primaryProvider": "youtube",
+            "providerDiagnostics": [
+                {"provider": "youtube", "message": "没有返回候选素材"}
+            ],
+            "sceneDiagnostics": [
+                {
+                    "sceneId": 2,
+                    "retryable": True,
+                    "summary": "youtube returned no candidates",
+                }
+            ],
+            "retryStrategyHint": "inventory_broaden",
+            "retryable": True,
+            "feedbackSource": "worker_failure",
+        }
+
+        self.assertEqual(captured_execution_feedback, expected_feedback)
+        self.assertEqual(execution_feedback.payload_json, expected_feedback)
+
     def test_run_agent_job_truncates_failed_current_step_but_keeps_full_error_message(self):
         from backend.db.repositories import AgentJobRepository
         from backend.services.agent_read_service import AgentReadService

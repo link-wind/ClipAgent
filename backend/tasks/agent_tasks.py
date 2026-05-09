@@ -25,6 +25,49 @@ def dispatch_agent_job(job_id: str) -> None:
         delay(job_id)
 
 
+def _extract_failed_scene_ids(exc: Exception) -> list[int]:
+    failed_scene_ids = getattr(exc, "failed_scene_ids", None)
+    if not isinstance(failed_scene_ids, list):
+        return []
+
+    normalized_scene_ids: list[int] = []
+    for scene_id in failed_scene_ids:
+        if isinstance(scene_id, int) and scene_id not in normalized_scene_ids:
+            normalized_scene_ids.append(scene_id)
+    return normalized_scene_ids
+
+
+def _build_execution_feedback_payload(exc: Exception) -> dict[str, object]:
+    payload: dict[str, object] = {
+        "failedSceneIds": _extract_failed_scene_ids(exc),
+        "failureReason": str(exc),
+        "retryable": True,
+        "feedbackSource": "worker_failure",
+    }
+
+    failure_category = getattr(exc, "failure_category", None)
+    if isinstance(failure_category, str) and failure_category:
+        payload["failureCategory"] = failure_category
+
+    primary_provider = getattr(exc, "primary_provider", None)
+    if isinstance(primary_provider, str) and primary_provider:
+        payload["primaryProvider"] = primary_provider
+
+    provider_diagnostics = getattr(exc, "provider_diagnostics", None)
+    if isinstance(provider_diagnostics, list) and provider_diagnostics:
+        payload["providerDiagnostics"] = list(provider_diagnostics)
+
+    scene_diagnostics = getattr(exc, "scene_diagnostics", None)
+    if isinstance(scene_diagnostics, list) and scene_diagnostics:
+        payload["sceneDiagnostics"] = list(scene_diagnostics)
+
+    retry_strategy_hint = getattr(exc, "retry_strategy_hint", None)
+    if isinstance(retry_strategy_hint, str) and retry_strategy_hint:
+        payload["retryStrategyHint"] = retry_strategy_hint
+
+    return payload
+
+
 @celery_app.task(name="backend.tasks.agent_tasks.run_agent_job")
 def run_agent_job(job_id: str) -> None:
     global SessionLocal
@@ -143,12 +186,7 @@ def run_agent_job(job_id: str) -> None:
                                 db=db,
                                 session_record=session_record,
                                 failed_job_record=job_record,
-                                execution_feedback={
-                                    "failedSceneIds": [],
-                                    "failureReason": str(exc),
-                                    "retryable": True,
-                                    "feedbackSource": "worker_failure",
-                                },
+                                execution_feedback=_build_execution_feedback_payload(exc),
                             )
                             progress_service.mark_job_failed(
                                 session_id=job_record.session_id,
