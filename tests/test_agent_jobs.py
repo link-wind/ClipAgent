@@ -362,15 +362,11 @@ class ArtifactTrimMetadataTests(unittest.TestCase):
         from backend.services.agent_execution_service import AgentExecutionService
 
         session = self.session_service.create_session("做一个智能剪辑 agent 演示视频")
-        grounded_session = self.session_service.confirm_grounding_candidates(
-            session.id,
-            [candidate.id for candidate in session.grounding.candidates[:2]],
-        )
         execution_service = AgentExecutionService(
             session_factory=self.session_factory,
             enqueue_job=lambda _job_id: None,
         )
-        confirmed = execution_service.confirm_session(grounded_session.id)
+        confirmed = execution_service.confirm_session(session.id)
         return session.id, confirmed.activeJobId
 
     def test_run_agent_job_persists_trim_metadata_in_artifacts(self):
@@ -884,6 +880,7 @@ class RenderServiceImportIsolationTests(unittest.TestCase):
     def test_load_render_service_restores_parent_package_reference(self):
         import backend.services as services_pkg
 
+        preexisting_render_service = sys.modules.get("backend.services.render_service")
         original_render_service = types.ModuleType("backend.services.render_service")
         original_render_service.marker = "original"
         original_parent_value = getattr(services_pkg, "render_service", None)
@@ -901,7 +898,10 @@ class RenderServiceImportIsolationTests(unittest.TestCase):
                 services_pkg.render_service = original_parent_value
             elif hasattr(services_pkg, "render_service"):
                 delattr(services_pkg, "render_service")
-            sys.modules["backend.services.render_service"] = original_render_service
+            if preexisting_render_service is not None:
+                sys.modules["backend.services.render_service"] = preexisting_render_service
+            else:
+                sys.modules.pop("backend.services.render_service", None)
 
 
 class ConfirmFlowContractTests(unittest.TestCase):

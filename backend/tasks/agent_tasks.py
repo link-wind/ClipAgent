@@ -200,6 +200,12 @@ def run_agent_job(job_id: str) -> None:
                                 message=str(exc),
                                 retryable_step=retryable_step,
                             )
+                            failure_payload = _build_worker_failure_payload(exc, retryable_step)
+                            latest_events = progress_service.event_repo.list_for_job(job_id)
+                            if latest_events:
+                                latest_event = latest_events[-1]
+                                if latest_event.event_type == "job_failed":
+                                    latest_event.payload_json = failure_payload
                             replacement_job = job_repo.create(
                                 session_id=job_record.session_id,
                                 plan_id=next_plan.id,
