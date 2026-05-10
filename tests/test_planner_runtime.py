@@ -320,6 +320,88 @@ class PlannerRuntimeTests(unittest.TestCase):
         self.assertEqual(next_execution.scenes[0].searchQuery, current_execution.scenes[0].searchQuery)
         deterministic_delegate.replan_after_user_revision.assert_not_called()
 
+    def test_langchain_runtime_preserves_open_issues_when_revision_result_omits_open_issues(self):
+        from backend.services.planner_models import RevisionPlanningResult, UserRevisionFeedback
+        from backend.services.planner_runtime_deterministic import DeterministicPlannerRuntime
+        from backend.services.planner_runtime_langchain import LangChainPlannerRuntime
+
+        deterministic_delegate = Mock()
+        current_agent, current_execution = DeterministicPlannerRuntime().build_plan_from_brief(
+            "给 Notion AI 做一个 30 秒产品亮点视频"
+        )
+        current_agent = current_agent.model_copy(
+            update={"openIssues": [{"id": "issue-1", "summary": "still open"}]},
+            deep=True,
+        )
+        fake_llm = _FakeChatModel(
+            result=RevisionPlanningResult(
+                changeSummary="保持当前待确认问题不变",
+            )
+        )
+
+        runtime = LangChainPlannerRuntime(
+            model_name="gpt-4o-mini",
+            llm=fake_llm,
+            deterministic_delegate=deterministic_delegate,
+        )
+        next_agent, _next_execution, change_summary = runtime.replan_after_user_revision(
+            current_agent=current_agent,
+            current_execution=current_execution,
+            revision_feedback=UserRevisionFeedback(
+                message="先不动这些待确认问题",
+                sceneKeywordUpdates={},
+            ),
+        )
+
+        self.assertEqual(change_summary, "保持当前待确认问题不变")
+        self.assertEqual(next_agent.openIssues, [{"id": "issue-1", "summary": "still open"}])
+        deterministic_delegate.replan_after_user_revision.assert_not_called()
+
+    def test_langchain_runtime_falls_back_when_scene_keyword_override_is_explicitly_empty(self):
+        from backend.services.planner_models import RevisionPlanningResult, UserRevisionFeedback
+        from backend.services.planner_runtime_deterministic import DeterministicPlannerRuntime
+        from backend.services.planner_runtime_langchain import LangChainPlannerRuntime
+
+        deterministic_delegate = Mock()
+        deterministic_delegate.replan_after_user_revision.return_value = (
+            "agent-fallback",
+            "execution-fallback",
+            "fallback summary",
+        )
+        current_agent, current_execution = DeterministicPlannerRuntime().build_plan_from_brief(
+            "给 Notion AI 做一个 30 秒产品亮点视频"
+        )
+        fake_llm = _FakeChatModel(
+            result=RevisionPlanningResult(
+                changeSummary="已根据最新修改意见完成计划重写",
+                scenePatches=[
+                    {
+                        "id": 1,
+                        "description": "城市与车流开场，建立商务节奏",
+                        "keywords": ["office", "lobby", "team"],
+                        "searchQuery": "office lobby team",
+                    }
+                ],
+            )
+        )
+
+        runtime = LangChainPlannerRuntime(
+            model_name="gpt-4o-mini",
+            llm=fake_llm,
+            deterministic_delegate=deterministic_delegate,
+        )
+        result = runtime.replan_after_user_revision(
+            current_agent=current_agent,
+            current_execution=current_execution,
+            revision_feedback=UserRevisionFeedback(
+                message="场景1关键词清空",
+                sceneKeywordUpdates={1: []},
+            ),
+        )
+
+        self.assertEqual(result, ("agent-fallback", "execution-fallback", "fallback summary"))
+        deterministic_delegate.replan_after_user_revision.assert_called_once()
+
     def test_langchain_runtime_falls_back_to_deterministic_revision_when_patch_targets_unknown_scene(self):
         from backend.services.planner_models import RevisionPlanningResult, UserRevisionFeedback
         from backend.services.planner_runtime_deterministic import DeterministicPlannerRuntime

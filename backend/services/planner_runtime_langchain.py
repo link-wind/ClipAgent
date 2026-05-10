@@ -226,7 +226,8 @@ class LangChainPlannerRuntime:
         updated_execution_scenes = []
         for agent_scene, execution_scene in zip(current_agent.scenes, current_execution.scenes):
             patch = patch_lookup.get(agent_scene.id)
-            override_keywords = revision_feedback.sceneKeywordUpdates.get(agent_scene.id)
+            has_override_keywords = agent_scene.id in revision_feedback.sceneKeywordUpdates
+            override_keywords = revision_feedback.sceneKeywordUpdates.get(agent_scene.id, [])
 
             next_description = agent_scene.description
             next_execution_description = execution_scene.description
@@ -241,12 +242,12 @@ class LangChainPlannerRuntime:
                 next_execution_keywords = patch.keywords
                 next_search_query = patch.searchQuery
 
-            if override_keywords:
+            if has_override_keywords:
                 next_keywords = list(override_keywords)
                 next_execution_keywords = list(override_keywords)
                 next_search_query = " ".join(override_keywords)
 
-            if patch is not None or override_keywords:
+            if patch is not None or has_override_keywords:
                 if not next_keywords:
                     raise _RevisionFallbackError(f"Revision patch keywords are required for scene {agent_scene.id}")
                 if not next_search_query:
