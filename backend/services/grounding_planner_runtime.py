@@ -17,7 +17,7 @@ Use pexels for feature_workflow or stock_fallback queries.
 class GroundingPlannerRuntime:
     def __init__(self, model_name: str, *, llm=None):
         self.model_name = model_name
-        self.llm = llm or ChatOpenAI(model=model_name, temperature=0)
+        self.llm = llm if llm is not None else ChatOpenAI(model=model_name, temperature=0)
 
     def _planner_runnable(self):
         return self.llm.with_structured_output(RetrievalQueryPack)
@@ -54,8 +54,8 @@ class GroundingPlannerRuntime:
         )
 
     def _validate_result(self, result: RetrievalQueryPack) -> None:
-        if not result.queries:
-            raise ValueError("retrieval query pack must include at least one query")
+        if not 2 <= len(result.queries) <= 5:
+            raise ValueError("retrieval query pack must include 2 to 5 queries")
         for query in result.queries:
             if not query.text:
                 raise ValueError("retrieval query text is required")

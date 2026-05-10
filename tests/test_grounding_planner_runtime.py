@@ -5,8 +5,10 @@ class _FakeStructuredPlanner:
     def __init__(self, result=None, error: Exception | None = None):
         self.result = result
         self.error = error
+        self.messages = None
 
-    def invoke(self, _messages):
+    def invoke(self, messages):
+        self.messages = messages
         if self.error is not None:
             raise self.error
         return self.result
@@ -17,10 +19,12 @@ class _FakeChatModel:
         self.result = result
         self.error = error
         self.schema = None
+        self.planner = None
 
     def with_structured_output(self, schema):
         self.schema = schema
-        return _FakeStructuredPlanner(result=self.result, error=self.error)
+        self.planner = _FakeStructuredPlanner(result=self.result, error=self.error)
+        return self.planner
 
 
 class GroundingPlannerRuntimeContractTests(unittest.TestCase):
@@ -104,6 +108,12 @@ class GroundingPlannerRuntimeTests(unittest.TestCase):
                         "intent": "product_demo",
                         "providers": ["youtube"],
                         "priority": 10,
+                    },
+                    {
+                        "text": "notion workspace overview",
+                        "intent": "feature_workflow",
+                        "providers": ["pexels"],
+                        "priority": 20,
                     }
                 ],
             )
@@ -124,3 +134,65 @@ class GroundingPlannerRuntimeTests(unittest.TestCase):
 
         with self.assertRaisesRegex(RuntimeError, "Grounding planning failed"):
             runtime.build_query_pack("给 Notion AI 做一个产品介绍视频")
+
+    def test_runtime_rejects_query_pack_with_too_few_queries(self):
+        from backend.services.grounding_planner_models import RetrievalQueryPack
+        from backend.services.grounding_planner_runtime import GroundingPlannerRuntime
+
+        runtime = GroundingPlannerRuntime(
+            model_name="gpt-4o-mini",
+            llm=_FakeChatModel(
+                result=RetrievalQueryPack(
+                    productName="Notion AI",
+                    queries=[
+                        {
+                            "text": "notion ai demo",
+                            "intent": "product_demo",
+                            "providers": ["youtube"],
+                            "priority": 10,
+                        }
+                    ],
+                )
+            ),
+        )
+
+        with self.assertRaisesRegex(ValueError, "2 to 5 queries"):
+            runtime.build_query_pack("给 Notion AI 做一个产品介绍视频")
+
+    def test_runtime_uses_structured_schema_and_blank_brief_fallback(self):
+        from backend.services.grounding_planner_models import RetrievalQueryPack
+        from backend.services.grounding_planner_runtime import (
+            GROUNDING_QUERY_PLANNER_SYSTEM_PROMPT,
+            GroundingPlannerRuntime,
+        )
+
+        fake_llm = _FakeChatModel(
+            result=RetrievalQueryPack(
+                productName="Notion AI",
+                queries=[
+                    {
+                        "text": "notion ai demo",
+                        "intent": "product_demo",
+                        "providers": ["youtube"],
+                        "priority": 10,
+                    },
+                    {
+                        "text": "software dashboard laptop",
+                        "intent": "stock_fallback",
+                        "providers": ["pexels"],
+                        "priority": 20,
+                    },
+                ],
+            )
+        )
+
+        runtime = GroundingPlannerRuntime(model_name="gpt-4o-mini", llm=fake_llm)
+        runtime.build_query_pack("   ")
+
+        self.assertIs(fake_llm.schema, RetrievalQueryPack)
+        self.assertEqual(len(fake_llm.planner.messages), 2)
+        self.assertEqual(
+            fake_llm.planner.messages[0].content,
+            GROUNDING_QUERY_PLANNER_SYSTEM_PROMPT,
+        )
+        self.assertEqual(fake_llm.planner.messages[1].content, "product intro video")
