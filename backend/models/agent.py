@@ -125,7 +125,9 @@ class AgentGroundingSummary(BaseModel):
     audience: str = ""
     styleHint: str = ""
     featureHints: List[str] = Field(default_factory=list)
+    assumptions: List[str] = Field(default_factory=list)
     searchQueries: List[str] = Field(default_factory=list)
+    queryPlan: List[Dict[str, Any]] = Field(default_factory=list)
     candidates: List[AgentGroundingCandidate] = Field(default_factory=list)
     selectedCandidateIds: List[str] = Field(default_factory=list)
 

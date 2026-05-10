@@ -204,6 +204,14 @@ class AgentPersistenceModelTests(unittest.TestCase):
         self.assertIsNotNone(models.AgentEventRecord)
         self.assertIsNotNone(models.AgentArtifactRecord)
 
+    def test_grounding_summary_supports_assumptions_and_query_plan_defaults(self):
+        from backend.models.agent import AgentGroundingSummary
+
+        summary = AgentGroundingSummary()
+
+        self.assertEqual(summary.assumptions, [])
+        self.assertEqual(summary.queryPlan, [])
+
     def test_agent_persistence_tables_are_registered_on_base_metadata(self):
         backend_db = self._load_db_with_models_registered()
         Base = backend_db.Base
