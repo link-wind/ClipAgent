@@ -10,13 +10,18 @@ from backend.services.grounding_service import GroundingService
 
 
 class _FakeRuntime:
-    def __init__(self, pack=None, error: Exception | None = None):
+    def __init__(self, pack=None, error: Exception | None = None, planner=None):
         self.pack = pack
         self.error = error
+        self.planner = planner
+        self.last_brief = None
 
-    def build_query_pack(self, _brief: str):
+    def build_query_pack(self, brief: str):
+        self.last_brief = brief
         if self.error is not None:
             raise self.error
+        if self.planner is not None:
+            return self.planner(brief)
         return self.pack
 
 
@@ -272,3 +277,121 @@ class GroundingServiceTests(unittest.TestCase):
         self.assertEqual(summary.status, "needs_confirmation")
         self.assertIn("城市", summary.searchQueries)
         self.assertEqual(summary.candidates[0].id, "fixture:city-1")
+
+    def test_build_grounding_summary_caps_query_plan_to_five_items_after_fallback_merge(self):
+        service = GroundingService(
+            retrieval_runtime=_FakeRuntime(
+                pack=RetrievalQueryPack(
+                    productName="Notion AI",
+                    queries=[
+                        {"text": "alpha concept", "intent": "product_demo", "providers": ["youtube"], "priority": 10},
+                        {"text": "beta workflow", "intent": "feature_workflow", "providers": ["pexels"], "priority": 20},
+                        {"text": "gamma office", "intent": "stock_fallback", "providers": ["pexels"], "priority": 30},
+                        {"text": "delta dashboard", "intent": "stock_fallback", "providers": ["pexels"], "priority": 40},
+                        {"text": "epsilon montage", "intent": "stock_fallback", "providers": ["pexels"], "priority": 50},
+                    ],
+                )
+            ),
+            fixture_search=lambda tokens, max_results=3: [],
+            pexels_search=lambda tokens, max_results=3: [],
+            youtube_search=lambda tokens, max_results=3: [],
+        )
+
+        summary = service.build_grounding_summary("给 Notion AI 做一个 30 秒产品亮点视频")
+
+        self.assertEqual(len(summary.queryPlan), 5)
+        self.assertEqual(len(summary.searchQueries), 5)
+        self.assertIn("Notion", summary.searchQueries)
+
+    def test_build_grounding_summary_passes_existing_context_into_planner_for_follow_up_prompt(self):
+        runtime = _FakeRuntime(
+            planner=lambda brief: RetrievalQueryPack(
+                productName="Notion AI",
+                queries=[
+                    {
+                        "text": "notion ai demo",
+                        "intent": "product_demo",
+                        "providers": ["youtube"],
+                        "priority": 10,
+                    }
+                ]
+                if "Notion AI" in brief
+                else [
+                    {
+                        "text": "generic office teamwork",
+                        "intent": "stock_fallback",
+                        "providers": ["pexels"],
+                        "priority": 10,
+                    }
+                ]
+            )
+        )
+
+        service = GroundingService(
+            retrieval_runtime=runtime,
+            fixture_search=lambda tokens, max_results=3: [],
+            pexels_search=lambda tokens, max_results=3: [],
+            youtube_search=lambda tokens, max_results=3: [
+                AssetCandidate(
+                    provider="youtube",
+                    id="yt-followup",
+                    title="Notion AI demo",
+                    source_url="https://youtube.test/watch?v=yt-followup",
+                    download_url="https://youtube.test/watch?v=yt-followup",
+                )
+            ]
+            if tuple(tokens) == ("notion", "ai", "demo")
+            else [],
+        )
+
+        summary = service.build_grounding_summary(
+            "继续补充这个任务",
+            existing=AgentGroundingSummary(
+                productName="Notion AI",
+                audience="销售团队",
+                styleHint="快节奏社媒短片",
+                featureHints=["AI", "知识库"],
+            ),
+        )
+
+        self.assertIn("Notion AI", runtime.last_brief)
+        self.assertEqual(summary.candidates[0].id, "youtube:yt-followup")
+        self.assertEqual(summary.searchQueries[0], "notion ai demo")
+
+    def test_build_grounding_summary_keeps_successful_fallback_query_in_projected_plan(self):
+        def fixture_search(tokens, max_results=3):
+            if tuple(tokens) != ("城市",):
+                return []
+            return [
+                AssetCandidate(
+                    provider="fixture",
+                    id="city-hit",
+                    title="City lifestyle",
+                    source_url="/fixtures/city-hit.mp4",
+                    download_url="/fixtures/city-hit.mp4",
+                )
+            ]
+
+        service = GroundingService(
+            retrieval_runtime=_FakeRuntime(
+                pack=RetrievalQueryPack(
+                    productName="Notion AI",
+                    queries=[
+                        {"text": "alpha concept", "intent": "product_demo", "providers": ["youtube"], "priority": 10},
+                        {"text": "beta workflow", "intent": "feature_workflow", "providers": ["pexels"], "priority": 20},
+                        {"text": "gamma office", "intent": "stock_fallback", "providers": ["pexels"], "priority": 30},
+                        {"text": "delta dashboard", "intent": "stock_fallback", "providers": ["pexels"], "priority": 40},
+                        {"text": "epsilon montage", "intent": "stock_fallback", "providers": ["pexels"], "priority": 50},
+                    ],
+                )
+            ),
+            fixture_search=fixture_search,
+            pexels_search=lambda tokens, max_results=3: [],
+            youtube_search=lambda tokens, max_results=3: [],
+        )
+
+        summary = service.build_grounding_summary("给 Notion AI 做一个 30 秒产品亮点视频")
+
+        self.assertEqual(summary.candidates[0].id, "fixture:city-hit")
+        self.assertEqual(summary.productName, "Notion AI")
+        self.assertIn("城市", summary.searchQueries)

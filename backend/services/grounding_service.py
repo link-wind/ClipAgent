@@ -66,9 +66,10 @@ class GroundingService:
         existing_summary = self._normalize_existing(existing)
         brief = self._merge_brief(self.parse_brief(prompt), existing_summary, prompt)
         fallback_query_pack = self._fallback_query_pack(brief)
+        planner_prompt = self._build_planner_prompt(prompt, brief)
         try:
             query_pack = self._merge_context_into_query_pack(
-                self._get_retrieval_runtime().build_query_pack(prompt),
+                self._get_retrieval_runtime().build_query_pack(planner_prompt),
                 brief,
                 existing_summary,
             )
@@ -81,10 +82,20 @@ class GroundingService:
 
         candidates = self.search_candidates_for_query_plan(query_pack.queries)
         if not candidates:
-            merged_query_pack = self._merge_query_pack(query_pack, fallback_query_pack)
+            merged_query_pack = self._merge_query_pack(fallback_query_pack, query_pack)
             if merged_query_pack.queries != query_pack.queries:
+                merged_query_pack = merged_query_pack.model_copy(
+                    update={
+                        "productName": query_pack.productName or merged_query_pack.productName,
+                        "audience": query_pack.audience or merged_query_pack.audience,
+                        "styleHint": query_pack.styleHint or merged_query_pack.styleHint,
+                        "featureHints": self._merge_unique(query_pack.featureHints, merged_query_pack.featureHints),
+                        "assumptions": self._merge_unique(query_pack.assumptions, merged_query_pack.assumptions),
+                    }
+                )
                 query_pack = merged_query_pack
                 candidates = self.search_candidates_for_query_plan(query_pack.queries)
+        projected_queries = self._project_summary_queries(query_pack.queries)
         return AgentGroundingSummary(
             status="needs_confirmation" if candidates else "pending_search",
             productName=query_pack.productName,
@@ -92,8 +103,8 @@ class GroundingService:
             styleHint=query_pack.styleHint,
             featureHints=query_pack.featureHints,
             assumptions=query_pack.assumptions,
-            searchQueries=[query.text for query in query_pack.queries],
-            queryPlan=[query.model_dump(mode="json") for query in query_pack.queries],
+            searchQueries=[query.text for query in projected_queries],
+            queryPlan=[query.model_dump(mode="json") for query in projected_queries],
             candidates=candidates,
             selectedCandidateIds=[],
         )
@@ -231,7 +242,30 @@ class GroundingService:
             styleHint=primary.styleHint or secondary.styleHint,
             featureHints=self._merge_unique(primary.featureHints, secondary.featureHints),
             assumptions=self._merge_unique(primary.assumptions, secondary.assumptions),
-            queries=merged_queries,
+            queries=merged_queries[:5],
+        )
+
+    def _build_planner_prompt(self, prompt: str, brief: ParsedBrief) -> str:
+        prompt_text = (prompt or "").strip()
+        context_lines: list[str] = []
+        if brief.product_name:
+            context_lines.append(f"Product: {brief.product_name}")
+        if brief.audience:
+            context_lines.append(f"Audience: {brief.audience}")
+        if brief.style_hint:
+            context_lines.append(f"Style: {brief.style_hint}")
+        if brief.feature_hints:
+            context_lines.append(f"Feature hints: {', '.join(brief.feature_hints)}")
+        if not context_lines:
+            return prompt_text
+        if not prompt_text:
+            return "\n".join(["Known grounding context:", *context_lines])
+        return "\n".join(
+            [
+                "Known grounding context:",
+                *context_lines,
+                f"Latest user request: {prompt_text}",
+            ]
         )
 
     def _merge_context_into_query_pack(
@@ -249,6 +283,9 @@ class GroundingService:
                 "assumptions": self._merge_unique(existing_summary.assumptions, query_pack.assumptions),
             }
         )
+
+    def _project_summary_queries(self, queries: Iterable[RetrievalQuery]) -> list[RetrievalQuery]:
+        return list(queries)[:5]
 
     def _merge_query_objects(
         self,
@@ -273,7 +310,7 @@ class GroundingService:
                 }
             )
 
-        return sorted(merged, key=lambda item: item.priority)
+        return merged
 
     def _query_diff(
         self,
