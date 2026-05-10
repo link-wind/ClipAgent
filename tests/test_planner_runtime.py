@@ -485,6 +485,35 @@ class PlannerRuntimeTests(unittest.TestCase):
 
         deterministic_delegate.replan_after_user_revision.assert_not_called()
 
+    def test_langchain_runtime_does_not_fall_back_when_revision_message_construction_fails(self):
+        from backend.services.planner_models import UserRevisionFeedback
+        from backend.services.planner_runtime_deterministic import DeterministicPlannerRuntime
+        from backend.services.planner_runtime_langchain import LangChainPlannerRuntime
+
+        deterministic_delegate = Mock()
+        current_agent, current_execution = DeterministicPlannerRuntime().build_plan_from_brief(
+            "给 Notion AI 做一个 30 秒产品亮点视频"
+        )
+
+        runtime = LangChainPlannerRuntime(
+            model_name="gpt-4o-mini",
+            llm=_FakeChatModel(result=None),
+            deterministic_delegate=deterministic_delegate,
+        )
+
+        with patch.object(runtime, "_build_revision_messages", side_effect=TypeError("bad message construction")):
+            with self.assertRaisesRegex(TypeError, "bad message construction"):
+                runtime.replan_after_user_revision(
+                    current_agent=current_agent,
+                    current_execution=current_execution,
+                    revision_feedback=UserRevisionFeedback(
+                        message="整体再商务一点",
+                        sceneKeywordUpdates={},
+                    ),
+                )
+
+        deterministic_delegate.replan_after_user_revision.assert_not_called()
+
     def test_langchain_runtime_does_not_swallow_unexpected_revision_merge_errors(self):
         from backend.services.planner_models import RevisionPlanningResult, UserRevisionFeedback
         from backend.services.planner_runtime_deterministic import DeterministicPlannerRuntime

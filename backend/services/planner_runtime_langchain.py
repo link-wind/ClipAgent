@@ -375,15 +375,14 @@ class LangChainPlannerRuntime:
         revision_feedback: UserRevisionFeedback,
     ) -> tuple[AgentPlan, ExecutionPlan, str]:
         runnable = self._revision_runnable()
+        messages = self._build_revision_messages(
+            current_agent=current_agent,
+            current_execution=current_execution,
+            revision_feedback=revision_feedback,
+        )
         try:
             try:
-                result = runnable.invoke(
-                    self._build_revision_messages(
-                        current_agent=current_agent,
-                        current_execution=current_execution,
-                        revision_feedback=revision_feedback,
-                    )
-                )
+                result = runnable.invoke(messages)
             except Exception as exc:
                 raise _RevisionFallbackError("Revision planning invoke failed") from exc
             normalized = self._normalize_revision_result(result)
