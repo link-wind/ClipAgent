@@ -389,7 +389,7 @@ class LangChainPlannerRuntime:
             try:
                 result = runnable.invoke(messages)
             except Exception as exc:
-                raise _RevisionFallbackError("Revision planning invoke failed") from exc
+                raise _RevisionFallbackError(str(exc)) from exc
             normalized = self._normalize_revision_result(result)
             return self._apply_revision_result(
                 current_agent=current_agent,
@@ -397,12 +397,28 @@ class LangChainPlannerRuntime:
                 revision_feedback=revision_feedback,
                 result=normalized,
             )
-        except _RevisionFallbackError:
-            return self.deterministic_delegate.replan_after_user_revision(
+        except _RevisionFallbackError as exc:
+            next_agent, next_execution, change_summary = self.deterministic_delegate.replan_after_user_revision(
                 current_agent=current_agent,
                 current_execution=current_execution,
                 revision_feedback=revision_feedback,
             )
+            latest_history = next_agent.replanHistory[-1] if next_agent.replanHistory else None
+            if latest_history and latest_history.get("triggerType") == "user_revision":
+                next_agent = next_agent.model_copy(
+                    update={
+                        "replanHistory": [
+                            *next_agent.replanHistory[:-1],
+                            {
+                                **latest_history,
+                                "runtime": "deterministic_fallback",
+                                "fallbackReason": str(exc),
+                            },
+                        ]
+                    },
+                    deep=True,
+                )
+            return next_agent, next_execution, change_summary
 
     def replan_after_execution_feedback(
         self,

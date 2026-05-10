@@ -1913,37 +1913,13 @@ class SessionServiceBehaviorTests(unittest.TestCase):
         from backend.config import get_settings
         from backend.db.repositories import AgentPlanRepository, AgentSessionRepository
         from backend.services.agent_session_service import AgentSessionService
-        from backend.services.planner_runtime_deterministic import DeterministicPlannerRuntime
 
         service = AgentSessionService(session_factory=self.SessionLocal)
         session = service.create_session("给 Notion AI 做一个 30 秒产品亮点视频")
-        original_replan_after_user_revision = DeterministicPlannerRuntime.replan_after_user_revision
 
         class _FailingRevisionRunnable:
             def invoke(self, _messages):
                 raise RuntimeError("revision runnable unavailable")
-
-        def _replan_with_fallback_trace(self, *, current_agent, current_execution, revision_feedback):
-            next_agent, next_execution, change_summary = original_replan_after_user_revision(
-                self,
-                current_agent=current_agent,
-                current_execution=current_execution,
-                revision_feedback=revision_feedback,
-            )
-            next_agent = next_agent.model_copy(
-                update={
-                    "replanHistory": [
-                        *next_agent.replanHistory[:-1],
-                        {
-                            **next_agent.replanHistory[-1],
-                            "runtime": "deterministic_fallback",
-                            "fallbackReason": "revision runnable unavailable",
-                        },
-                    ]
-                },
-                deep=True,
-            )
-            return next_agent, next_execution, change_summary
 
         with patch.dict(os.environ, {"CLIPFORGE_PLANNER_MODE": "langchain"}, clear=False):
             get_settings.cache_clear()
@@ -1955,12 +1931,7 @@ class SessionServiceBehaviorTests(unittest.TestCase):
                     "backend.services.planner_runtime_langchain.LangChainPlannerRuntime._revision_runnable",
                     return_value=_FailingRevisionRunnable(),
                 ):
-                    with patch.object(
-                        DeterministicPlannerRuntime,
-                        "replan_after_user_revision",
-                        _replan_with_fallback_trace,
-                    ):
-                        updated = service.add_user_message(session.id, "整体再商务一点，目标受众改成销售团队")
+                    updated = service.add_user_message(session.id, "整体再商务一点，目标受众改成销售团队")
 
         self.assertIsNotNone(updated.plan)
 
@@ -1979,6 +1950,10 @@ class SessionServiceBehaviorTests(unittest.TestCase):
             self.assertEqual(
                 session_record.planner_trace_json["revisionRuntime"],
                 "deterministic_fallback",
+            )
+            self.assertEqual(
+                session_record.planner_trace_json["fallbackReason"],
+                "revision runnable unavailable",
             )
         finally:
             db.close()
