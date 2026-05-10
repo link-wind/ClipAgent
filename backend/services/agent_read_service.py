@@ -113,24 +113,36 @@ class AgentReadService:
         if not session_record.grounding_summary_json:
             return None
 
-        grounding_json = session_record.grounding_summary_json or {}
-        return AgentGroundingSummary(
-            status=session_record.grounding_status or grounding_json.get("status", "pending_search"),
-            productName=grounding_json.get("productName", "") or "",
-            audience=grounding_json.get("audience", "") or "",
-            styleHint=grounding_json.get("styleHint", "") or "",
-            featureHints=grounding_json.get("featureHints", []) or [],
-            searchQueries=grounding_json.get("searchQueries", []) or [],
-            candidates=[
-                AgentGroundingCandidate.model_validate(candidate)
-                for candidate in grounding_json.get("candidates", []) or []
-            ],
-            selectedCandidateIds=session_record.selected_candidate_ids_json or grounding_json.get(
-                "selectedCandidateIds",
-                [],
-            )
-            or [],
+        grounding_json = self._normalize_grounding_json(session_record.grounding_summary_json or {})
+        summary = AgentGroundingSummary.model_validate(grounding_json)
+        return summary.model_copy(
+            update={
+                "status": session_record.grounding_status or summary.status,
+                "selectedCandidateIds": (
+                    session_record.selected_candidate_ids_json
+                    or summary.selectedCandidateIds
+                ),
+                "candidates": [
+                    AgentGroundingCandidate.model_validate(candidate)
+                    for candidate in summary.candidates
+                ],
+            }
         )
+
+    def _normalize_grounding_json(self, grounding_json: dict) -> dict:
+        return {
+            **grounding_json,
+            "status": grounding_json.get("status") or "pending_search",
+            "productName": grounding_json.get("productName") or "",
+            "audience": grounding_json.get("audience") or "",
+            "styleHint": grounding_json.get("styleHint") or "",
+            "featureHints": grounding_json.get("featureHints") or [],
+            "assumptions": grounding_json.get("assumptions") or [],
+            "searchQueries": grounding_json.get("searchQueries") or [],
+            "queryPlan": grounding_json.get("queryPlan") or [],
+            "candidates": grounding_json.get("candidates") or [],
+            "selectedCandidateIds": grounding_json.get("selectedCandidateIds") or [],
+        }
 
     def _build_clip_info(self, row) -> ClipInfo:
         # 从产物记录恢复片段信息

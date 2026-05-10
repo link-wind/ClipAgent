@@ -278,6 +278,39 @@ class AgentApiP0ContractTests(unittest.TestCase):
         ):
             asyncio.run(_run())
 
+    def test_grounding_api_response_includes_query_plan_and_assumptions(self):
+        async def _run():
+            transport = httpx.ASGITransport(app=app)
+            async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as client:
+                create_response = await client.post("/api/agent/sessions", json={})
+                self.assertEqual(create_response.status_code, 200)
+                created_session = create_response.json()
+
+                message_response = await client.post(
+                    f"/api/agent/sessions/{created_session['id']}/messages",
+                    json={"message": "给 Notion AI 做一个 30 秒产品亮点视频"},
+                )
+                self.assertEqual(message_response.status_code, 200)
+                awaiting = message_response.json()
+
+                grounding = awaiting["grounding"]
+                self.assertIsInstance(grounding["assumptions"], list)
+                self.assertTrue(grounding["queryPlan"])
+                self.assertTrue(grounding["searchQueries"])
+                self.assertEqual(
+                    [item["text"] for item in grounding["queryPlan"]],
+                    grounding["searchQueries"],
+                )
+
+        import asyncio
+
+        with patch.object(agent_api_module, "session_service", self.session_service), patch.object(
+            agent_api_module,
+            "read_service",
+            self.read_service,
+        ):
+            asyncio.run(_run())
+
     def test_session_steps_show_candidate_confirmation_before_finalize_plan(self):
         session = self.session_service.create_session("给 Notion AI 做一个 30 秒产品亮点视频")
         steps = session.steps

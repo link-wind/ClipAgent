@@ -1786,6 +1786,46 @@ class SessionServiceBehaviorTests(unittest.TestCase):
         self.assertEqual(len(session.events), 1)
         self.assertEqual(session.events[0].message, "正在渲染")
 
+    def test_read_service_normalizes_null_grounding_fields_from_legacy_payload(self):
+        from backend.db.repositories import AgentSessionRepository
+        from backend.services.agent_read_service import AgentReadService
+
+        db = self.SessionLocal()
+        try:
+            session_record = AgentSessionRepository(db).create(
+                status="plan_ready",
+                grounding_status="needs_confirmation",
+                grounding_summary_json={
+                    "status": "needs_confirmation",
+                    "productName": None,
+                    "audience": None,
+                    "styleHint": None,
+                    "featureHints": None,
+                    "assumptions": None,
+                    "searchQueries": None,
+                    "queryPlan": None,
+                    "candidates": None,
+                    "selectedCandidateIds": None,
+                },
+            )
+            session_id = session_record.id
+            db.commit()
+        finally:
+            db.close()
+
+        session = AgentReadService(session_factory=self.SessionLocal).read_session(session_id)
+
+        self.assertEqual(session.grounding.status, "needs_confirmation")
+        self.assertEqual(session.grounding.productName, "")
+        self.assertEqual(session.grounding.audience, "")
+        self.assertEqual(session.grounding.styleHint, "")
+        self.assertEqual(session.grounding.featureHints, [])
+        self.assertEqual(session.grounding.assumptions, [])
+        self.assertEqual(session.grounding.searchQueries, [])
+        self.assertEqual(session.grounding.queryPlan, [])
+        self.assertEqual(session.grounding.candidates, [])
+        self.assertEqual(session.grounding.selectedCandidateIds, [])
+
     def test_add_user_message_persists_message_and_merges_grounding_context_until_confirmed(self):
         from backend.db.repositories import AgentMessageRepository, AgentPlanRepository, AgentSessionRepository
         from backend.models.agent import AgentStatus
@@ -1802,8 +1842,14 @@ class SessionServiceBehaviorTests(unittest.TestCase):
         self.assertEqual(updated.grounding.status, "needs_confirmation")
         self.assertEqual(updated.grounding.productName, "Notion")
         self.assertEqual(updated.grounding.audience, "销售团队")
+        self.assertIsInstance(updated.grounding.assumptions, list)
+        self.assertTrue(updated.grounding.queryPlan)
         self.assertIn("Notion", updated.grounding.searchQueries)
         self.assertIn("销售团队", updated.grounding.searchQueries)
+        self.assertEqual(
+            [item["text"] for item in updated.grounding.queryPlan],
+            updated.grounding.searchQueries,
+        )
         self.assertEqual(updated.progress, 20)
         self.assertEqual(first.grounding.status, "needs_confirmation")
 
