@@ -402,6 +402,51 @@ class PlannerRuntimeTests(unittest.TestCase):
         self.assertEqual(result, ("agent-fallback", "execution-fallback", "fallback summary"))
         deterministic_delegate.replan_after_user_revision.assert_called_once()
 
+    def test_langchain_runtime_falls_back_when_scene_keyword_override_targets_unknown_scene(self):
+        from backend.services.planner_models import RevisionPlanningResult, UserRevisionFeedback
+        from backend.services.planner_runtime_deterministic import DeterministicPlannerRuntime
+        from backend.services.planner_runtime_langchain import LangChainPlannerRuntime
+
+        deterministic_delegate = Mock()
+        deterministic_delegate.replan_after_user_revision.return_value = (
+            "agent-fallback",
+            "execution-fallback",
+            "fallback summary",
+        )
+        current_agent, current_execution = DeterministicPlannerRuntime().build_plan_from_brief(
+            "给 Notion AI 做一个 30 秒产品亮点视频"
+        )
+        fake_llm = _FakeChatModel(
+            result=RevisionPlanningResult(
+                changeSummary="已根据最新修改意见完成计划重写",
+                scenePatches=[
+                    {
+                        "id": 1,
+                        "description": "城市与车流开场，建立商务节奏",
+                        "keywords": ["office", "lobby", "team"],
+                        "searchQuery": "office lobby team",
+                    }
+                ],
+            )
+        )
+
+        runtime = LangChainPlannerRuntime(
+            model_name="gpt-4o-mini",
+            llm=fake_llm,
+            deterministic_delegate=deterministic_delegate,
+        )
+        result = runtime.replan_after_user_revision(
+            current_agent=current_agent,
+            current_execution=current_execution,
+            revision_feedback=UserRevisionFeedback(
+                message="场景99关键词改成 foo",
+                sceneKeywordUpdates={99: ["foo"]},
+            ),
+        )
+
+        self.assertEqual(result, ("agent-fallback", "execution-fallback", "fallback summary"))
+        deterministic_delegate.replan_after_user_revision.assert_called_once()
+
     def test_langchain_runtime_falls_back_to_deterministic_revision_when_patch_targets_unknown_scene(self):
         from backend.services.planner_models import RevisionPlanningResult, UserRevisionFeedback
         from backend.services.planner_runtime_deterministic import DeterministicPlannerRuntime

@@ -217,6 +217,10 @@ class LangChainPlannerRuntime:
         execution_scene_lookup = {scene.id: scene for scene in current_execution.scenes}
         patch_lookup = {}
 
+        for scene_id in revision_feedback.sceneKeywordUpdates:
+            if scene_id not in agent_scene_lookup or scene_id not in execution_scene_lookup:
+                raise _RevisionFallbackError(f"Unknown revision keyword override scene id: {scene_id}")
+
         for patch in result.scenePatches:
             if patch.id not in agent_scene_lookup or patch.id not in execution_scene_lookup:
                 raise _RevisionFallbackError(f"Unknown revision patch scene id: {patch.id}")
