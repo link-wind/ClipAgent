@@ -36,6 +36,10 @@ Keep keywords concise and non-empty for every patched scene.
 """.strip()
 
 
+class _RevisionFallbackError(Exception):
+    """Signals revision outputs that should fall back to the deterministic delegate."""
+
+
 class LangChainPlannerRuntime:
     def __init__(
         self,
@@ -167,6 +171,21 @@ class LangChainPlannerRuntime:
         self,
         result: RevisionPlanningResult,
     ) -> RevisionPlanningResult:
+        seen_patch_ids = set()
+        normalized_scene_patches = []
+        for patch in result.scenePatches:
+            if patch.id in seen_patch_ids:
+                raise _RevisionFallbackError(f"Duplicate revision patch scene id: {patch.id}")
+            seen_patch_ids.add(patch.id)
+            normalized_scene_patches.append(
+                {
+                    "id": patch.id,
+                    "description": patch.description.strip(),
+                    "keywords": [keyword.strip() for keyword in patch.keywords if keyword.strip()],
+                    "searchQuery": " ".join(patch.searchQuery.split()),
+                }
+            )
+
         return RevisionPlanningResult(
             summary=result.summary.strip(),
             audience=result.audience.strip(),
@@ -174,15 +193,7 @@ class LangChainPlannerRuntime:
             style=result.style.strip(),
             openIssues=result.openIssues,
             changeSummary=result.changeSummary.strip(),
-            scenePatches=[
-                {
-                    "id": patch.id,
-                    "description": patch.description.strip(),
-                    "keywords": [keyword.strip() for keyword in patch.keywords if keyword.strip()],
-                    "searchQuery": " ".join(patch.searchQuery.split()),
-                }
-                for patch in result.scenePatches
-            ],
+            scenePatches=normalized_scene_patches,
         )
 
     def _apply_revision_result(
@@ -199,7 +210,7 @@ class LangChainPlannerRuntime:
 
         for patch in result.scenePatches:
             if patch.id not in agent_scene_lookup or patch.id not in execution_scene_lookup:
-                raise ValueError(f"Unknown revision patch scene id: {patch.id}")
+                raise _RevisionFallbackError(f"Unknown revision patch scene id: {patch.id}")
             patch_lookup[patch.id] = patch
 
         updated_agent_scenes = []
@@ -228,9 +239,9 @@ class LangChainPlannerRuntime:
 
             if patch is not None or override_keywords:
                 if not next_keywords:
-                    raise ValueError(f"Revision patch keywords are required for scene {agent_scene.id}")
+                    raise _RevisionFallbackError(f"Revision patch keywords are required for scene {agent_scene.id}")
                 if not next_search_query:
-                    raise ValueError(f"Revision patch searchQuery is required for scene {agent_scene.id}")
+                    raise _RevisionFallbackError(f"Revision patch searchQuery is required for scene {agent_scene.id}")
 
             updated_agent_scenes.append(
                 agent_scene.model_copy(
@@ -305,26 +316,28 @@ class LangChainPlannerRuntime:
         next_execution_ids = [scene.id for scene in next_execution.scenes]
 
         if next_agent_ids != current_agent_ids or next_execution_ids != current_execution_ids:
-            raise ValueError("Revision merge must preserve scene ids")
+            raise _RevisionFallbackError("Revision merge must preserve scene ids")
         if len(next_agent.scenes) != len(current_agent.scenes) or len(next_execution.scenes) != len(
             current_execution.scenes
         ):
-            raise ValueError("Revision merge must preserve scene count")
+            raise _RevisionFallbackError("Revision merge must preserve scene count")
         if next_execution.targetDuration != current_execution.targetDuration:
-            raise ValueError("Revision merge must preserve targetDuration")
+            raise _RevisionFallbackError("Revision merge must preserve targetDuration")
 
         for current_scene, next_scene in zip(current_agent.scenes, next_agent.scenes):
             if next_scene.duration != current_scene.duration:
-                raise ValueError(f"Revision merge must preserve agent scene duration for scene {current_scene.id}")
+                raise _RevisionFallbackError(
+                    f"Revision merge must preserve agent scene duration for scene {current_scene.id}"
+                )
         for current_scene, next_scene in zip(current_execution.scenes, next_execution.scenes):
             if next_scene.duration != current_scene.duration:
-                raise ValueError(
+                raise _RevisionFallbackError(
                     f"Revision merge must preserve execution scene duration for scene {current_scene.id}"
                 )
             if not next_scene.searchQuery:
-                raise ValueError(f"Revision merge requires searchQuery for scene {current_scene.id}")
+                raise _RevisionFallbackError(f"Revision merge requires searchQuery for scene {current_scene.id}")
             if not next_scene.keywords:
-                raise ValueError(f"Revision merge requires keywords for scene {current_scene.id}")
+                raise _RevisionFallbackError(f"Revision merge requires keywords for scene {current_scene.id}")
 
     def replan_after_grounding(
         self,
@@ -349,13 +362,16 @@ class LangChainPlannerRuntime:
         revision_feedback: UserRevisionFeedback,
     ) -> tuple[AgentPlan, ExecutionPlan, str]:
         try:
-            result = self._revision_runnable().invoke(
-                self._build_revision_messages(
-                    current_agent=current_agent,
-                    current_execution=current_execution,
-                    revision_feedback=revision_feedback,
+            try:
+                result = self._revision_runnable().invoke(
+                    self._build_revision_messages(
+                        current_agent=current_agent,
+                        current_execution=current_execution,
+                        revision_feedback=revision_feedback,
+                    )
                 )
-            )
+            except Exception as exc:
+                raise _RevisionFallbackError("Revision planning invoke failed") from exc
             normalized = self._normalize_revision_result(result)
             return self._apply_revision_result(
                 current_agent=current_agent,
@@ -363,7 +379,7 @@ class LangChainPlannerRuntime:
                 revision_feedback=revision_feedback,
                 result=normalized,
             )
-        except Exception:
+        except _RevisionFallbackError:
             return self.deterministic_delegate.replan_after_user_revision(
                 current_agent=current_agent,
                 current_execution=current_execution,
