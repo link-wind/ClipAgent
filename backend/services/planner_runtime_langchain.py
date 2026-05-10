@@ -403,7 +403,7 @@ class LangChainPlannerRuntime:
                 current_execution=current_execution,
                 revision_feedback=revision_feedback,
             )
-            latest_history = next_agent.replanHistory[-1] if next_agent.replanHistory else None
+            latest_history = next_agent.replanHistory[-1] if isinstance(next_agent, AgentPlan) and next_agent.replanHistory else None
             if latest_history and latest_history.get("triggerType") == "user_revision":
                 next_agent = next_agent.model_copy(
                     update={
