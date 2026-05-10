@@ -81,6 +81,50 @@ class PlannerGraphTests(unittest.TestCase):
         self.assertEqual(state["triggerType"], "user_revision")
         self.assertIn("changeSummary", state)
 
+    def test_run_user_revision_replan_uses_runtime_result_shape_without_changing_trigger(self):
+        from backend.services.planner_graph import run_user_revision_replan
+        from backend.services.planner_runtime_deterministic import DeterministicPlannerRuntime
+
+        runtime = DeterministicPlannerRuntime()
+        current_agent, current_execution = runtime.build_plan_from_brief("做一个产品视频")
+        next_agent = Mock()
+        next_agent.model_dump.return_value = {
+            "title": "商务版计划",
+            "replanHistory": [{"runtime": "langchain"}],
+        }
+        next_execution = Mock()
+        next_execution.model_dump.return_value = {
+            "title": "商务版执行计划",
+            "style": "商务演示风格",
+        }
+        fake_runtime = Mock()
+        fake_runtime.replan_after_user_revision.return_value = (
+            next_agent,
+            next_execution,
+            "已根据最新修改意见完成计划重写",
+        )
+
+        with patch(
+            "backend.services.planner_graph.get_planner_runtime",
+            return_value=fake_runtime,
+        ):
+            state = run_user_revision_replan(
+                session_id="session-1",
+                current_agent_plan=current_agent.model_dump(mode="json"),
+                current_execution_plan=current_execution.model_dump(mode="json"),
+                revision_feedback={
+                    "message": "整体再商务一点，目标受众改成销售团队",
+                    "sceneKeywordUpdates": {},
+                    "revisionSource": "user_message",
+                },
+            )
+
+        self.assertEqual(state["status"], "replanning_complete")
+        self.assertEqual(state["triggerType"], "user_revision")
+        self.assertEqual(state["changeSummary"], "已根据最新修改意见完成计划重写")
+        self.assertEqual(state["agentPlan"], next_agent.model_dump.return_value)
+        self.assertEqual(state["executionPlan"], next_execution.model_dump.return_value)
+
     def test_run_execution_feedback_replan_returns_replanning_complete_state(self):
         from backend.services.planner_graph import run_execution_feedback_replan
         from backend.services.planner_runtime_deterministic import DeterministicPlannerRuntime

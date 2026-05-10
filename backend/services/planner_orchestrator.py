@@ -149,11 +149,25 @@ class PlannerOrchestrator:
             change_summary=state["changeSummary"],
             status="ready",
         )
+        latest_history = ((state.get("agentPlan") or {}).get("replanHistory") or [])
+        latest_revision_trace = latest_history[-1] if latest_history else {}
+        revision_runtime = "langchain"
+        fallback_used = False
+        fallback_reason = ""
+        if latest_revision_trace.get("runtime") == "deterministic_fallback":
+            revision_runtime = "deterministic_fallback"
+            fallback_used = True
+            fallback_reason = latest_revision_trace.get("fallbackReason", "")
         session_record.current_plan_id = next_plan.id
         session_record.planner_trace_json = {
+            **(session_record.planner_trace_json or {}),
             "lastPlanningState": state["status"],
             "triggerType": state["triggerType"],
+            "revisionRuntime": revision_runtime,
+            "fallbackUsed": fallback_used,
         }
+        if fallback_reason:
+            session_record.planner_trace_json["fallbackReason"] = fallback_reason
         return next_plan
 
     def persist_execution_feedback_replan(

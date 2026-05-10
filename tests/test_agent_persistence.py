@@ -7,7 +7,7 @@ import unittest
 from datetime import datetime
 from pathlib import Path
 from types import SimpleNamespace
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 from sqlalchemy import (
     JSON,
@@ -1908,6 +1908,85 @@ class SessionServiceBehaviorTests(unittest.TestCase):
             self.assertEqual(session_repo.get(session.id).current_plan_id, plans[-1].id)
         finally:
             db.close()
+
+    def test_add_user_message_after_plan_persists_revision_plan_when_langchain_revision_falls_back(self):
+        from backend.config import get_settings
+        from backend.db.repositories import AgentPlanRepository, AgentSessionRepository
+        from backend.services.agent_session_service import AgentSessionService
+        from backend.services.planner_runtime_deterministic import DeterministicPlannerRuntime
+
+        service = AgentSessionService(session_factory=self.SessionLocal)
+        session = service.create_session("给 Notion AI 做一个 30 秒产品亮点视频")
+        original_replan_after_user_revision = DeterministicPlannerRuntime.replan_after_user_revision
+
+        class _FailingRevisionRunnable:
+            def invoke(self, _messages):
+                raise RuntimeError("revision runnable unavailable")
+
+        def _replan_with_fallback_trace(self, *, current_agent, current_execution, revision_feedback):
+            next_agent, next_execution, change_summary = original_replan_after_user_revision(
+                self,
+                current_agent=current_agent,
+                current_execution=current_execution,
+                revision_feedback=revision_feedback,
+            )
+            next_agent = next_agent.model_copy(
+                update={
+                    "replanHistory": [
+                        *next_agent.replanHistory[:-1],
+                        {
+                            **next_agent.replanHistory[-1],
+                            "runtime": "deterministic_fallback",
+                            "fallbackReason": "revision runnable unavailable",
+                        },
+                    ]
+                },
+                deep=True,
+            )
+            return next_agent, next_execution, change_summary
+
+        with patch.dict(os.environ, {"CLIPFORGE_PLANNER_MODE": "langchain"}, clear=False):
+            get_settings.cache_clear()
+            with patch(
+                "backend.services.planner_runtime_langchain.ChatOpenAI",
+                return_value=Mock(),
+            ):
+                with patch(
+                    "backend.services.planner_runtime_langchain.LangChainPlannerRuntime._revision_runnable",
+                    return_value=_FailingRevisionRunnable(),
+                ):
+                    with patch.object(
+                        DeterministicPlannerRuntime,
+                        "replan_after_user_revision",
+                        _replan_with_fallback_trace,
+                    ):
+                        updated = service.add_user_message(session.id, "整体再商务一点，目标受众改成销售团队")
+
+        self.assertIsNotNone(updated.plan)
+
+        db = self.SessionLocal()
+        try:
+            plan_repo = AgentPlanRepository(db)
+            session_repo = AgentSessionRepository(db)
+
+            plans = plan_repo.list_for_session(session.id)
+            session_record = session_repo.get(session.id)
+
+            self.assertEqual(plans[-1].version, 2)
+            self.assertEqual(plans[-1].trigger_type, "user_revision")
+            self.assertEqual(session_record.current_plan_id, plans[-1].id)
+            self.assertTrue(session_record.planner_trace_json["fallbackUsed"])
+            self.assertEqual(
+                session_record.planner_trace_json["revisionRuntime"],
+                "deterministic_fallback",
+            )
+        finally:
+            db.close()
+            if self._planner_mode_before is None:
+                os.environ.pop("CLIPFORGE_PLANNER_MODE", None)
+            else:
+                os.environ["CLIPFORGE_PLANNER_MODE"] = self._planner_mode_before
+            get_settings.cache_clear()
 
     def test_add_user_message_rejects_non_editable_session_states(self):
         from backend.db.repositories import AgentSessionRepository
