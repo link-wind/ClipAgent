@@ -1,6 +1,10 @@
+import os
 import unittest
+from unittest.mock import patch
 
+from backend.models.agent import AgentGroundingSummary
 from backend.services.asset_providers.types import AssetCandidate
+from backend.services.grounding_planner_models import RetrievalQuery
 from backend.services.grounding_planner_models import RetrievalQueryPack
 from backend.services.grounding_service import GroundingService
 
@@ -131,3 +135,99 @@ class GroundingServiceTests(unittest.TestCase):
         self.assertIn("Notion", summary.searchQueries)
         self.assertEqual(summary.queryPlan[0]["intent"], "brand_exact")
         self.assertIn("deterministic fallback", summary.assumptions[-1])
+
+    def test_build_grounding_summary_preserves_existing_context_when_planner_metadata_is_blank(self):
+        service = GroundingService(
+            retrieval_runtime=_FakeRuntime(
+                pack=RetrievalQueryPack(
+                    queries=[
+                        {
+                            "text": "notion ai demo",
+                            "intent": "product_demo",
+                            "providers": ["youtube"],
+                            "priority": 10,
+                        }
+                    ]
+                )
+            ),
+            fixture_search=lambda tokens, max_results=3: [],
+            pexels_search=lambda tokens, max_results=3: [],
+            youtube_search=lambda tokens, max_results=3: [
+                AssetCandidate(
+                    provider="youtube",
+                    id="yt-ctx",
+                    title="Notion AI demo",
+                    source_url="https://youtube.test/watch?v=yt-ctx",
+                    download_url="https://youtube.test/watch?v=yt-ctx",
+                )
+            ],
+        )
+
+        summary = service.build_grounding_summary(
+            "继续补充这个任务",
+            existing=AgentGroundingSummary(
+                productName="Notion AI",
+                audience="销售团队",
+                styleHint="快节奏社媒短片",
+                featureHints=["AI", "知识库"],
+            ),
+        )
+
+        self.assertEqual(summary.productName, "Notion AI")
+        self.assertEqual(summary.audience, "销售团队")
+        self.assertEqual(summary.styleHint, "快节奏社媒短片")
+        self.assertEqual(summary.featureHints, ["AI", "知识库"])
+
+    def test_build_grounding_summary_retries_same_stock_query_with_fallback_provider(self):
+        def pexels_search(tokens, max_results=3):
+            if tuple(tokens) != ("software", "dashboard", "laptop"):
+                return []
+            return [
+                AssetCandidate(
+                    provider="pexels",
+                    id="pexels-1",
+                    title="Software dashboard laptop",
+                    source_url="https://pexels.test/videos/1",
+                    download_url="https://pexels.test/videos/1.mp4",
+                )
+            ]
+
+        service = GroundingService(
+            retrieval_runtime=_FakeRuntime(
+                pack=RetrievalQueryPack(
+                    queries=[
+                        {
+                            "text": "software dashboard laptop",
+                            "intent": "stock_fallback",
+                            "providers": ["youtube"],
+                            "priority": 10,
+                        }
+                    ]
+                )
+            ),
+            fixture_search=lambda tokens, max_results=3: [],
+            pexels_search=pexels_search,
+            youtube_search=lambda tokens, max_results=3: [],
+        )
+
+        summary = service.build_grounding_summary("software dashboard laptop")
+
+        self.assertEqual(summary.candidates[0].id, "pexels:pexels-1")
+        self.assertIn("pexels", summary.queryPlan[0]["providers"])
+
+    def test_provider_order_respects_fixture_provider_enabled_flag(self):
+        service = GroundingService(
+            retrieval_runtime=_FakeRuntime(),
+            fixture_search=lambda tokens, max_results=3: [],
+            pexels_search=lambda tokens, max_results=3: [],
+            youtube_search=lambda tokens, max_results=3: [],
+        )
+
+        with patch.dict(os.environ, {"FIXTURE_PROVIDER_ENABLED": "0"}, clear=True):
+            query = RetrievalQuery(
+                text="workspace collaboration",
+                intent="stock_fallback",
+                providers=["pexels"],
+                priority=10,
+            )
+            self.assertEqual(service._provider_order_for_query(query), ["pexels"])

@@ -5,6 +5,7 @@ from typing import Any, Callable, Iterable
 
 from backend.config import get_settings
 from backend.models.agent import AgentGroundingCandidate, AgentGroundingSummary
+from backend.services.asset_providers.config import get_fixture_config
 from backend.services.asset_providers.fixture import search_fixture_candidates
 from backend.services.asset_providers.pexels import search_pexels_candidates
 from backend.services.asset_providers.youtube import search_youtube_candidates
@@ -62,21 +63,28 @@ class GroundingService:
         prompt: str,
         existing: AgentGroundingSummary | dict[str, Any] | None = None,
     ) -> AgentGroundingSummary:
-        brief = self._merge_brief(self.parse_brief(prompt), existing, prompt)
+        existing_summary = self._normalize_existing(existing)
+        brief = self._merge_brief(self.parse_brief(prompt), existing_summary, prompt)
         fallback_query_pack = self._fallback_query_pack(brief)
-        runtime_error = None
         try:
-            query_pack = self._get_retrieval_runtime().build_query_pack(prompt)
+            query_pack = self._merge_context_into_query_pack(
+                self._get_retrieval_runtime().build_query_pack(prompt),
+                brief,
+                existing_summary,
+            )
         except Exception as exc:
-            runtime_error = exc
-            query_pack = self._fallback_query_pack(brief, reason=str(exc))
+            query_pack = self._merge_context_into_query_pack(
+                self._fallback_query_pack(brief, reason=str(exc)),
+                brief,
+                existing_summary,
+            )
 
         candidates = self.search_candidates_for_query_plan(query_pack.queries)
         if not candidates:
-            supplemental_queries = self._query_diff(query_pack.queries, fallback_query_pack.queries)
-            if supplemental_queries:
-                query_pack = self._merge_query_pack(query_pack, fallback_query_pack)
-                candidates = self.search_candidates_for_query_plan(supplemental_queries)
+            merged_query_pack = self._merge_query_pack(query_pack, fallback_query_pack)
+            if merged_query_pack.queries != query_pack.queries:
+                query_pack = merged_query_pack
+                candidates = self.search_candidates_for_query_plan(query_pack.queries)
         return AgentGroundingSummary(
             status="needs_confirmation" if candidates else "pending_search",
             productName=query_pack.productName,
@@ -226,6 +234,22 @@ class GroundingService:
             queries=merged_queries,
         )
 
+    def _merge_context_into_query_pack(
+        self,
+        query_pack: RetrievalQueryPack,
+        brief: ParsedBrief,
+        existing_summary: AgentGroundingSummary,
+    ) -> RetrievalQueryPack:
+        return query_pack.model_copy(
+            update={
+                "productName": query_pack.productName or brief.product_name,
+                "audience": query_pack.audience or brief.audience,
+                "styleHint": query_pack.styleHint or brief.style_hint,
+                "featureHints": self._merge_unique(existing_summary.featureHints, brief.feature_hints, query_pack.featureHints),
+                "assumptions": self._merge_unique(existing_summary.assumptions, query_pack.assumptions),
+            }
+        )
+
     def _merge_query_objects(
         self,
         primary: Iterable[RetrievalQuery],
@@ -263,10 +287,7 @@ class GroundingService:
         return (query.intent, " ".join(query.text.lower().split()))
 
     def _fixture_grounding_enabled(self) -> bool:
-        value = os.environ.get("CLIPFORGE_GROUNDING_ENABLE_FIXTURE", "").strip().lower()
-        if not value:
-            return True
-        return value in {"1", "true", "yes", "on"}
+        return get_fixture_config().enabled
 
     def _legacy_search_candidates(self, search_queries: list[str]) -> list[AgentGroundingCandidate]:
         normalized_queries = [query.strip() for query in search_queries if query and query.strip()]
