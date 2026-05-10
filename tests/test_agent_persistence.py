@@ -1963,6 +1963,66 @@ class SessionServiceBehaviorTests(unittest.TestCase):
                 os.environ["CLIPFORGE_PLANNER_MODE"] = self._planner_mode_before
             get_settings.cache_clear()
 
+    def test_execution_feedback_replan_clears_revision_trace_fields(self):
+        from backend.db.repositories import AgentJobRepository, AgentPlanRepository, AgentSessionRepository
+        from backend.services.agent_session_service import AgentSessionService
+        from backend.services.planner_orchestrator import PlannerOrchestrator
+
+        service = AgentSessionService(session_factory=self.SessionLocal)
+        session = service.create_session("给 Notion AI 做一个 30 秒产品亮点视频")
+
+        with self.SessionLocal() as db:
+            session_repo = AgentSessionRepository(db)
+            plan_repo = AgentPlanRepository(db)
+            job_repo = AgentJobRepository(db)
+            session_record = session_repo.get(session.id)
+            latest_plan = plan_repo.get_latest_for_session(session.id)
+
+            session_record.planner_trace_json = {
+                "lastPlanningState": "replanning_complete",
+                "triggerType": "user_revision",
+                "revisionRuntime": "deterministic_fallback",
+                "fallbackUsed": True,
+                "fallbackReason": "revision runnable unavailable",
+            }
+            failed_job = job_repo.create(
+                session_id=session.id,
+                plan_id=latest_plan.id,
+                job_type="search",
+                status="failed",
+            )
+            failed_job_id = failed_job.id
+            db.commit()
+
+        with self.SessionLocal() as db:
+            session_repo = AgentSessionRepository(db)
+            plan_repo = AgentPlanRepository(db)
+            job_repo = AgentJobRepository(db)
+            session_record = session_repo.get(session.id)
+            latest_plan = plan_repo.get_latest_for_session(session.id)
+            failed_job_record = job_repo.get(failed_job_id)
+
+            next_plan = PlannerOrchestrator().persist_execution_feedback_replan(
+                db=db,
+                session_record=session_record,
+                failed_job_record=failed_job_record,
+                execution_feedback={
+                    "failedSceneIds": [1],
+                    "failureReason": "素材检索失败",
+                    "retryable": True,
+                    "feedbackSource": "worker_failure",
+                },
+            )
+            db.commit()
+
+            self.assertEqual(next_plan.trigger_type, "execution_feedback")
+            self.assertEqual(session_record.current_plan_id, next_plan.id)
+            self.assertEqual(session_record.planner_trace_json["triggerType"], "execution_feedback")
+            self.assertEqual(session_record.planner_trace_json["autoExecutionReplanCount"], 1)
+            self.assertNotIn("revisionRuntime", session_record.planner_trace_json)
+            self.assertNotIn("fallbackUsed", session_record.planner_trace_json)
+            self.assertNotIn("fallbackReason", session_record.planner_trace_json)
+
     def test_add_user_message_rejects_non_editable_session_states(self):
         from backend.db.repositories import AgentSessionRepository
         from backend.services.agent_session_service import AgentSessionService

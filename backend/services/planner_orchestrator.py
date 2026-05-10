@@ -226,10 +226,14 @@ class PlannerOrchestrator:
         )
 
         session_record.current_plan_id = next_plan.id
-        session_record.planner_trace_json = {
+        next_trace = {
             **planner_trace,
             "lastPlanningState": state["status"],
             "triggerType": state["triggerType"],
             "autoExecutionReplanCount": auto_replan_count + 1,
         }
+        next_trace.pop("revisionRuntime", None)
+        next_trace.pop("fallbackUsed", None)
+        next_trace.pop("fallbackReason", None)
+        session_record.planner_trace_json = next_trace
         return next_plan
