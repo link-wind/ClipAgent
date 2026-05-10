@@ -281,6 +281,45 @@ class PlannerRuntimeTests(unittest.TestCase):
         self.assertEqual(next_execution.scenes[0].searchQuery, "城市 车流 黄昏")
         self.assertEqual(next_agent.scenes[0].description, "城市与车流开场，建立商务节奏")
 
+    def test_langchain_runtime_allows_revision_result_to_clear_open_issues(self):
+        from backend.services.planner_models import RevisionPlanningResult, UserRevisionFeedback
+        from backend.services.planner_runtime_deterministic import DeterministicPlannerRuntime
+        from backend.services.planner_runtime_langchain import LangChainPlannerRuntime
+
+        deterministic_delegate = Mock()
+        current_agent, current_execution = DeterministicPlannerRuntime().build_plan_from_brief(
+            "给 Notion AI 做一个 30 秒产品亮点视频"
+        )
+        current_agent = current_agent.model_copy(
+            update={"openIssues": [{"id": "issue-1", "summary": "still open"}]},
+            deep=True,
+        )
+        fake_llm = _FakeChatModel(
+            result=RevisionPlanningResult(
+                changeSummary="已解决当前待确认问题",
+                openIssues=[],
+            )
+        )
+
+        runtime = LangChainPlannerRuntime(
+            model_name="gpt-4o-mini",
+            llm=fake_llm,
+            deterministic_delegate=deterministic_delegate,
+        )
+        next_agent, next_execution, change_summary = runtime.replan_after_user_revision(
+            current_agent=current_agent,
+            current_execution=current_execution,
+            revision_feedback=UserRevisionFeedback(
+                message="这些待确认问题已经解决",
+                sceneKeywordUpdates={},
+            ),
+        )
+
+        self.assertEqual(change_summary, "已解决当前待确认问题")
+        self.assertEqual(next_agent.openIssues, [])
+        self.assertEqual(next_execution.scenes[0].searchQuery, current_execution.scenes[0].searchQuery)
+        deterministic_delegate.replan_after_user_revision.assert_not_called()
+
     def test_langchain_runtime_falls_back_to_deterministic_revision_when_patch_targets_unknown_scene(self):
         from backend.services.planner_models import RevisionPlanningResult, UserRevisionFeedback
         from backend.services.planner_runtime_deterministic import DeterministicPlannerRuntime
@@ -416,6 +455,35 @@ class PlannerRuntimeTests(unittest.TestCase):
 
         self.assertEqual(result, ("agent-fallback", "execution-fallback", "fallback summary"))
         deterministic_delegate.replan_after_user_revision.assert_called_once()
+
+    def test_langchain_runtime_does_not_fall_back_when_revision_runnable_construction_fails(self):
+        from backend.services.planner_models import UserRevisionFeedback
+        from backend.services.planner_runtime_deterministic import DeterministicPlannerRuntime
+        from backend.services.planner_runtime_langchain import LangChainPlannerRuntime
+
+        deterministic_delegate = Mock()
+        current_agent, current_execution = DeterministicPlannerRuntime().build_plan_from_brief(
+            "给 Notion AI 做一个 30 秒产品亮点视频"
+        )
+
+        runtime = LangChainPlannerRuntime(
+            model_name="gpt-4o-mini",
+            llm=_FakeChatModel(result=None),
+            deterministic_delegate=deterministic_delegate,
+        )
+
+        with patch.object(runtime, "_revision_runnable", side_effect=TypeError("bad runnable construction")):
+            with self.assertRaisesRegex(TypeError, "bad runnable construction"):
+                runtime.replan_after_user_revision(
+                    current_agent=current_agent,
+                    current_execution=current_execution,
+                    revision_feedback=UserRevisionFeedback(
+                        message="整体再商务一点",
+                        sceneKeywordUpdates={},
+                    ),
+                )
+
+        deterministic_delegate.replan_after_user_revision.assert_not_called()
 
     def test_langchain_runtime_does_not_swallow_unexpected_revision_merge_errors(self):
         from backend.services.planner_models import RevisionPlanningResult, UserRevisionFeedback

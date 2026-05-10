@@ -8,6 +8,7 @@ from backend.services.planner_models import (
     GroundingFeedback,
     InitialPlanningResult,
     RevisionPlanningResult,
+    RevisionScenePatch,
     SearchExecutionFeedback,
     UserRevisionFeedback,
 )
@@ -34,6 +35,8 @@ Only patch fields that should change after the revision.
 Keep searchQuery concise and non-empty for every patched scene.
 Keep keywords concise and non-empty for every patched scene.
 """.strip()
+
+_MISSING_OPEN_ISSUES = object()
 
 
 class _RevisionFallbackError(Exception):
@@ -178,20 +181,26 @@ class LangChainPlannerRuntime:
                 raise _RevisionFallbackError(f"Duplicate revision patch scene id: {patch.id}")
             seen_patch_ids.add(patch.id)
             normalized_scene_patches.append(
-                {
-                    "id": patch.id,
-                    "description": patch.description.strip(),
-                    "keywords": [keyword.strip() for keyword in patch.keywords if keyword.strip()],
-                    "searchQuery": " ".join(patch.searchQuery.split()),
-                }
+                RevisionScenePatch(
+                    id=patch.id,
+                    description=patch.description.strip(),
+                    keywords=[keyword.strip() for keyword in patch.keywords if keyword.strip()],
+                    searchQuery=" ".join(patch.searchQuery.split()),
+                )
             )
 
-        return RevisionPlanningResult(
+        open_issues = (
+            result.openIssues
+            if "openIssues" in result.model_fields_set
+            else _MISSING_OPEN_ISSUES
+        )
+
+        return RevisionPlanningResult.model_construct(
             summary=result.summary.strip(),
             audience=result.audience.strip(),
             styleHint=result.styleHint.strip(),
             style=result.style.strip(),
-            openIssues=result.openIssues,
+            openIssues=open_issues,
             changeSummary=result.changeSummary.strip(),
             scenePatches=normalized_scene_patches,
         )
@@ -273,7 +282,11 @@ class LangChainPlannerRuntime:
                     },
                     deep=True,
                 ),
-                "openIssues": result.openIssues or current_agent.openIssues,
+                "openIssues": (
+                    result.openIssues
+                    if result.openIssues is not _MISSING_OPEN_ISSUES
+                    else current_agent.openIssues
+                ),
                 "scenes": updated_agent_scenes,
                 "replanHistory": [
                     *current_agent.replanHistory,
@@ -361,9 +374,10 @@ class LangChainPlannerRuntime:
         current_execution: ExecutionPlan,
         revision_feedback: UserRevisionFeedback,
     ) -> tuple[AgentPlan, ExecutionPlan, str]:
+        runnable = self._revision_runnable()
         try:
             try:
-                result = self._revision_runnable().invoke(
+                result = runnable.invoke(
                     self._build_revision_messages(
                         current_agent=current_agent,
                         current_execution=current_execution,
