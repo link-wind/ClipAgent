@@ -192,7 +192,7 @@ class GroundingService:
             )
             priority += 10
 
-        fallback_terms = self._merge_unique(brief.search_queries, self._build_fallback_queries(brief))
+        fallback_terms = self._merge_unique(self._build_fallback_queries(brief), brief.search_queries)
         for text in fallback_terms:
             if text == brief.product_name:
                 continue

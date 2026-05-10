@@ -231,3 +231,44 @@ class GroundingServiceTests(unittest.TestCase):
                 priority=10,
             )
             self.assertEqual(service._provider_order_for_query(query), ["pexels"])
+
+    def test_build_grounding_summary_preserves_generic_fallback_query_when_existing_queries_fill_limit(self):
+        def fixture_search(tokens, max_results=3):
+            if tuple(tokens) != ("城市",):
+                return []
+            return [
+                AssetCandidate(
+                    provider="fixture",
+                    id="city-1",
+                    title="City lifestyle",
+                    source_url="/fixtures/city-1.mp4",
+                    download_url="/fixtures/city-1.mp4",
+                )
+            ]
+
+        service = GroundingService(
+            retrieval_runtime=_FakeRuntime(error=RuntimeError("planner unavailable")),
+            fixture_search=fixture_search,
+            pexels_search=lambda tokens, max_results=3: [],
+            youtube_search=lambda tokens, max_results=3: [],
+        )
+
+        summary = service.build_grounding_summary(
+            "整体再商务一点，目标受众改成销售团队",
+            existing=AgentGroundingSummary(
+                productName="Notion",
+                audience="销售团队",
+                featureHints=["亮点"],
+                searchQueries=[
+                    "Notion",
+                    "销售团队",
+                    "亮点",
+                    "整体再商务一点 目标受众改成销售团队",
+                    "给 Notion AI 做一个",
+                ],
+            ),
+        )
+
+        self.assertEqual(summary.status, "needs_confirmation")
+        self.assertIn("城市", summary.searchQueries)
+        self.assertEqual(summary.candidates[0].id, "fixture:city-1")
