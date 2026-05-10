@@ -159,15 +159,18 @@ class PlannerOrchestrator:
             fallback_used = True
             fallback_reason = latest_revision_trace.get("fallbackReason", "")
         session_record.current_plan_id = next_plan.id
-        session_record.planner_trace_json = {
+        planner_trace = {
             **(session_record.planner_trace_json or {}),
             "lastPlanningState": state["status"],
             "triggerType": state["triggerType"],
             "revisionRuntime": revision_runtime,
             "fallbackUsed": fallback_used,
         }
+        if not fallback_used:
+            planner_trace.pop("fallbackReason", None)
         if fallback_reason:
-            session_record.planner_trace_json["fallbackReason"] = fallback_reason
+            planner_trace["fallbackReason"] = fallback_reason
+        session_record.planner_trace_json = planner_trace
         return next_plan
 
     def persist_execution_feedback_replan(
