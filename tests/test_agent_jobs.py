@@ -943,16 +943,12 @@ class ConfirmFlowContractTests(unittest.TestCase):
 
         queued_job_ids: list[str] = []
         session = self.session_service.create_session("做一个智能剪辑演示视频")
-        grounded_session = self.session_service.confirm_grounding_candidates(
-            session.id,
-            [candidate.id for candidate in session.grounding.candidates[:2]],
-        )
         service = AgentExecutionService(
             session_factory=self.session_factory,
             enqueue_job=queued_job_ids.append,
         )
 
-        confirmed = service.confirm_session(grounded_session.id)
+        confirmed = service.confirm_session(session.id)
 
         self.assertEqual(confirmed.status, AgentStatus.QUEUED)
         self.assertEqual(confirmed.progress, 25)
@@ -981,7 +977,8 @@ class ConfirmFlowContractTests(unittest.TestCase):
     def test_confirm_session_rejects_unconfirmed_grounding_state(self):
         from backend.services.agent_execution_service import AgentExecutionService
 
-        session = self.session_service.create_session("给 Notion AI 做一个 30 秒产品亮点视频")
+        session = self.session_service.create_session()
+        self.session_service.add_user_message(session.id, "给 Notion AI 做一个 30 秒产品亮点视频")
         service = AgentExecutionService(
             session_factory=self.session_factory,
             enqueue_job=lambda _job_id: None,
@@ -997,8 +994,9 @@ class ConfirmFlowContractTests(unittest.TestCase):
         from backend.db.repositories import AgentPlanRepository
         from backend.services.agent_execution_service import AgentExecutionService
 
-        session = self.session_service.create_session("给 Notion AI 做一个 30 秒产品亮点视频")
-        candidate_ids = [candidate.id for candidate in session.grounding.candidates[:2]]
+        session = self.session_service.create_session()
+        awaiting = self.session_service.add_user_message(session.id, "给 Notion AI 做一个 30 秒产品亮点视频")
+        candidate_ids = [candidate.id for candidate in awaiting.grounding.candidates[:2]]
         grounded_session = self.session_service.confirm_grounding_candidates(session.id, candidate_ids)
         service = AgentExecutionService(
             session_factory=self.session_factory,
@@ -1014,7 +1012,7 @@ class ConfirmFlowContractTests(unittest.TestCase):
             latest_plan = AgentPlanRepository(db).get_latest_for_session(session.id)
 
         self.assertIsNotNone(latest_plan)
-        self.assertEqual(latest_plan.version, 1)
+        self.assertEqual(latest_plan.version, 2)
 
     def test_confirm_endpoint_returns_queued_session(self):
         import backend.api.agent as agent_api_module
@@ -1023,10 +1021,6 @@ class ConfirmFlowContractTests(unittest.TestCase):
         from backend.services.agent_execution_service import AgentExecutionService
 
         session = self.session_service.create_session("做一个品牌展示短片")
-        grounding_confirmed = self.session_service.confirm_grounding_candidates(
-            session.id,
-            [candidate.id for candidate in session.grounding.candidates[:2]],
-        )
         execution_service = AgentExecutionService(
             session_factory=self.session_factory,
             enqueue_job=lambda _job_id: None,
@@ -1038,7 +1032,7 @@ class ConfirmFlowContractTests(unittest.TestCase):
                 transport=transport,
                 base_url="http://testserver",
             ) as client:
-                response = await client.post(f"/api/agent/sessions/{grounding_confirmed.id}/confirm")
+                response = await client.post(f"/api/agent/sessions/{session.id}/confirm")
                 self.assertEqual(response.status_code, 200)
                 payload = response.json()
                 self.assertEqual(payload["status"], AgentStatus.QUEUED.value)
@@ -1075,15 +1069,11 @@ class AgentExecutionWorkerTests(unittest.TestCase):
         from backend.services.agent_execution_service import AgentExecutionService
 
         session = self.session_service.create_session("做一个智能剪辑 agent 演示视频")
-        grounded_session = self.session_service.confirm_grounding_candidates(
-            session.id,
-            [candidate.id for candidate in session.grounding.candidates[:2]],
-        )
         execution_service = AgentExecutionService(
             session_factory=self.session_factory,
             enqueue_job=lambda _job_id: None,
         )
-        confirmed = execution_service.confirm_session(grounded_session.id)
+        confirmed = execution_service.confirm_session(session.id)
         return session.id, confirmed.activeJobId
 
     def test_progress_service_exposes_required_methods(self):
@@ -1211,12 +1201,163 @@ class AgentExecutionWorkerTests(unittest.TestCase):
             self.assertEqual(job_record.error_message, "素材检索失败")
 
             event_types = [row.event_type for row in event_repo.list_for_session(session_id)]
-            self.assertEqual(event_types, ["job_queued", "job_started", "job_failed"])
+            self.assertEqual(
+                event_types,
+                ["job_queued", "job_started", "job_failed", "job_requeued_after_replan"],
+            )
 
         session = AgentReadService(session_factory=self.session_factory).read_session(session_id)
-        self.assertEqual(session.status, AgentStatus.FAILED)
-        self.assertEqual(session.error.message, "素材检索失败")
-        self.assertEqual(session.currentStep, "处理失败：素材检索失败")
+        self.assertEqual(session.status, AgentStatus.QUEUED)
+        self.assertIsNone(session.error)
+        self.assertEqual(session.currentStep, "任务已重新规划并重新入队")
+
+    def test_run_agent_job_requeues_replanned_job_after_retryable_search_failure(self):
+        from backend.db.repositories import AgentEventRepository, AgentJobRepository, AgentPlanRepository
+        from backend.models.agent import AgentStatus
+        from backend.services.agent_read_service import AgentReadService
+        from backend.tasks.agent_tasks import run_agent_job
+
+        session_id, job_id = self._create_queued_job()
+
+        async def failing_search_runner(_session_id, _scenes):
+            raise RuntimeError("素材检索失败")
+
+        with patch("backend.tasks.agent_tasks.SessionLocal", self.session_factory), patch(
+            "backend.tasks.agent_tasks.search_and_download_agent_clips",
+            failing_search_runner,
+        ):
+            run_agent_job(job_id)
+
+        with self.session_factory() as db:
+            job_repo = AgentJobRepository(db)
+            plan_repo = AgentPlanRepository(db)
+            event_repo = AgentEventRepository(db)
+
+            jobs = job_repo.list_recent(limit=10)
+            latest_plan = plan_repo.list_for_session(session_id)[-1]
+            event_types = [row.event_type for row in event_repo.list_for_session(session_id)]
+
+            original_job = next(job for job in jobs if job.id == job_id)
+            replacement_job = jobs[0]
+
+            self.assertEqual(original_job.status, "failed")
+            self.assertEqual(latest_plan.trigger_type, "execution_feedback")
+            self.assertEqual(replacement_job.status, "queued")
+            self.assertEqual(replacement_job.plan_id, latest_plan.id)
+            self.assertIn("job_requeued_after_replan", event_types)
+
+        session = AgentReadService(session_factory=self.session_factory).read_session(session_id)
+        self.assertEqual(session.status, AgentStatus.QUEUED)
+        self.assertEqual(session.currentStep, "任务已重新规划并重新入队")
+        self.assertIsNotNone(session.activeJobId)
+        self.assertNotEqual(session.activeJobId, job_id)
+
+    def test_run_agent_job_dispatches_replanned_job_after_retryable_search_failure(self):
+        from backend.db.repositories import AgentJobRepository
+        from backend.tasks.agent_tasks import run_agent_job
+
+        session_id, job_id = self._create_queued_job()
+        dispatched_job_ids: list[str] = []
+
+        async def failing_search_runner(_session_id, _scenes):
+            raise RuntimeError("素材检索失败")
+
+        with patch("backend.tasks.agent_tasks.SessionLocal", self.session_factory), patch(
+            "backend.tasks.agent_tasks.search_and_download_agent_clips",
+            failing_search_runner,
+        ), patch(
+            "backend.tasks.agent_tasks.dispatch_agent_job",
+            side_effect=dispatched_job_ids.append,
+            create=True,
+        ):
+            run_agent_job(job_id)
+
+        with self.session_factory() as db:
+            jobs = AgentJobRepository(db).list_recent(limit=10)
+            replacement_job = next(job for job in jobs if job.id != job_id)
+
+        self.assertEqual(len(dispatched_job_ids), 1)
+        self.assertEqual(dispatched_job_ids[0], replacement_job.id)
+
+    def test_run_agent_job_persists_structured_diagnostics_in_execution_feedback_replan(self):
+        from backend.db.repositories import AgentObservationRepository
+        from backend.services.planner_orchestrator import PlannerOrchestrator
+        from backend.tasks.agent_tasks import run_agent_job
+
+        session_id, job_id = self._create_queued_job()
+
+        class FakeSceneSearchFailure(RuntimeError):
+            def __init__(self, message: str, failed_scene_ids: list[int]):
+                super().__init__(message)
+                self.failed_scene_ids = failed_scene_ids
+                self.failure_category = "no_inventory"
+                self.primary_provider = "youtube"
+                self.provider_diagnostics = [
+                    {"provider": "youtube", "message": "没有返回候选素材"}
+                ]
+                self.scene_diagnostics = [
+                    {
+                        "sceneId": 2,
+                        "retryable": True,
+                        "summary": "youtube returned no candidates",
+                    }
+                ]
+                self.retry_strategy_hint = "inventory_broaden"
+
+        async def failing_search_runner(_session_id, _scenes):
+            raise FakeSceneSearchFailure("scene 2 素材检索失败", [2])
+
+        captured_execution_feedback: dict[str, object] = {}
+        original_persist = PlannerOrchestrator.persist_execution_feedback_replan
+
+        def capture_execution_feedback(self, db, session_record, failed_job_record, execution_feedback):
+            captured_execution_feedback.clear()
+            captured_execution_feedback.update(execution_feedback)
+            return original_persist(
+                self,
+                db=db,
+                session_record=session_record,
+                failed_job_record=failed_job_record,
+                execution_feedback=execution_feedback,
+            )
+
+        with patch("backend.tasks.agent_tasks.SessionLocal", self.session_factory), patch(
+            "backend.tasks.agent_tasks.search_and_download_agent_clips",
+            failing_search_runner,
+        ), patch.object(
+            PlannerOrchestrator,
+            "persist_execution_feedback_replan",
+            autospec=True,
+            side_effect=capture_execution_feedback,
+        ):
+            run_agent_job(job_id)
+
+        with self.session_factory() as db:
+            observations = AgentObservationRepository(db).list_for_session(session_id)
+            execution_feedback = next(row for row in observations if row.observation_type == "execution_feedback")
+
+        expected_feedback = {
+            "failedSceneIds": [2],
+            "failureReason": "scene 2 素材检索失败",
+            "failureCategory": "no_inventory",
+            "primaryProvider": "youtube",
+            "providerDiagnostics": [
+                {"provider": "youtube", "message": "没有返回候选素材"}
+            ],
+            "sceneDiagnostics": [
+                {
+                    "sceneId": 2,
+                    "retryable": True,
+                    "summary": "youtube returned no candidates",
+                }
+            ],
+            "retryStrategyHint": "inventory_broaden",
+            "retryable": True,
+            "feedbackSource": "worker_failure",
+        }
+
+        self.assertEqual(captured_execution_feedback, expected_feedback)
+        self.assertEqual(execution_feedback.payload_json, expected_feedback)
 
     def test_run_agent_job_persists_structured_failure_diagnostics_in_job_failed_event(self):
         from backend.db.repositories import AgentEventRepository
@@ -1281,7 +1422,6 @@ class AgentExecutionWorkerTests(unittest.TestCase):
 
     def test_run_agent_job_truncates_failed_current_step_but_keeps_full_error_message(self):
         from backend.db.repositories import AgentJobRepository
-        from backend.models.agent import AgentStatus
         from backend.services.agent_read_service import AgentReadService
         from backend.tasks.agent_tasks import run_agent_job
 
@@ -1305,10 +1445,9 @@ class AgentExecutionWorkerTests(unittest.TestCase):
             self.assertTrue(job_record.current_step.startswith("处理失败："))
 
         session = AgentReadService(session_factory=self.session_factory).read_session(session_id)
-        self.assertEqual(session.status, AgentStatus.FAILED)
-        self.assertEqual(session.error.message, long_error_message)
-        self.assertLessEqual(len(session.currentStep), 128)
-        self.assertTrue(session.currentStep.startswith("处理失败："))
+        self.assertEqual(session.status.value, "queued")
+        self.assertIsNone(session.error)
+        self.assertEqual(session.currentStep, "任务已重新规划并重新入队")
 
     def test_run_agent_job_persists_failure_state_when_render_service_import_fails(self):
         from backend.db.repositories import AgentEventRepository, AgentJobRepository

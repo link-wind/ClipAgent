@@ -164,24 +164,29 @@ class AgentApiP0ContractTests(unittest.TestCase):
         async def _run():
             transport = httpx.ASGITransport(app=app)
             async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as client:
-                create_response = await client.post(
-                    "/api/agent/sessions",
-                    json={"message": "做一个 30 秒的科技产品短片"},
-                )
+                create_response = await client.post("/api/agent/sessions", json={})
                 self.assertEqual(create_response.status_code, 200)
                 created_session = create_response.json()
 
                 session_id = created_session["id"]
-                self.assertEqual(created_session["status"], "plan_ready")
-                self.assertEqual(len(created_session["messages"]), 2)
+                self.assertEqual(created_session["status"], "idle")
+                self.assertEqual(len(created_session["messages"]), 0)
                 self.assertIsNone(created_session["plan"])
-                self.assertEqual(created_session["grounding"]["status"], "needs_confirmation")
+                self.assertIsNone(created_session["grounding"])
+
+                message_response = await client.post(
+                    f"/api/agent/sessions/{session_id}/messages",
+                    json={"message": "给 Notion AI 做一个 30 秒产品亮点视频"},
+                )
+                self.assertEqual(message_response.status_code, 200)
+                awaiting_session = message_response.json()
+                self.assertEqual(awaiting_session["grounding"]["status"], "needs_confirmation")
 
                 confirm_response = await client.post(
                     f"/api/agent/sessions/{session_id}/grounding/confirm",
                     json={
                         "candidateIds": [
-                            candidate["id"] for candidate in created_session["grounding"]["candidates"][:2]
+                            candidate["id"] for candidate in awaiting_session["grounding"]["candidates"][:2]
                         ]
                     },
                 )
@@ -202,11 +207,12 @@ class AgentApiP0ContractTests(unittest.TestCase):
 
                 message_response = await client.post(
                     f"/api/agent/sessions/{session_id}/messages",
-                    json={"message": "再加一点品牌感"},
+                    json={"message": "再加一点品牌感，更商务一点"},
                 )
                 self.assertEqual(message_response.status_code, 200)
                 updated_session = message_response.json()
                 self.assertEqual(updated_session["status"], "plan_ready")
+                self.assertEqual(updated_session["plan"]["style"], "商务演示风格")
                 self.assertEqual(len(updated_session["messages"]), 5)
                 self.assertEqual(updated_session["messages"][-1]["role"], "assistant")
 
@@ -223,15 +229,18 @@ class AgentApiP0ContractTests(unittest.TestCase):
         async def _run():
             transport = httpx.ASGITransport(app=app)
             async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as client:
-                create_response = await client.post(
-                    "/api/agent/sessions",
-                    json={"message": "做一个 30 秒 AI 笔记产品宣传片"},
-                )
+                create_response = await client.post("/api/agent/sessions", json={})
                 self.assertEqual(create_response.status_code, 200)
                 created = create_response.json()
+                message_response = await client.post(
+                    f"/api/agent/sessions/{created['id']}/messages",
+                    json={"message": "做一个 30 秒 AI 笔记产品宣传片"},
+                )
+                self.assertEqual(message_response.status_code, 200)
+                awaiting = message_response.json()
                 confirm_response = await client.post(
                     f"/api/agent/sessions/{created['id']}/grounding/confirm",
-                    json={"candidateIds": [candidate["id"] for candidate in created["grounding"]["candidates"][:2]]},
+                    json={"candidateIds": [candidate["id"] for candidate in awaiting["grounding"]["candidates"][:2]]},
                 )
                 self.assertEqual(confirm_response.status_code, 200)
                 payload = confirm_response.json()
@@ -279,16 +288,16 @@ class AgentApiP0ContractTests(unittest.TestCase):
         self.assertEqual(steps[1].status, "succeeded")
         self.assertEqual(steps[2].id, "generate_options")
         self.assertEqual(steps[2].status, "succeeded")
-        self.assertIn("status", steps[2].result)
-        self.assertEqual(steps[2].result["status"], "needs_confirmation")
+        self.assertIn("options", steps[2].result)
         self.assertEqual(steps[3].id, "finalize_plan")
-        self.assertEqual(steps[3].status, "pending")
+        self.assertEqual(steps[3].status, "succeeded")
 
     def test_confirmed_session_steps_mark_create_task_succeeded(self):
-        session = self.session_service.create_session("做一个 30 秒 AI 笔记产品宣传片")
+        session = self.session_service.create_session()
+        awaiting = self.session_service.add_user_message(session.id, "做一个 30 秒 AI 笔记产品宣传片")
         grounded_session = self.session_service.confirm_grounding_candidates(
             session.id,
-            [candidate.id for candidate in session.grounding.candidates[:2]],
+            [candidate.id for candidate in awaiting.grounding.candidates[:2]],
         )
         execution_service = AgentExecutionService(
             session_factory=self.session_factory,
@@ -453,6 +462,31 @@ class AgentApiP0ContractTests(unittest.TestCase):
         self.assertEqual(failed_session.steps[5].error.retryableStep, "search_assets")
         self.assertEqual(failed_session.steps[6].status, "pending")
         self.assertEqual(failed_session.steps[7].status, "pending")
+
+    def test_failed_search_replan_keeps_session_in_queued_state_with_new_active_job(self):
+        from backend.tasks.agent_tasks import run_agent_job
+
+        session = self.session_service.create_session("做一个智能剪辑 agent 演示视频")
+        execution_service = AgentExecutionService(
+            session_factory=self.session_factory,
+            enqueue_job=lambda _job_id: None,
+        )
+        confirmed_session = execution_service.confirm_session(session.id)
+
+        async def failing_search_runner(_session_id, _scenes):
+            raise RuntimeError("素材检索失败")
+
+        with patch("backend.tasks.agent_tasks.SessionLocal", self.session_factory), patch(
+            "backend.tasks.agent_tasks.search_and_download_agent_clips",
+            failing_search_runner,
+        ):
+            run_agent_job(confirmed_session.activeJobId)
+
+        reloaded = self.read_service.read_session(session.id)
+        self.assertEqual(reloaded.status.value, "queued")
+        self.assertEqual(reloaded.currentStep, "任务已重新规划并重新入队")
+        self.assertIsNotNone(reloaded.activeJobId)
+        self.assertNotEqual(reloaded.activeJobId, confirmed_session.activeJobId)
 
     def test_agent_event_history_endpoint_returns_persisted_events(self):
         async def _run():

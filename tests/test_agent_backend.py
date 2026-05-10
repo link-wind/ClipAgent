@@ -8,11 +8,15 @@ from unittest.mock import AsyncMock, patch
 
 import httpx
 from sqlalchemy import create_engine, event
+from sqlalchemy import func
+from sqlalchemy import select
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
 import backend.api.agent as agent_api_module
+from backend.config import get_settings
 from backend.db.base import Base
+from backend.db.models import AgentPlanRecord, AgentSessionRecord
 from backend.services.agent_execution_service import AgentExecutionService
 from backend.services.agent_read_service import AgentReadService
 from backend.services.agent_session_service import AgentSessionService
@@ -23,7 +27,7 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 
-def _make_test_client(app):
+def _make_test_client(app, raise_server_exceptions=True):
     from fastapi.testclient import TestClient
 
     original_init = httpx.Client.__init__
@@ -35,7 +39,7 @@ def _make_test_client(app):
 
     httpx.Client.__init__ = compatible_init
     try:
-        return TestClient(app)
+        return TestClient(app, raise_server_exceptions=raise_server_exceptions)
     finally:
         httpx.Client.__init__ = original_init
 
@@ -192,17 +196,17 @@ class AgentApiTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         data = response.json()
         self.assertEqual(data["status"], "plan_ready")
-        self.assertIsNone(data["plan"])
-        self.assertIn("grounding", data)
-        self.assertEqual(data["grounding"]["status"], "needs_confirmation")
-        self.assertGreater(len(data["grounding"]["candidates"]), 0)
+        self.assertIsNotNone(data["plan"])
+        self.assertIsNone(data["grounding"])
+        self.assertGreater(len(data["plan"]["scenes"]), 0)
 
     def test_create_session_api_returns_grounding_candidates_before_plan_confirmation(self):
         from backend.main import app
 
         client = _make_test_client(app)
+        created = client.post("/api/agent/sessions", json={}).json()
         response = client.post(
-            "/api/agent/sessions",
+            f"/api/agent/sessions/{created['id']}/messages",
             json={"message": "给 Notion AI 做一个 30 秒产品亮点视频"},
         )
 
@@ -214,12 +218,81 @@ class AgentApiTests(unittest.TestCase):
         self.assertEqual(data["grounding"]["status"], "needs_confirmation")
         self.assertGreater(len(data["grounding"]["candidates"]), 0)
 
+    def test_create_session_api_returns_model_driven_initial_plan(self):
+        from backend.main import app
+
+        client = _make_test_client(app)
+        response = client.post(
+            "/api/agent/sessions",
+            json={"message": "给 Notion AI 做一个 30 秒产品亮点视频"},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertEqual(data["status"], "plan_ready")
+        self.assertIsNotNone(data["plan"])
+        self.assertGreater(len(data["plan"]["scenes"]), 0)
+
+    def test_create_session_rolls_back_when_langchain_planning_fails(self):
+        class FailingRuntime:
+            def build_plan_from_brief(self, _brief):
+                raise RuntimeError("LangChain planning failed")
+
+        with (
+            patch.dict("os.environ", {"CLIPFORGE_PLANNER_MODE": "langchain"}, clear=False),
+            patch(
+                "backend.services.planner_graph.get_planner_runtime",
+                return_value=FailingRuntime(),
+            ),
+        ):
+            get_settings.cache_clear()
+            try:
+                with self.assertRaisesRegex(RuntimeError, "LangChain planning failed"):
+                    self.session_service.create_session("给 Notion AI 做一个 30 秒产品亮点视频")
+            finally:
+                get_settings.cache_clear()
+
+        with self.session_factory() as db:
+            session_count = db.scalar(select(func.count()).select_from(AgentSessionRecord))
+            plan_count = db.scalar(select(func.count()).select_from(AgentPlanRecord))
+
+        self.assertEqual(session_count, 0)
+        self.assertEqual(plan_count, 0)
+
+    def test_create_session_api_returns_500_when_langchain_planning_fails(self):
+        from backend.main import app
+
+        class FailingRuntime:
+            def build_plan_from_brief(self, _brief):
+                raise RuntimeError("LangChain planning failed")
+
+        with (
+            patch.dict("os.environ", {"CLIPFORGE_PLANNER_MODE": "langchain"}, clear=False),
+            patch(
+                "backend.services.planner_graph.get_planner_runtime",
+                return_value=FailingRuntime(),
+            ),
+        ):
+            get_settings.cache_clear()
+            try:
+                client = _make_test_client(app, raise_server_exceptions=False)
+                response = client.post(
+                    "/api/agent/sessions",
+                    json={"message": "给 Notion AI 做一个 30 秒产品亮点视频"},
+                )
+            finally:
+                get_settings.cache_clear()
+
+        self.assertEqual(response.status_code, 500)
+        self.assertEqual(response.text, "Internal Server Error")
+
     def test_confirm_candidates_api_builds_grounded_plan(self):
         from backend.main import app
 
         client = _make_test_client(app)
+        created = client.post("/api/agent/sessions", json={}).json()
         created = client.post(
-            "/api/agent/sessions",
+            f"/api/agent/sessions/{created['id']}/messages",
             json={"message": "给 Notion AI 做一个 30 秒产品亮点视频"},
         ).json()
         self.assertIn("grounding", created)
@@ -243,10 +316,6 @@ class AgentApiTests(unittest.TestCase):
 
         client = _make_test_client(app)
         created = client.post("/api/agent/sessions", json={"message": "做一个科技短片"}).json()
-        client.post(
-            f"/api/agent/sessions/{created['id']}/grounding/confirm",
-            json={"candidateIds": [candidate["id"] for candidate in created["grounding"]["candidates"][:2]]},
-        )
         response = client.post(
             f"/api/agent/sessions/{created['id']}/messages",
             json={"message": "更商务一点"},
@@ -262,10 +331,6 @@ class AgentApiTests(unittest.TestCase):
 
         client = _make_test_client(app)
         created = client.post("/api/agent/sessions", json={"message": "做一个科技短片"}).json()
-        client.post(
-            f"/api/agent/sessions/{created['id']}/grounding/confirm",
-            json={"candidateIds": [candidate["id"] for candidate in created["grounding"]["candidates"][:2]]},
-        )
         response = client.post(
             f"/api/agent/sessions/{created['id']}/messages",
             json={
@@ -291,18 +356,13 @@ class AgentApiTests(unittest.TestCase):
         from backend.db.repositories import AgentPlanRepository
 
         created = self.session_service.create_session("做一个科技短片")
-        self.session_service.confirm_grounding_candidates(
-            created.id,
-            [candidate.id for candidate in created.grounding.candidates[:2]],
-        )
-
         updated = self.session_service.add_user_message(
             created.id,
             "场景1：城市 车流 黄昏；场景2：咖啡 特写 手工艺；场景3：海边 日落 风景；场景4：雪山 航拍 自然",
         )
 
         self.assertEqual(updated.plan.scenes[0].keywords, ["城市", "车流", "黄昏"])
-        self.assertEqual(updated.plan.scenes[3].searchQuery, "雪山 航拍 自然")
+        self.assertEqual(updated.plan.scenes[1].searchQuery, "咖啡 特写 手工艺")
 
         with self.session_factory() as db:
             latest_plan = AgentPlanRepository(db).get_latest_for_session(created.id)
@@ -310,13 +370,13 @@ class AgentApiTests(unittest.TestCase):
         self.assertIsNotNone(latest_plan)
         self.assertEqual(latest_plan.version, 2)
         self.assertEqual(latest_plan.plan_json["scenes"][0]["keywords"], ["城市", "车流", "黄昏"])
-        self.assertEqual(latest_plan.plan_json["scenes"][2]["searchQuery"], "海边 日落 风景")
+        self.assertEqual(latest_plan.execution_plan_json["scenes"][1]["searchQuery"], "咖啡 特写 手工艺")
 
     def test_add_message_before_grounding_confirmation_preserves_grounding_context(self):
         from backend.db.repositories import AgentPlanRepository
 
-        created = self.session_service.create_session("给 Notion AI 做一个 30 秒产品亮点视频")
-
+        created = self.session_service.create_session()
+        first = self.session_service.add_user_message(created.id, "给 Notion AI 做一个 30 秒产品亮点视频")
         updated = self.session_service.add_user_message(created.id, "整体再商务一点，目标受众改成销售团队")
 
         self.assertEqual(updated.status.value, "plan_ready")
@@ -328,48 +388,39 @@ class AgentApiTests(unittest.TestCase):
         self.assertIn("Notion", updated.grounding.searchQueries)
         self.assertIn("销售团队", updated.grounding.searchQueries)
         self.assertGreaterEqual(len(updated.messages), 4)
+        self.assertEqual(first.grounding.status, "needs_confirmation")
 
         with self.session_factory() as db:
             latest_plan = AgentPlanRepository(db).get_latest_for_session(created.id)
 
         self.assertIsNone(latest_plan)
 
-    def test_add_message_after_grounding_confirmation_preserves_grounded_plan_for_free_text_edits(self):
+    def test_add_message_after_grounding_confirmation_triggers_revision_replan(self):
         from backend.db.repositories import AgentPlanRepository
 
-        created = self.session_service.create_session("给 Notion AI 做一个 30 秒产品亮点视频")
-        grounded = self.session_service.confirm_grounding_candidates(
+        created = self.session_service.create_session()
+        awaiting = self.session_service.add_user_message(created.id, "给 Notion AI 做一个 30 秒产品亮点视频")
+        self.session_service.confirm_grounding_candidates(
             created.id,
-            [candidate.id for candidate in created.grounding.candidates[:2]],
+            [candidate.id for candidate in awaiting.grounding.candidates[:2]],
         )
-        original_scene_keywords = [scene.keywords[:] for scene in grounded.plan.scenes]
 
         updated = self.session_service.add_user_message(created.id, "更商务一点，品牌感再强一点")
 
         self.assertIsNotNone(updated.plan)
         self.assertEqual(updated.grounding.status, "confirmed")
-        self.assertEqual(
-            [scene.keywords for scene in updated.plan.scenes],
-            original_scene_keywords,
-        )
+        self.assertEqual(updated.plan.style, "商务演示风格")
 
         with self.session_factory() as db:
             latest_plan = AgentPlanRepository(db).get_latest_for_session(created.id)
 
         self.assertIsNotNone(latest_plan)
-        self.assertEqual(latest_plan.version, 2)
-        self.assertEqual(
-            [scene["keywords"] for scene in latest_plan.plan_json["scenes"]],
-            original_scene_keywords,
-        )
+        self.assertEqual(latest_plan.version, 3)
+        self.assertEqual(latest_plan.trigger_type, "user_revision")
+        self.assertEqual(latest_plan.execution_plan_json["style"], "商务演示风格")
 
     def test_add_message_updates_failed_planning_session_plan_when_scene_keywords_are_provided(self):
         created = self.session_service.create_session("做一个科技短片")
-        grounded_session = self.session_service.confirm_grounding_candidates(
-            created.id,
-            [candidate.id for candidate in created.grounding.candidates[:2]],
-        )
-
         with self.session_factory() as db:
             from backend.db.repositories import AgentSessionRepository
 
@@ -383,15 +434,16 @@ class AgentApiTests(unittest.TestCase):
             "重新规划并改成中文关键词：场景1：城市 车流 黄昏；场景2：咖啡 特写 手工艺",
         )
 
-        self.assertEqual(updated.plan.title, grounded_session.plan.title)
+        self.assertEqual(updated.plan.title, created.plan.title)
         self.assertEqual(updated.plan.scenes[0].keywords, ["城市", "车流", "黄昏"])
         self.assertEqual(updated.plan.scenes[1].searchQuery, "咖啡 特写 手工艺")
 
     def test_confirm_candidates_rejects_repeat_confirmation_without_writing_new_plan(self):
         from backend.db.repositories import AgentPlanRepository
 
-        created = self.session_service.create_session("给 Notion AI 做一个 30 秒产品亮点视频")
-        candidate_ids = [candidate.id for candidate in created.grounding.candidates[:2]]
+        created = self.session_service.create_session()
+        awaiting = self.session_service.add_user_message(created.id, "给 Notion AI 做一个 30 秒产品亮点视频")
+        candidate_ids = [candidate.id for candidate in awaiting.grounding.candidates[:2]]
         grounded = self.session_service.confirm_grounding_candidates(created.id, candidate_ids)
 
         with self.assertRaisesRegex(RuntimeError, "awaiting confirmation"):
@@ -401,7 +453,7 @@ class AgentApiTests(unittest.TestCase):
             latest_plan = AgentPlanRepository(db).get_latest_for_session(created.id)
 
         self.assertIsNotNone(latest_plan)
-        self.assertEqual(latest_plan.version, 1)
+        self.assertEqual(latest_plan.version, 2)
         self.assertEqual(grounded.grounding.selectedCandidateIds, candidate_ids)
 
     def test_get_missing_session_returns_404(self):
@@ -1177,6 +1229,75 @@ class AgentExecutionContractTests(unittest.TestCase):
         self.assertNotIn("product detail", message)
         self.assertNotIn("brand mood", message)
         self.assertNotIn("pexels: 没有返回候选素材", message)
+
+    def test_all_scene_failures_expose_structured_diagnostics(self):
+        from backend.models.agent import PlanScene
+        from backend.services import search_service
+
+        scenes = [
+            PlanScene(
+                id=1,
+                description="产品使用场景",
+                keywords=["product", "workflow"],
+                duration=6,
+                searchQuery="product workflow",
+            ),
+            PlanScene(
+                id=2,
+                description="产品细节特写",
+                keywords=["product", "detail"],
+                duration=6,
+                searchQuery="product detail",
+            ),
+        ]
+
+        with patch("backend.services.search_service.get_asset_provider_order", return_value=["pexels"]), patch(
+            "backend.services.search_service.get_pexels_config",
+        ) as mock_pexels_config, patch(
+            "backend.services.search_service.search_pexels_candidates",
+        ) as mock_pexels_search:
+            mock_pexels_config.return_value.enabled = True
+            mock_pexels_config.return_value.api_key = "pexels-key"
+            mock_pexels_search.side_effect = [
+                RuntimeError("Pexels 搜索失败：HTTP 401 Unauthorized for query product workflow"),
+                RuntimeError("Pexels 搜索失败：HTTP 401 Unauthorized for query product detail"),
+            ]
+
+            with self.assertRaises(RuntimeError) as ctx:
+                asyncio.run(search_service.search_and_download_agent_clips("session", scenes))
+
+        self.assertEqual(getattr(ctx.exception, "failed_scene_ids", None), [1, 2])
+        self.assertEqual(getattr(ctx.exception, "failure_category", None), "no_inventory")
+        self.assertEqual(getattr(ctx.exception, "primary_provider", None), "pexels")
+        self.assertEqual(
+            getattr(ctx.exception, "provider_diagnostics", None),
+            [
+                {
+                    "provider": "pexels",
+                    "message": "Pexels 搜索失败：HTTP 401 Unauthorized for query product workflow",
+                },
+                {
+                    "provider": "pexels",
+                    "message": "Pexels 搜索失败：HTTP 401 Unauthorized for query product detail",
+                },
+            ],
+        )
+        self.assertEqual(
+            getattr(ctx.exception, "scene_diagnostics", None),
+            [
+                {
+                    "sceneId": 1,
+                    "retryable": True,
+                    "summary": "Pexels 搜索失败：HTTP 401 Unauthorized for query product workflow",
+                },
+                {
+                    "sceneId": 2,
+                    "retryable": True,
+                    "summary": "Pexels 搜索失败：HTTP 401 Unauthorized for query product detail",
+                },
+            ],
+        )
+        self.assertEqual(getattr(ctx.exception, "retry_strategy_hint", None), "inventory_broaden")
 
     def test_asset_candidate_exposes_legacy_video_info(self):
         from backend.services.asset_providers.types import AssetCandidate
@@ -2034,6 +2155,13 @@ class FrontendClientContractTests(unittest.TestCase):
         self.assertIn("fixture,pexels,youtube", readme)
         self.assertIn("pexels,youtube", readme)
 
+    def test_readme_documents_langchain_planner_default(self):
+        readme = (ROOT / "README.md").read_text(encoding="utf-8")
+
+        self.assertIn("CLIPFORGE_PLANNER_MODE", readme)
+        self.assertIn("默认 `langchain`", readme)
+        self.assertIn("设为 `deterministic`", readme)
+
     def test_run_fixture_smoke_script_declares_cli_contract_markers(self):
         script_path = ROOT / "scripts" / "run_fixture_smoke.py"
         content = script_path.read_text(encoding="utf-8")
@@ -2178,10 +2306,6 @@ class FrontendClientContractTests(unittest.TestCase):
 
         client = _make_test_client(app)
         created = client.post("/api/agent/sessions", json={"message": "做一个科技短片"}).json()
-        client.post(
-            f"/api/agent/sessions/{created['id']}/grounding/confirm",
-            json={"candidateIds": [candidate["id"] for candidate in created["grounding"]["candidates"][:2]]},
-        )
         response = client.post(f"/api/agent/sessions/{created['id']}/confirm")
 
         self.assertEqual(response.status_code, 200)
@@ -2195,10 +2319,6 @@ class FrontendClientContractTests(unittest.TestCase):
 
         client = _make_test_client(app)
         created = client.post("/api/agent/sessions", json={"message": "做一个科技短片"}).json()
-        client.post(
-            f"/api/agent/sessions/{created['id']}/grounding/confirm",
-            json={"candidateIds": [candidate["id"] for candidate in created["grounding"]["candidates"][:2]]},
-        )
         first = client.post(f"/api/agent/sessions/{created['id']}/confirm")
         second = client.post(f"/api/agent/sessions/{created['id']}/confirm")
 

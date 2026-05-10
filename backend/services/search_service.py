@@ -33,7 +33,11 @@ class AgentSceneSearchFailure(RuntimeError):
         retry_strategy_hint: str | None = None,
     ) -> None:
         super().__init__(message)
-        self.failed_scene_ids = failed_scene_ids
+        unique_scene_ids: list[int] = []
+        for scene_id in failed_scene_ids:
+            if scene_id not in unique_scene_ids:
+                unique_scene_ids.append(scene_id)
+        self.failed_scene_ids = unique_scene_ids
         self.failure_category = failure_category
         self.primary_provider = primary_provider
         self.provider_diagnostics = provider_diagnostics or []
@@ -259,7 +263,7 @@ async def search_and_download_agent_clips(
             progress_callback(AgentClipInfo, scene.id)
 
         keywords = build_scene_keywords(scene)
-        scene_succeeded = False
+        scene_downloaded = False
         scene_provider_diagnostics: list[dict] = []
         for provider_name in get_asset_provider_order():
             candidates: list[AssetCandidate] | None = None
@@ -278,6 +282,7 @@ async def search_and_download_agent_clips(
                             "message": message,
                         }
                     )
+                    continue
 
             if provider_name == "youtube":
                 if not get_youtube_config().enabled:
@@ -293,6 +298,7 @@ async def search_and_download_agent_clips(
                             "message": message,
                         }
                     )
+                    continue
 
             if provider_name == "pexels":
                 pexels_config = get_pexels_config()
@@ -308,6 +314,7 @@ async def search_and_download_agent_clips(
                                 "message": message,
                             }
                         )
+                        continue
                 elif pexels_config.enabled:
                     message = "缺少 PEXELS_API_KEY，已跳过 Pexels 素材源"
                     provider_errors.append(("pexels", message))
@@ -356,7 +363,7 @@ async def search_and_download_agent_clips(
                         trimDuration=trim_duration,
                     )
                 )
-                scene_succeeded = True
+                scene_downloaded = True
                 break
             else:
                 print(f"Download skipped for scene {scene.id}: {last_error or '没有可用候选素材'}")
@@ -369,11 +376,10 @@ async def search_and_download_agent_clips(
                     }
                 )
                 continue
-            break
-        else:
-            pass
+            if scene_downloaded:
+                break
 
-        if not scene_succeeded:
+        if not scene_downloaded:
             failed_scene_ids.append(scene.id)
             scene_summary = "没有下载到可用素材"
             if scene_provider_diagnostics:

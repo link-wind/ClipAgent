@@ -1,9 +1,11 @@
 import asyncio
 
-from backend.db.repositories import AgentJobRepository, AgentPlanRepository
+from backend.db.repositories import AgentJobRepository, AgentPlanRepository, AgentSessionRepository
 from backend.models.agent import ClipInfo, EditPlan
 from backend.services.agent_progress_service import AgentProgressService
 from backend.services.asset_providers.metadata import pop_clip_metadata
+from backend.services.planner_projection import execution_plan_to_edit_plan
+from backend.services.planner_orchestrator import PlannerOrchestrator
 from backend.services.search_service import search_and_download_agent_clips
 from backend.tasks.celery_app import celery_app
 
@@ -12,36 +14,63 @@ SessionLocal = None
 render_video = None
 
 
-def _build_worker_failure_payload(exc: Exception, retryable_step: str) -> dict[str, object]:
-    payload: dict[str, object] = {"retryableStep": retryable_step}
+def _should_attempt_execution_replan(retryable_step: str) -> bool:
+    return retryable_step == "searching"
 
+
+def dispatch_agent_job(job_id: str) -> None:
+    # 单元测试里的 fake celery task 可能只暴露普通函数，此时由测试自行 patch 此 helper。
+    delay = getattr(run_agent_job, "delay", None)
+    if callable(delay):
+        delay(job_id)
+
+
+def _extract_failed_scene_ids(exc: Exception) -> list[int]:
     failed_scene_ids = getattr(exc, "failed_scene_ids", None)
-    if failed_scene_ids is None:
-        return payload
+    if not isinstance(failed_scene_ids, list):
+        return []
 
-    payload.update(
-        {
-            "failedSceneIds": list(failed_scene_ids),
-            "failureReason": str(exc),
-            "retryable": True,
-            "feedbackSource": "worker_failure",
-        }
-    )
+    normalized_scene_ids: list[int] = []
+    for scene_id in failed_scene_ids:
+        if isinstance(scene_id, int) and scene_id not in normalized_scene_ids:
+            normalized_scene_ids.append(scene_id)
+    return normalized_scene_ids
+
+
+def _build_execution_feedback_payload(exc: Exception) -> dict[str, object]:
+    payload: dict[str, object] = {
+        "failedSceneIds": _extract_failed_scene_ids(exc),
+        "failureReason": str(exc),
+        "retryable": True,
+        "feedbackSource": "worker_failure",
+    }
+
     failure_category = getattr(exc, "failure_category", None)
-    if failure_category:
+    if isinstance(failure_category, str) and failure_category:
         payload["failureCategory"] = failure_category
+
     primary_provider = getattr(exc, "primary_provider", None)
-    if primary_provider:
+    if isinstance(primary_provider, str) and primary_provider:
         payload["primaryProvider"] = primary_provider
+
     provider_diagnostics = getattr(exc, "provider_diagnostics", None)
-    if provider_diagnostics:
+    if isinstance(provider_diagnostics, list) and provider_diagnostics:
         payload["providerDiagnostics"] = list(provider_diagnostics)
+
     scene_diagnostics = getattr(exc, "scene_diagnostics", None)
-    if scene_diagnostics:
+    if isinstance(scene_diagnostics, list) and scene_diagnostics:
         payload["sceneDiagnostics"] = list(scene_diagnostics)
+
     retry_strategy_hint = getattr(exc, "retry_strategy_hint", None)
-    if retry_strategy_hint:
+    if isinstance(retry_strategy_hint, str) and retry_strategy_hint:
         payload["retryStrategyHint"] = retry_strategy_hint
+
+    return payload
+
+
+def _build_worker_failure_payload(exc: Exception, retryable_step: str) -> dict[str, object]:
+    payload = _build_execution_feedback_payload(exc)
+    payload["retryableStep"] = retryable_step
     return payload
 
 
@@ -73,7 +102,11 @@ def run_agent_job(job_id: str) -> None:
             if plan_record is None:
                 raise RuntimeError("任务缺少可执行计划")
 
-            plan = EditPlan.model_validate(plan_record.plan_json)
+            execution_plan_json = getattr(plan_record, "execution_plan_json", None) or {}
+            if execution_plan_json.get("scenes"):
+                plan = execution_plan_to_edit_plan(execution_plan_json)
+            else:
+                plan = EditPlan.model_validate(plan_record.plan_json)
             progress_service.mark_job_running(session_id, job_id)
             db.commit()
 
@@ -150,6 +183,46 @@ def run_agent_job(job_id: str) -> None:
             if job_record is not None and job_record.session_id:
                 progress_service = AgentProgressService(db)
                 retryable_step = "rendering" if job_record.progress >= 80 else "searching"
+                if _should_attempt_execution_replan(retryable_step):
+                    session_record = AgentSessionRepository(db).get(job_record.session_id)
+                    if session_record is not None:
+                        try:
+                            planner_orchestrator = PlannerOrchestrator()
+                            next_plan = planner_orchestrator.persist_execution_feedback_replan(
+                                db=db,
+                                session_record=session_record,
+                                failed_job_record=job_record,
+                                execution_feedback=_build_execution_feedback_payload(exc),
+                            )
+                            progress_service.mark_job_failed(
+                                session_id=job_record.session_id,
+                                job_id=job_id,
+                                message=str(exc),
+                                retryable_step=retryable_step,
+                            )
+                            replacement_job = job_repo.create(
+                                session_id=job_record.session_id,
+                                plan_id=next_plan.id,
+                                job_type=job_record.job_type,
+                                status="queued",
+                                progress=0,
+                                current_step="任务已重新入队",
+                                max_attempts=job_record.max_attempts,
+                            )
+                            progress_service.mark_job_requeued_after_replan(
+                                session_id=job_record.session_id,
+                                failed_job_id=job_id,
+                                replacement_job_id=replacement_job.id,
+                            )
+                            db.commit()
+                            dispatch_agent_job(replacement_job.id)
+                            return
+                        except Exception:
+                            db.rollback()
+                            job_record = job_repo.get(job_id)
+                            if job_record is None or not job_record.session_id:
+                                raise
+                            progress_service = AgentProgressService(db)
                 progress_service.mark_job_failed(
                     session_id=job_record.session_id,
                     job_id=job_id,

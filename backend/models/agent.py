@@ -141,6 +141,7 @@ class AgentSession(BaseModel):
     videoUrl: Optional[str] = None
     activeJobId: Optional[str] = None
     grounding: Optional[AgentGroundingSummary] = None
+    plannerTrace: Dict[str, Any] | None = None
     error: Optional[AgentError] = None
     progress: float = 0.0
     currentStep: str = ""

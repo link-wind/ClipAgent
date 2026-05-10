@@ -14,3 +14,6 @@ alembic==1.16.1
 psycopg[binary]==3.2.9
 celery==5.5.2
 redis==6.1.0
+langchain==0.3.25
+langgraph==0.2.60
+langchain-openai==0.2.14

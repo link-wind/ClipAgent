@@ -9,6 +9,8 @@ from backend.db.repositories import (
 from backend.models.agent import AgentSession, EditPlan, PlanScene
 from backend.services.agent_read_service import AgentReadService
 from backend.services.grounding_service import grounding_service
+from backend.services.planner_orchestrator import PlannerOrchestrator
+from backend.services.planner_projection import execution_plan_to_edit_plan
 
 
 PLAN_READY_MESSAGE = "我已经生成剪辑方案，你可以继续修改或确认开始。"
@@ -32,16 +34,20 @@ class AgentSessionService:
                 session_id = session_record.id
 
                 if prompt and prompt.strip():
-                    message_repo.create(session_id=session_id, role="user", content=prompt)
-                    grounding_summary = grounding_service.build_grounding_summary(prompt)
-                    self._apply_grounding_to_session(session_record, grounding_summary)
-                    session_repo.update_grounding_state(
-                        session_id,
-                        grounding_status=grounding_summary.status,
-                        grounding_summary_json=grounding_summary.model_dump(mode="json"),
-                        selected_candidate_ids_json=[],
+                    message_record = message_repo.create(session_id=session_id, role="user", content=prompt)
+                    planner_orchestrator = PlannerOrchestrator()
+                    plan_record = planner_orchestrator.persist_initial_plan(
+                        db=db,
+                        session_record=session_record,
+                        message_record=message_record,
                     )
-                    self._append_grounding_ready_message(message_repo, session_id)
+                    session_record.grounding_status = None
+                    session_record.grounding_summary_json = {}
+                    session_record.selected_candidate_ids_json = []
+                    session_repo.set_current_plan(session_id, plan_record.id)
+                    plan = execution_plan_to_edit_plan(plan_record.execution_plan_json)
+                    self._apply_plan_to_session(session_record, plan)
+                    self._append_plan_ready_message(message_repo, session_id)
 
                 db.commit()
             except Exception:
@@ -71,7 +77,7 @@ class AgentSessionService:
                 if not self._is_editable(session_record):
                     raise RuntimeError(f"Session is not editable while {session_record.status}")
 
-                message_repo.create(session_id=session_id, role="user", content=content)
+                message_record = message_repo.create(session_id=session_id, role="user", content=content)
                 latest_plan = plan_repo.get_latest_for_session(session_id)
                 if self._should_start_grounding(session_record, latest_plan):
                     grounding_summary = grounding_service.build_grounding_summary(
@@ -89,6 +95,21 @@ class AgentSessionService:
                     db.commit()
                     return self.read_service.read_session(session_id)
 
+                if latest_plan is not None:
+                    planner_orchestrator = PlannerOrchestrator()
+                    next_plan = planner_orchestrator.persist_user_revision_replan(
+                        db=db,
+                        session_record=session_record,
+                        message_record=message_record,
+                        scene_keyword_updates=self._extract_scene_keyword_updates(content),
+                    )
+                    plan = execution_plan_to_edit_plan(next_plan.execution_plan_json)
+                    self._apply_plan_to_session(session_record, plan)
+                    session_repo.set_current_plan(session_id, next_plan.id)
+                    self._append_plan_ready_message(message_repo, session_id)
+                    db.commit()
+                    return self.read_service.read_session(session_id)
+
                 should_create_plan = (
                     latest_plan is None
                     or session_record.status == "plan_ready"
@@ -98,17 +119,19 @@ class AgentSessionService:
                     )
                 )
                 if should_create_plan:
-                    plan = self._build_next_plan(latest_plan, content)
-                    self._apply_plan_to_session(session_record, plan)
-                    next_version = 1 if latest_plan is None else latest_plan.version + 1
-                    plan_repo.create(
+                    plan = self._build_next_plan(content)
+                    next_version = 1
+                    created_plan = plan_repo.create(
                         session_id=session_id,
                         version=next_version,
                         title=plan.title,
                         target_duration=int(plan.targetDuration),
                         style=plan.style,
                         plan_json=plan.model_dump(mode="json"),
+                        execution_plan_json=plan.model_dump(mode="json"),
                     )
+                    session_repo.set_current_plan(session_id, created_plan.id)
+                    self._apply_plan_to_session(session_record, plan)
                     self._append_plan_ready_message(message_repo, session_id)
 
                 db.commit()
@@ -141,13 +164,56 @@ class AgentSessionService:
                 if missing_candidate_ids:
                     raise ValueError("Unknown grounding candidate id")
 
-                grounded_plan = self._build_grounded_plan_from_candidates(
-                    prompt=session_record.title or "",
-                    grounding_summary=grounding_summary,
-                    candidate_ids=candidate_ids,
-                )
+                latest_plan = plan_repo.get_latest_for_session(session_id)
+                if latest_plan is None:
+                    messages = message_repo.list_for_session(session_id)
+                    latest_user_message = next(
+                        (message for message in reversed(messages) if message.role == "user"),
+                        None,
+                    )
+                    if latest_user_message is None:
+                        grounded_plan = self._build_grounded_plan_from_candidates(
+                            prompt=session_record.title or "",
+                            grounding_summary=grounding_summary,
+                            candidate_ids=candidate_ids,
+                        )
+                        self._apply_plan_to_session(session_record, grounded_plan)
+                        next_plan = plan_repo.create(
+                            session_id=session_id,
+                            version=1,
+                            title=grounded_plan.title,
+                            target_duration=int(grounded_plan.targetDuration),
+                            style=grounded_plan.style,
+                            plan_json=grounded_plan.model_dump(mode="json"),
+                            execution_plan_json=grounded_plan.model_dump(mode="json"),
+                        )
+                    else:
+                        planner_orchestrator = PlannerOrchestrator()
+                        initial_plan = planner_orchestrator.persist_initial_plan(
+                            db=db,
+                            session_record=session_record,
+                            message_record=latest_user_message,
+                        )
+                        session_repo.set_current_plan(session_id, initial_plan.id)
+                        next_plan = planner_orchestrator.persist_grounding_replan(
+                            db=db,
+                            session_record=session_record,
+                            candidate_ids=candidate_ids,
+                        )
+                        grounded_plan = execution_plan_to_edit_plan(next_plan.execution_plan_json)
+                        self._apply_plan_to_session(session_record, grounded_plan)
+                        session_repo.set_current_plan(session_id, next_plan.id)
+                else:
+                    planner_orchestrator = PlannerOrchestrator()
+                    next_plan = planner_orchestrator.persist_grounding_replan(
+                        db=db,
+                        session_record=session_record,
+                        candidate_ids=candidate_ids,
+                    )
+                    grounded_plan = execution_plan_to_edit_plan(next_plan.execution_plan_json)
+                    self._apply_plan_to_session(session_record, grounded_plan)
+                    session_repo.set_current_plan(session_id, next_plan.id)
 
-                self._apply_plan_to_session(session_record, grounded_plan)
                 session_repo.update_grounding_state(
                     session_id,
                     grounding_status="confirmed",
@@ -157,15 +223,6 @@ class AgentSessionService:
                         "selectedCandidateIds": candidate_ids,
                     },
                     selected_candidate_ids_json=candidate_ids,
-                )
-                next_version = 1 if plan_repo.get_latest_for_session(session_id) is None else plan_repo.get_latest_for_session(session_id).version + 1
-                plan_repo.create(
-                    session_id=session_id,
-                    version=next_version,
-                    title=grounded_plan.title,
-                    target_duration=int(grounded_plan.targetDuration),
-                    style=grounded_plan.style,
-                    plan_json=grounded_plan.model_dump(mode="json"),
                 )
                 self._append_plan_ready_message(message_repo, session_id)
                 db.commit()
@@ -207,44 +264,14 @@ class AgentSessionService:
             and session_record.error_retryable_step == "planning"
         )
 
-    def _build_next_plan(self, latest_plan, content: str) -> EditPlan:
-        if latest_plan is None:
-            return self._fallback_plan(content)
+    def _build_next_plan(self, content: str) -> EditPlan:
+        return self._fallback_plan(content)
 
-        current_plan = EditPlan.model_validate(latest_plan.plan_json)
-        updated_plan = self._apply_scene_keyword_updates(current_plan, content)
-        if updated_plan is not None:
-            return updated_plan
-
-        return current_plan.model_copy(deep=True)
-
-    def _apply_scene_keyword_updates(self, plan: EditPlan, content: str) -> EditPlan | None:
-        updates = self._extract_scene_keyword_updates(content)
-        if not updates:
-            return None
-
-        updated_scenes: list[PlanScene] = []
-        changed = False
-        for scene in plan.scenes:
-            keywords = updates.get(scene.id)
-            if not keywords:
-                updated_scenes.append(scene.model_copy(deep=True))
-                continue
-
-            changed = True
-            updated_scenes.append(
-                scene.model_copy(
-                    update={
-                        "keywords": keywords,
-                        "searchQuery": " ".join(keywords),
-                    }
-                )
-            )
-
-        if not changed:
-            return None
-
-        return plan.model_copy(update={"scenes": updated_scenes})
+    def _load_edit_plan(self, plan_record) -> EditPlan:
+        execution_plan_json = getattr(plan_record, "execution_plan_json", None) or {}
+        if execution_plan_json.get("scenes"):
+            return EditPlan.model_validate(execution_plan_json)
+        return EditPlan.model_validate(plan_record.plan_json)
 
     def _extract_scene_keyword_updates(self, content: str) -> dict[int, list[str]]:
         updates: dict[int, list[str]] = {}

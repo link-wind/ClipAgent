@@ -160,8 +160,10 @@ npm run dev
 
 ## 环境变量
 
-- `OPENAI_API_KEY`：用于生成智能剪辑方案。
+- `OPENAI_API_KEY`：用于默认的 LangChain initial planner；如果要在本地或测试环境绕过模型调用，可把 `CLIPFORGE_PLANNER_MODE` 设为 `deterministic`。
 - `OPENAI_BASE_URL`：可选，兼容 OpenAI API 的代理地址。
+- `CLIPFORGE_PLANNER_MODE`：可选，planner 运行模式，默认 `langchain`；设为 `deterministic` 可回退到规则版 planner。
+- `CLIPFORGE_PLANNER_MODEL`：可选，LangChain planner 使用的模型名，默认 `gpt-4o-mini`。
 - `CLIPFORGE_API_ORIGIN`：可选，Next.js 代理目标，默认 `http://127.0.0.1:8010`。
 - `CLIPFORGE_DATABASE_URL`：PostgreSQL 连接地址。
 - `CLIPFORGE_REDIS_URL`：Redis 连接地址。
