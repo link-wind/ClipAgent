@@ -1,12 +1,15 @@
 from dataclasses import dataclass, field
 import os
 import re
-from typing import Any
+from typing import Any, Callable, Iterable
 
+from backend.config import get_settings
 from backend.models.agent import AgentGroundingCandidate, AgentGroundingSummary
 from backend.services.asset_providers.fixture import search_fixture_candidates
 from backend.services.asset_providers.pexels import search_pexels_candidates
 from backend.services.asset_providers.youtube import search_youtube_candidates
+from backend.services.grounding_planner_models import RetrievalQuery, RetrievalQueryPack
+from backend.services.grounding_planner_runtime import GroundingPlannerRuntime
 
 
 @dataclass(frozen=True)
@@ -19,6 +22,22 @@ class ParsedBrief:
 
 
 class GroundingService:
+    def __init__(
+        self,
+        *,
+        retrieval_runtime=None,
+        fixture_search: Callable[..., list[Any]] | None = None,
+        pexels_search: Callable[..., list[Any]] | None = None,
+        youtube_search: Callable[..., list[Any]] | None = None,
+    ) -> None:
+        self._retrieval_runtime = retrieval_runtime
+        self._fixture_search = fixture_search or search_fixture_candidates
+        self._pexels_search = pexels_search or search_pexels_candidates
+        self._youtube_search = youtube_search or search_youtube_candidates
+        self._fixture_search_injected = fixture_search is not None
+        self._pexels_search_injected = pexels_search is not None
+        self._youtube_search_injected = youtube_search is not None
+
     def parse_brief(self, prompt: str) -> ParsedBrief:
         text = (prompt or "").strip()
         if not text:
@@ -44,21 +63,212 @@ class GroundingService:
         existing: AgentGroundingSummary | dict[str, Any] | None = None,
     ) -> AgentGroundingSummary:
         brief = self._merge_brief(self.parse_brief(prompt), existing, prompt)
-        candidates = self.search_candidates(brief.search_queries)
+        fallback_query_pack = self._fallback_query_pack(brief)
+        runtime_error = None
+        try:
+            query_pack = self._get_retrieval_runtime().build_query_pack(prompt)
+        except Exception as exc:
+            runtime_error = exc
+            query_pack = self._fallback_query_pack(brief, reason=str(exc))
+
+        candidates = self.search_candidates_for_query_plan(query_pack.queries)
         if not candidates:
-            candidates = self.search_candidates(self._build_fallback_queries(brief))
+            supplemental_queries = self._query_diff(query_pack.queries, fallback_query_pack.queries)
+            if supplemental_queries:
+                query_pack = self._merge_query_pack(query_pack, fallback_query_pack)
+                candidates = self.search_candidates_for_query_plan(supplemental_queries)
         return AgentGroundingSummary(
             status="needs_confirmation" if candidates else "pending_search",
-            productName=brief.product_name,
-            audience=brief.audience,
-            styleHint=brief.style_hint,
-            featureHints=brief.feature_hints,
-            searchQueries=brief.search_queries,
+            productName=query_pack.productName,
+            audience=query_pack.audience,
+            styleHint=query_pack.styleHint,
+            featureHints=query_pack.featureHints,
+            assumptions=query_pack.assumptions,
+            searchQueries=[query.text for query in query_pack.queries],
+            queryPlan=[query.model_dump(mode="json") for query in query_pack.queries],
             candidates=candidates,
             selectedCandidateIds=[],
         )
 
     def search_candidates(self, search_queries: list[str]) -> list[AgentGroundingCandidate]:
+        query_plan = [
+            RetrievalQuery(
+                text=query,
+                intent="stock_fallback",
+                providers=["pexels", "youtube"],
+                priority=index * 10,
+            )
+            for index, query in enumerate(search_queries, start=1)
+            if query and query.strip()
+        ]
+        return self.search_candidates_for_query_plan(query_plan)
+
+    def search_candidates_for_query_plan(
+        self,
+        query_plan: list[RetrievalQuery] | list[dict[str, Any]],
+    ) -> list[AgentGroundingCandidate]:
+        normalized_queries = [
+            query
+            for query in sorted(
+                (self._normalize_query(query) for query in query_plan),
+                key=lambda item: item.priority,
+            )
+            if query.text.strip()
+        ]
+        if not normalized_queries:
+            return []
+
+        aggregated: list[AgentGroundingCandidate] = []
+        seen_ids: set[str] = set()
+
+        for query in normalized_queries:
+            query_tokens = self._split_query(query.text)
+            if not query_tokens:
+                continue
+            for provider in self._provider_order_for_query(query):
+                for candidate in self._search_with_provider(provider, query_tokens, max_results=3):
+                    grounding_candidate = self._to_grounding_candidate(candidate)
+                    if grounding_candidate.id in seen_ids:
+                        continue
+                    seen_ids.add(grounding_candidate.id)
+                    aggregated.append(grounding_candidate)
+
+        return aggregated
+
+    def _normalize_query(self, query: RetrievalQuery | dict[str, Any]) -> RetrievalQuery:
+        if isinstance(query, RetrievalQuery):
+            return query
+        return RetrievalQuery.model_validate(query)
+
+    def _get_retrieval_runtime(self):
+        if self._retrieval_runtime is None:
+            self._retrieval_runtime = GroundingPlannerRuntime(model_name=get_settings().planner_model)
+        return self._retrieval_runtime
+
+    def _provider_order_for_query(self, query: RetrievalQuery) -> list[str]:
+        providers: list[str] = []
+        if self._fixture_grounding_enabled():
+            providers.append("fixture")
+        for provider in query.providers:
+            if provider not in providers:
+                providers.append(provider)
+        return providers
+
+    def _search_with_provider(self, provider: str, query_tokens: list[str], max_results: int = 3) -> list[Any]:
+        if provider == "fixture":
+            if not self._fixture_grounding_enabled():
+                return []
+            return self._fixture_search(query_tokens, max_results=max_results)
+        if provider == "pexels":
+            if not (self._pexels_search_injected or self._remote_grounding_enabled()):
+                return []
+            return self._pexels_search(query_tokens, max_results=max_results)
+        if provider == "youtube":
+            if not (self._youtube_search_injected or self._youtube_grounding_enabled()):
+                return []
+            return self._youtube_search(query_tokens, max_results=max_results)
+        return []
+
+    def _fallback_query_pack(self, brief: ParsedBrief, reason: str | None = None) -> RetrievalQueryPack:
+        queries: list[RetrievalQuery] = []
+        priority = 10
+
+        if brief.product_name:
+            queries.append(
+                RetrievalQuery(
+                    text=brief.product_name,
+                    intent="brand_exact",
+                    providers=["youtube"],
+                    priority=priority,
+                )
+            )
+            priority += 10
+
+        fallback_terms = self._merge_unique(brief.search_queries, self._build_fallback_queries(brief))
+        for text in fallback_terms:
+            if text == brief.product_name:
+                continue
+            queries.append(
+                RetrievalQuery(
+                    text=text,
+                    intent="stock_fallback",
+                    providers=["pexels"],
+                    priority=priority,
+                )
+            )
+            priority += 10
+
+        assumptions = []
+        if reason:
+            assumptions.append(f"Used deterministic fallback query plan because retrieval planner failed: {reason}")
+
+        return RetrievalQueryPack(
+            productName=brief.product_name,
+            audience=brief.audience,
+            styleHint=brief.style_hint,
+            featureHints=brief.feature_hints,
+            assumptions=assumptions,
+            queries=queries[:5],
+        )
+
+    def _merge_query_pack(
+        self,
+        primary: RetrievalQueryPack,
+        secondary: RetrievalQueryPack,
+    ) -> RetrievalQueryPack:
+        merged_queries = self._merge_query_objects(primary.queries, secondary.queries)
+        return RetrievalQueryPack(
+            productName=primary.productName or secondary.productName,
+            audience=primary.audience or secondary.audience,
+            styleHint=primary.styleHint or secondary.styleHint,
+            featureHints=self._merge_unique(primary.featureHints, secondary.featureHints),
+            assumptions=self._merge_unique(primary.assumptions, secondary.assumptions),
+            queries=merged_queries,
+        )
+
+    def _merge_query_objects(
+        self,
+        primary: Iterable[RetrievalQuery],
+        secondary: Iterable[RetrievalQuery],
+    ) -> list[RetrievalQuery]:
+        merged: list[RetrievalQuery] = []
+        index_by_key: dict[tuple[str, str], int] = {}
+
+        for query in list(primary) + list(secondary):
+            key = self._query_key(query)
+            if key not in index_by_key:
+                index_by_key[key] = len(merged)
+                merged.append(query)
+                continue
+
+            existing = merged[index_by_key[key]]
+            merged[index_by_key[key]] = existing.model_copy(
+                update={
+                    "providers": self._merge_unique(existing.providers, query.providers),
+                    "priority": min(existing.priority, query.priority),
+                }
+            )
+
+        return sorted(merged, key=lambda item: item.priority)
+
+    def _query_diff(
+        self,
+        existing_queries: Iterable[RetrievalQuery],
+        candidate_queries: Iterable[RetrievalQuery],
+    ) -> list[RetrievalQuery]:
+        existing_keys = {self._query_key(query) for query in existing_queries}
+        return [query for query in candidate_queries if self._query_key(query) not in existing_keys]
+
+    def _query_key(self, query: RetrievalQuery) -> tuple[str, str]:
+        return (query.intent, " ".join(query.text.lower().split()))
+
+    def _fixture_grounding_enabled(self) -> bool:
+        value = os.environ.get("CLIPFORGE_GROUNDING_ENABLE_FIXTURE", "").strip().lower()
+        if not value:
+            return True
+        return value in {"1", "true", "yes", "on"}
+
+    def _legacy_search_candidates(self, search_queries: list[str]) -> list[AgentGroundingCandidate]:
         normalized_queries = [query.strip() for query in search_queries if query and query.strip()]
         if not normalized_queries:
             return []
@@ -68,7 +278,7 @@ class GroundingService:
 
         for query in normalized_queries:
             query_tokens = self._split_query(query)
-            for candidate in search_fixture_candidates(query_tokens, max_results=3):
+            for candidate in self._fixture_search(query_tokens, max_results=3):
                 grounding_candidate = self._to_grounding_candidate(candidate)
                 if grounding_candidate.id in seen_ids:
                     continue
@@ -79,7 +289,7 @@ class GroundingService:
                 continue
 
             if self._remote_grounding_enabled():
-                for candidate in search_pexels_candidates(query_tokens, max_results=3):
+                for candidate in self._pexels_search(query_tokens, max_results=3):
                     grounding_candidate = self._to_grounding_candidate(candidate)
                     if grounding_candidate.id in seen_ids:
                         continue
@@ -89,7 +299,7 @@ class GroundingService:
             if aggregated or not self._youtube_grounding_enabled():
                 continue
 
-            for candidate in search_youtube_candidates(query_tokens, max_results=3):
+            for candidate in self._youtube_search(query_tokens, max_results=3):
                 grounding_candidate = self._to_grounding_candidate(candidate)
                 if grounding_candidate.id in seen_ids:
                     continue
