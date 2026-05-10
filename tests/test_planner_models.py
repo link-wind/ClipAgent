@@ -115,6 +115,39 @@ class PlannerModelTests(unittest.TestCase):
         self.assertEqual(feedback.sceneKeywordUpdates[1], ["城市", "车流", "黄昏"])
         self.assertEqual(feedback.revisionSource, "user_message")
 
+    def test_revision_scene_patch_defaults(self):
+        from backend.services.planner_models import RevisionScenePatch
+
+        patch = RevisionScenePatch(id=1)
+
+        self.assertEqual(patch.id, 1)
+        self.assertEqual(patch.description, "")
+        self.assertEqual(patch.keywords, [])
+        self.assertEqual(patch.searchQuery, "")
+
+    def test_revision_planning_result_wraps_scene_patches(self):
+        from backend.services.planner_models import RevisionPlanningResult
+
+        result = RevisionPlanningResult(
+            summary="整体更偏商务演示",
+            audience="销售团队",
+            styleHint="商务演示风格",
+            style="商务演示风格",
+            changeSummary="已根据最新修改意见完成计划重写",
+            scenePatches=[
+                {
+                    "id": 1,
+                    "description": "城市节奏感开场，建立商务氛围",
+                    "keywords": ["city", "traffic", "dusk"],
+                    "searchQuery": "city traffic dusk",
+                }
+            ],
+        )
+
+        self.assertEqual(result.audience, "销售团队")
+        self.assertEqual(result.scenePatches[0].id, 1)
+        self.assertEqual(result.scenePatches[0].searchQuery, "city traffic dusk")
+
     def test_search_execution_feedback_defaults(self):
         from backend.services.planner_models import SearchExecutionFeedback
 

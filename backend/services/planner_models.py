@@ -58,6 +58,23 @@ class InitialPlanningResult(BaseModel):
     executionPlan: ExecutionPlan
 
 
+class RevisionScenePatch(BaseModel):
+    id: int
+    description: str = ""
+    keywords: list[str] = Field(default_factory=list)
+    searchQuery: str = ""
+
+
+class RevisionPlanningResult(BaseModel):
+    summary: str = ""
+    audience: str = ""
+    styleHint: str = ""
+    style: str = ""
+    openIssues: list[dict[str, Any]] = Field(default_factory=list)
+    changeSummary: str
+    scenePatches: list[RevisionScenePatch] = Field(default_factory=list)
+
+
 class AgentObservation(BaseModel):
     id: str
     sessionId: str
