@@ -190,6 +190,178 @@ class PlannerRuntimeTests(unittest.TestCase):
         self.assertEqual(result, ("agent", "execution", "summary"))
         deterministic_delegate.replan_after_grounding.assert_called_once()
 
+    def test_langchain_runtime_replans_after_user_revision_with_patch_merge(self):
+        from backend.services.planner_models import RevisionPlanningResult, UserRevisionFeedback
+        from backend.services.planner_runtime_deterministic import DeterministicPlannerRuntime
+        from backend.services.planner_runtime_langchain import LangChainPlannerRuntime
+
+        current_agent, current_execution = DeterministicPlannerRuntime().build_plan_from_brief(
+            "给 Notion AI 做一个 30 秒产品亮点视频"
+        )
+        fake_llm = _FakeChatModel(
+            result=RevisionPlanningResult(
+                summary="更偏商务演示与销售沟通的版本",
+                audience="销售团队",
+                styleHint="商务演示风格",
+                style="商务演示风格",
+                changeSummary="已根据最新修改意见完成计划重写",
+                scenePatches=[
+                    {
+                        "id": 1,
+                        "description": "城市与车流开场，建立商务节奏",
+                        "keywords": ["office", "lobby", "team"],
+                        "searchQuery": "office lobby team",
+                    }
+                ],
+            )
+        )
+
+        runtime = LangChainPlannerRuntime(model_name="gpt-4o-mini", llm=fake_llm)
+        next_agent, next_execution, change_summary = runtime.replan_after_user_revision(
+            current_agent=current_agent,
+            current_execution=current_execution,
+            revision_feedback=UserRevisionFeedback(
+                message="整体再商务一点，目标受众改成销售团队",
+                sceneKeywordUpdates={},
+            ),
+        )
+
+        self.assertEqual(change_summary, "已根据最新修改意见完成计划重写")
+        self.assertEqual(next_agent.summary, "更偏商务演示与销售沟通的版本")
+        self.assertEqual(next_agent.understanding.audience, "销售团队")
+        self.assertEqual(next_agent.understanding.styleHint, "商务演示风格")
+        self.assertEqual(next_execution.style, "商务演示风格")
+        self.assertEqual(next_agent.scenes[0].description, "城市与车流开场，建立商务节奏")
+        self.assertEqual(next_execution.scenes[0].searchQuery, "office lobby team")
+        self.assertEqual(next_execution.scenes[1].searchQuery, current_execution.scenes[1].searchQuery)
+        self.assertEqual(next_execution.scenes[0].duration, current_execution.scenes[0].duration)
+        self.assertEqual(next_execution.targetDuration, current_execution.targetDuration)
+        self.assertEqual(next_agent.replanHistory[-1]["triggerType"], "user_revision")
+        self.assertEqual(next_agent.replanHistory[-1]["summary"], "已根据最新修改意见完成计划重写")
+        self.assertEqual(next_agent.replanHistory[-1]["runtime"], "langchain")
+
+    def test_langchain_runtime_preserves_explicit_scene_keyword_updates_over_model_patch(self):
+        from backend.services.planner_models import RevisionPlanningResult, UserRevisionFeedback
+        from backend.services.planner_runtime_deterministic import DeterministicPlannerRuntime
+        from backend.services.planner_runtime_langchain import LangChainPlannerRuntime
+
+        current_agent, current_execution = DeterministicPlannerRuntime().build_plan_from_brief(
+            "给 Notion AI 做一个 30 秒产品亮点视频"
+        )
+        fake_llm = _FakeChatModel(
+            result=RevisionPlanningResult(
+                summary="更偏商务演示与销售沟通的版本",
+                audience="销售团队",
+                styleHint="商务演示风格",
+                style="商务演示风格",
+                changeSummary="已根据最新修改意见完成计划重写",
+                scenePatches=[
+                    {
+                        "id": 1,
+                        "description": "城市与车流开场，建立商务节奏",
+                        "keywords": ["office", "lobby", "team"],
+                        "searchQuery": "office lobby team",
+                    }
+                ],
+            )
+        )
+
+        runtime = LangChainPlannerRuntime(model_name="gpt-4o-mini", llm=fake_llm)
+        next_agent, next_execution, _change_summary = runtime.replan_after_user_revision(
+            current_agent=current_agent,
+            current_execution=current_execution,
+            revision_feedback=UserRevisionFeedback(
+                message="整体再商务一点，目标受众改成销售团队，场景1：城市 车流 黄昏",
+                sceneKeywordUpdates={1: ["城市", "车流", "黄昏"]},
+            ),
+        )
+
+        self.assertEqual(next_agent.scenes[0].keywords, ["城市", "车流", "黄昏"])
+        self.assertEqual(next_execution.scenes[0].keywords, ["城市", "车流", "黄昏"])
+        self.assertEqual(next_execution.scenes[0].searchQuery, "城市 车流 黄昏")
+        self.assertEqual(next_agent.scenes[0].description, "城市与车流开场，建立商务节奏")
+
+    def test_langchain_runtime_falls_back_to_deterministic_revision_when_patch_targets_unknown_scene(self):
+        from backend.services.planner_models import RevisionPlanningResult, UserRevisionFeedback
+        from backend.services.planner_runtime_deterministic import DeterministicPlannerRuntime
+        from backend.services.planner_runtime_langchain import LangChainPlannerRuntime
+
+        deterministic_delegate = Mock()
+        deterministic_delegate.replan_after_user_revision.return_value = (
+            "agent-fallback",
+            "execution-fallback",
+            "fallback summary",
+        )
+        current_agent, current_execution = DeterministicPlannerRuntime().build_plan_from_brief(
+            "给 Notion AI 做一个 30 秒产品亮点视频"
+        )
+        fake_llm = _FakeChatModel(
+            result=RevisionPlanningResult(
+                summary="更偏商务演示与销售沟通的版本",
+                audience="销售团队",
+                styleHint="商务演示风格",
+                style="商务演示风格",
+                changeSummary="已根据最新修改意见完成计划重写",
+                scenePatches=[
+                    {
+                        "id": 99,
+                        "description": "不存在的场景 patch",
+                        "keywords": ["bad"],
+                        "searchQuery": "bad",
+                    }
+                ],
+            )
+        )
+
+        runtime = LangChainPlannerRuntime(
+            model_name="gpt-4o-mini",
+            llm=fake_llm,
+            deterministic_delegate=deterministic_delegate,
+        )
+        result = runtime.replan_after_user_revision(
+            current_agent=current_agent,
+            current_execution=current_execution,
+            revision_feedback=UserRevisionFeedback(
+                message="整体再商务一点",
+                sceneKeywordUpdates={},
+            ),
+        )
+
+        self.assertEqual(result, ("agent-fallback", "execution-fallback", "fallback summary"))
+        deterministic_delegate.replan_after_user_revision.assert_called_once()
+
+    def test_langchain_runtime_falls_back_to_deterministic_revision_when_model_raises(self):
+        from backend.services.planner_models import UserRevisionFeedback
+        from backend.services.planner_runtime_deterministic import DeterministicPlannerRuntime
+        from backend.services.planner_runtime_langchain import LangChainPlannerRuntime
+
+        deterministic_delegate = Mock()
+        deterministic_delegate.replan_after_user_revision.return_value = (
+            "agent-fallback",
+            "execution-fallback",
+            "fallback summary",
+        )
+        current_agent, current_execution = DeterministicPlannerRuntime().build_plan_from_brief(
+            "给 Notion AI 做一个 30 秒产品亮点视频"
+        )
+
+        runtime = LangChainPlannerRuntime(
+            model_name="gpt-4o-mini",
+            llm=_FakeChatModel(error=RuntimeError("revision planning failed")),
+            deterministic_delegate=deterministic_delegate,
+        )
+        result = runtime.replan_after_user_revision(
+            current_agent=current_agent,
+            current_execution=current_execution,
+            revision_feedback=UserRevisionFeedback(
+                message="整体再商务一点",
+                sceneKeywordUpdates={},
+            ),
+        )
+
+        self.assertEqual(result, ("agent-fallback", "execution-fallback", "fallback summary"))
+        deterministic_delegate.replan_after_user_revision.assert_called_once()
+
     def test_deterministic_runtime_builds_stable_two_scene_plan(self):
         from backend.services.planner_runtime_deterministic import (
             DeterministicPlannerRuntime,

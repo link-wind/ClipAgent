@@ -7,6 +7,7 @@ from backend.services.planner_models import (
     ExecutionPlan,
     GroundingFeedback,
     InitialPlanningResult,
+    RevisionPlanningResult,
     SearchExecutionFeedback,
     UserRevisionFeedback,
 )
@@ -19,6 +20,19 @@ AgentPlan and ExecutionPlan must contain the same number of scenes and matching 
 Scene ids must start at 1 and remain consecutive.
 ExecutionPlan searchQuery values must be short English retrieval phrases.
 Each agent scene keywords field must be non-empty and concise.
+""".strip()
+
+REVISION_PLANNER_SYSTEM_PROMPT = """
+You are revising an existing product intro plan based on new user feedback.
+Return a RevisionPlanningResult only.
+Do not add or remove scenes.
+Do not change scene ids.
+Do not change scene durations.
+Do not change execution targetDuration.
+If explicit scene keyword overrides are provided, treat them as hard constraints.
+Only patch fields that should change after the revision.
+Keep searchQuery concise and non-empty for every patched scene.
+Keep keywords concise and non-empty for every patched scene.
 """.strip()
 
 
@@ -36,6 +50,9 @@ class LangChainPlannerRuntime:
 
     def _planner_runnable(self):
         return self.llm.with_structured_output(InitialPlanningResult)
+
+    def _revision_runnable(self):
+        return self.llm.with_structured_output(RevisionPlanningResult)
 
     def build_plan_from_brief(self, brief: str) -> tuple[AgentPlan, ExecutionPlan]:
         goal = brief.strip() or "生成产品介绍视频"
@@ -88,6 +105,27 @@ class LangChainPlannerRuntime:
             executionPlan=normalized_execution,
         )
 
+    def _build_revision_messages(
+        self,
+        *,
+        current_agent: AgentPlan,
+        current_execution: ExecutionPlan,
+        revision_feedback: UserRevisionFeedback,
+    ):
+        return [
+            SystemMessage(content=REVISION_PLANNER_SYSTEM_PROMPT),
+            HumanMessage(
+                content=(
+                    "Current AgentPlan:\n"
+                    f"{current_agent.model_dump_json(indent=2)}\n\n"
+                    "Current ExecutionPlan:\n"
+                    f"{current_execution.model_dump_json(indent=2)}\n\n"
+                    "Revision feedback:\n"
+                    f"{revision_feedback.model_dump_json(indent=2)}"
+                )
+            ),
+        ]
+
     def _validate_result(self, result: InitialPlanningResult) -> None:
         agent_plan = result.agentPlan
         execution_plan = result.executionPlan
@@ -125,6 +163,169 @@ class LangChainPlannerRuntime:
         if execution_plan.targetDuration < execution_duration_sum:
             raise ValueError("execution targetDuration must cover scene durations")
 
+    def _normalize_revision_result(
+        self,
+        result: RevisionPlanningResult,
+    ) -> RevisionPlanningResult:
+        return RevisionPlanningResult(
+            summary=result.summary.strip(),
+            audience=result.audience.strip(),
+            styleHint=result.styleHint.strip(),
+            style=result.style.strip(),
+            openIssues=result.openIssues,
+            changeSummary=result.changeSummary.strip(),
+            scenePatches=[
+                {
+                    "id": patch.id,
+                    "description": patch.description.strip(),
+                    "keywords": [keyword.strip() for keyword in patch.keywords if keyword.strip()],
+                    "searchQuery": " ".join(patch.searchQuery.split()),
+                }
+                for patch in result.scenePatches
+            ],
+        )
+
+    def _apply_revision_result(
+        self,
+        *,
+        current_agent: AgentPlan,
+        current_execution: ExecutionPlan,
+        revision_feedback: UserRevisionFeedback,
+        result: RevisionPlanningResult,
+    ) -> tuple[AgentPlan, ExecutionPlan, str]:
+        agent_scene_lookup = {scene.id: scene for scene in current_agent.scenes}
+        execution_scene_lookup = {scene.id: scene for scene in current_execution.scenes}
+        patch_lookup = {}
+
+        for patch in result.scenePatches:
+            if patch.id not in agent_scene_lookup or patch.id not in execution_scene_lookup:
+                raise ValueError(f"Unknown revision patch scene id: {patch.id}")
+            patch_lookup[patch.id] = patch
+
+        updated_agent_scenes = []
+        updated_execution_scenes = []
+        for agent_scene, execution_scene in zip(current_agent.scenes, current_execution.scenes):
+            patch = patch_lookup.get(agent_scene.id)
+            override_keywords = revision_feedback.sceneKeywordUpdates.get(agent_scene.id)
+
+            next_description = agent_scene.description
+            next_execution_description = execution_scene.description
+            next_keywords = list(agent_scene.keywords)
+            next_execution_keywords = list(execution_scene.keywords)
+            next_search_query = execution_scene.searchQuery
+
+            if patch is not None:
+                next_description = patch.description or agent_scene.description
+                next_execution_description = patch.description or execution_scene.description
+                next_keywords = patch.keywords
+                next_execution_keywords = patch.keywords
+                next_search_query = patch.searchQuery
+
+            if override_keywords:
+                next_keywords = list(override_keywords)
+                next_execution_keywords = list(override_keywords)
+                next_search_query = " ".join(override_keywords)
+
+            if patch is not None or override_keywords:
+                if not next_keywords:
+                    raise ValueError(f"Revision patch keywords are required for scene {agent_scene.id}")
+                if not next_search_query:
+                    raise ValueError(f"Revision patch searchQuery is required for scene {agent_scene.id}")
+
+            updated_agent_scenes.append(
+                agent_scene.model_copy(
+                    update={
+                        "description": next_description,
+                        "keywords": next_keywords,
+                    },
+                    deep=True,
+                )
+            )
+            updated_execution_scenes.append(
+                execution_scene.model_copy(
+                    update={
+                        "description": next_execution_description,
+                        "keywords": next_execution_keywords,
+                        "searchQuery": next_search_query,
+                    },
+                    deep=True,
+                )
+            )
+
+        next_agent = current_agent.model_copy(
+            update={
+                "summary": result.summary or current_agent.summary,
+                "understanding": current_agent.understanding.model_copy(
+                    update={
+                        "audience": result.audience or current_agent.understanding.audience,
+                        "styleHint": result.styleHint or current_agent.understanding.styleHint,
+                    },
+                    deep=True,
+                ),
+                "openIssues": result.openIssues or current_agent.openIssues,
+                "scenes": updated_agent_scenes,
+                "replanHistory": [
+                    *current_agent.replanHistory,
+                    {
+                        "triggerType": "user_revision",
+                        "summary": result.changeSummary,
+                        "message": revision_feedback.message.strip(),
+                        "runtime": "langchain",
+                    },
+                ],
+            },
+            deep=True,
+        )
+        next_execution = current_execution.model_copy(
+            update={
+                "style": result.style or current_execution.style,
+                "scenes": updated_execution_scenes,
+            },
+            deep=True,
+        )
+        self._validate_revision_merge(
+            current_agent=current_agent,
+            current_execution=current_execution,
+            next_agent=next_agent,
+            next_execution=next_execution,
+        )
+        return next_agent, next_execution, result.changeSummary
+
+    def _validate_revision_merge(
+        self,
+        *,
+        current_agent: AgentPlan,
+        current_execution: ExecutionPlan,
+        next_agent: AgentPlan,
+        next_execution: ExecutionPlan,
+    ) -> None:
+        current_agent_ids = [scene.id for scene in current_agent.scenes]
+        current_execution_ids = [scene.id for scene in current_execution.scenes]
+        next_agent_ids = [scene.id for scene in next_agent.scenes]
+        next_execution_ids = [scene.id for scene in next_execution.scenes]
+
+        if next_agent_ids != current_agent_ids or next_execution_ids != current_execution_ids:
+            raise ValueError("Revision merge must preserve scene ids")
+        if len(next_agent.scenes) != len(current_agent.scenes) or len(next_execution.scenes) != len(
+            current_execution.scenes
+        ):
+            raise ValueError("Revision merge must preserve scene count")
+        if next_execution.targetDuration != current_execution.targetDuration:
+            raise ValueError("Revision merge must preserve targetDuration")
+
+        for current_scene, next_scene in zip(current_agent.scenes, next_agent.scenes):
+            if next_scene.duration != current_scene.duration:
+                raise ValueError(f"Revision merge must preserve agent scene duration for scene {current_scene.id}")
+        for current_scene, next_scene in zip(current_execution.scenes, next_execution.scenes):
+            if next_scene.duration != current_scene.duration:
+                raise ValueError(
+                    f"Revision merge must preserve execution scene duration for scene {current_scene.id}"
+                )
+            if not next_scene.searchQuery:
+                raise ValueError(f"Revision merge requires searchQuery for scene {current_scene.id}")
+            if not next_scene.keywords:
+                raise ValueError(f"Revision merge requires keywords for scene {current_scene.id}")
+
     def replan_after_grounding(
         self,
         *,
@@ -147,11 +348,27 @@ class LangChainPlannerRuntime:
         current_execution: ExecutionPlan,
         revision_feedback: UserRevisionFeedback,
     ) -> tuple[AgentPlan, ExecutionPlan, str]:
-        return self.deterministic_delegate.replan_after_user_revision(
-            current_agent=current_agent,
-            current_execution=current_execution,
-            revision_feedback=revision_feedback,
-        )
+        try:
+            result = self._revision_runnable().invoke(
+                self._build_revision_messages(
+                    current_agent=current_agent,
+                    current_execution=current_execution,
+                    revision_feedback=revision_feedback,
+                )
+            )
+            normalized = self._normalize_revision_result(result)
+            return self._apply_revision_result(
+                current_agent=current_agent,
+                current_execution=current_execution,
+                revision_feedback=revision_feedback,
+                result=normalized,
+            )
+        except Exception:
+            return self.deterministic_delegate.replan_after_user_revision(
+                current_agent=current_agent,
+                current_execution=current_execution,
+                revision_feedback=revision_feedback,
+            )
 
     def replan_after_execution_feedback(
         self,
