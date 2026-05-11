@@ -1473,6 +1473,35 @@ class AgentExecutionWorkerTests(unittest.TestCase):
         self.assertIn("请根据这次失败调整方案", diagnostic.repairPrompt)
         self.assertIn("场景 1", diagnostic.repairPrompt)
 
+    def test_agent_diagnostic_service_ignores_boolean_failed_scene_ids(self):
+        from types import SimpleNamespace
+
+        from backend.services.agent_diagnostic_service import AgentDiagnosticService
+
+        event_rows = [
+            SimpleNamespace(
+                event_type="job_failed",
+                payload_json={
+                    "failedSceneIds": [True, False, 2, 2, "3"],
+                    "failureReason": "没有可用素材",
+                    "failureCategory": "no_inventory",
+                    "retryableStep": "searching",
+                },
+            )
+        ]
+
+        diagnostic = AgentDiagnosticService().build_diagnostic(
+            session_record=None,
+            job_record=None,
+            event_rows=event_rows,
+        )
+
+        self.assertIsNotNone(diagnostic)
+        self.assertEqual(diagnostic.failedSceneIds, [2])
+        self.assertIn("场景 2", diagnostic.message)
+        self.assertNotIn("场景 True", diagnostic.message)
+        self.assertNotIn("场景 False", diagnostic.message)
+
     def test_agent_diagnostic_service_falls_back_from_plain_job_error(self):
         from types import SimpleNamespace
 

@@ -177,7 +177,7 @@ class AgentDiagnosticService:
             return []
         scene_ids: list[int] = []
         for item in value:
-            if isinstance(item, int) and item not in scene_ids:
+            if isinstance(item, int) and not isinstance(item, bool) and item not in scene_ids:
                 scene_ids.append(item)
         return scene_ids
 
