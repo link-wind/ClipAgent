@@ -2107,6 +2107,70 @@ class SessionServiceBehaviorTests(unittest.TestCase):
         self.assertEqual(session.diagnostic.primaryProvider, "youtube")
         self.assertEqual(session.diagnostic.failedSceneIds, [1])
 
+    def test_read_session_hides_stale_diagnostic_after_requeue(self):
+        from backend.db.repositories import AgentEventRepository, AgentJobRepository, AgentSessionRepository
+        from backend.services.agent_read_service import AgentReadService
+
+        with self.SessionLocal() as db:
+            session_repo = AgentSessionRepository(db)
+            job_repo = AgentJobRepository(db)
+            event_repo = AgentEventRepository(db)
+            session_record = session_repo.create(
+                status="queued",
+                current_step="任务已重新规划并重新入队",
+                progress=35,
+                error_message=None,
+            )
+            failed_job = job_repo.create(
+                session_id=session_record.id,
+                job_type="generate_video",
+                status="failed",
+                progress=35,
+                current_step="处理失败：没有下载到可用素材",
+                error_message="没有下载到可用素材",
+            )
+            event_repo.create(
+                session_id=session_record.id,
+                job_id=failed_job.id,
+                event_type="job_failed",
+                step="failed",
+                message="没有下载到可用素材",
+                payload_json={
+                    "failureReason": "没有下载到可用素材",
+                    "failureCategory": "no_inventory",
+                    "primaryProvider": "youtube",
+                    "retryableStep": "searching",
+                },
+            )
+            replacement_job = job_repo.create(
+                session_id=session_record.id,
+                job_type="generate_video",
+                status="queued",
+                progress=0,
+                current_step="任务已重新规划并重新入队",
+            )
+            replacement_job_id = replacement_job.id
+            session_record.active_job_id = replacement_job.id
+            event_repo.create(
+                session_id=session_record.id,
+                job_id=replacement_job.id,
+                event_type="job_requeued_after_replan",
+                step="queued",
+                message="任务已重新规划并重新入队",
+                payload_json={
+                    "failedJobId": failed_job.id,
+                    "replacementJobId": replacement_job.id,
+                },
+            )
+            session_id = session_record.id
+            db.commit()
+
+        session = AgentReadService(session_factory=self.SessionLocal).read_session(session_id)
+
+        self.assertEqual(session.status.value, "queued")
+        self.assertEqual(session.activeJobId, replacement_job_id)
+        self.assertIsNone(session.diagnostic)
+
     def test_read_task_includes_diagnostic_for_failed_job(self):
         from backend.db.repositories import AgentEventRepository, AgentJobRepository, AgentSessionRepository
         from backend.services.agent_task_read_service import AgentTaskReadService

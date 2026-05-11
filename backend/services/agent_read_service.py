@@ -113,10 +113,14 @@ class AgentReadService:
             activeJobId=session_record.active_job_id,
             grounding=self._build_grounding_response(session_record),
             plannerTrace=session_record.planner_trace_json or {},
-            diagnostic=self.diagnostic_service.build_diagnostic(
-                session_record=session_record,
-                job_record=job_record,
-                event_rows=event_rows,
+            diagnostic=(
+                self.diagnostic_service.build_diagnostic(
+                    session_record=session_record,
+                    job_record=job_record,
+                    event_rows=event_rows,
+                )
+                if self._should_include_session_diagnostic(session_record, job_record)
+                else None
             ),
             error=(
                 AgentError(
@@ -129,6 +133,13 @@ class AgentReadService:
             progress=session_record.progress,
             currentStep=session_record.current_step or "",
         )
+
+    def _should_include_session_diagnostic(self, session_record, job_record) -> bool:
+        if getattr(session_record, "status", None) == "failed":
+            return True
+        if job_record is not None and getattr(job_record, "status", None) == "failed":
+            return True
+        return False
 
     def _build_grounding_response(self, session_record) -> AgentGroundingSummary | None:
         if not session_record.grounding_summary_json:
