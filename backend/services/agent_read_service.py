@@ -1,6 +1,7 @@
 from backend.db.repositories import (
     AgentArtifactRepository,
     AgentEventRepository,
+    AgentJobRepository,
     AgentMessageRepository,
     AgentPlanRepository,
     AgentSessionRepository,
@@ -16,6 +17,7 @@ from backend.models.agent import (
     ClipInfo,
     EditPlan,
 )
+from backend.services.agent_diagnostic_service import AgentDiagnosticService
 from backend.services.agent_step_snapshot_service import AgentStepSnapshotService
 from backend.services.planner_projection import execution_plan_to_edit_plan
 
@@ -24,6 +26,7 @@ class AgentReadService:
     def __init__(self, session_factory):
         self.session_factory = session_factory
         self.step_snapshot_service = AgentStepSnapshotService()
+        self.diagnostic_service = AgentDiagnosticService()
 
     def read_session(self, session_id: str) -> AgentSession:
         # 读取并组装会话响应
@@ -34,12 +37,17 @@ class AgentReadService:
             if session_record is None:
                 raise KeyError(session_id)
 
+            active_job_record = None
+            if getattr(session_record, "active_job_id", None):
+                active_job_record = AgentJobRepository(db).get(session_record.active_job_id)
+
             return self.build_session_response(
                 session_record=session_record,
                 message_rows=message_repo.list_for_session(session_id),
                 plan_row=self.load_current_plan(db, session_record),
                 artifact_rows=self.load_artifacts(db, session_id),
                 event_rows=AgentEventRepository(db).list_for_session(session_id),
+                job_record=active_job_record,
             )
 
     def load_current_plan(self, db_session, session_record):
@@ -69,7 +77,7 @@ class AgentReadService:
                 raise KeyError(session_id)
             return self.build_event_response(self.load_events(db, session_id))
 
-    def build_session_response(self, session_record, message_rows, plan_row, artifact_rows, event_rows) -> AgentSession:
+    def build_session_response(self, session_record, message_rows, plan_row, artifact_rows, event_rows, job_record=None) -> AgentSession:
         # 将数据库行映射回 Pydantic 会话
         plan = self._build_edit_plan(plan_row)
         clip_rows = [row for row in artifact_rows if row.artifact_type == "clip"]
@@ -105,6 +113,11 @@ class AgentReadService:
             activeJobId=session_record.active_job_id,
             grounding=self._build_grounding_response(session_record),
             plannerTrace=session_record.planner_trace_json or {},
+            diagnostic=self.diagnostic_service.build_diagnostic(
+                session_record=session_record,
+                job_record=job_record,
+                event_rows=event_rows,
+            ),
             error=(
                 AgentError(
                     message=session_record.error_message,

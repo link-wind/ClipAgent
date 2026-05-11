@@ -2058,6 +2058,95 @@ class SessionServiceBehaviorTests(unittest.TestCase):
         self.assertEqual(read_session.plan.title, session.plan.title)
         self.assertEqual(read_session.plan.style, session.plan.style)
 
+    def test_read_session_includes_diagnostic_for_failed_session(self):
+        from backend.db.repositories import AgentEventRepository, AgentJobRepository, AgentSessionRepository
+        from backend.services.agent_read_service import AgentReadService
+
+        with self.SessionLocal() as db:
+            session_repo = AgentSessionRepository(db)
+            job_repo = AgentJobRepository(db)
+            event_repo = AgentEventRepository(db)
+            session_record = session_repo.create(
+                status="failed",
+                current_step="处理失败：没有下载到可用素材",
+                progress=35,
+                error_message="没有下载到可用素材",
+                error_retryable_step="searching",
+            )
+            job_record = job_repo.create(
+                session_id=session_record.id,
+                job_type="generate_video",
+                status="failed",
+                progress=35,
+                current_step="处理失败：没有下载到可用素材",
+                error_message="没有下载到可用素材",
+            )
+            session_record.active_job_id = job_record.id
+            event_repo.create(
+                session_id=session_record.id,
+                job_id=job_record.id,
+                event_type="job_failed",
+                step="failed",
+                message="没有下载到可用素材",
+                payload_json={
+                    "failedSceneIds": [1],
+                    "failureReason": "没有下载到可用素材",
+                    "failureCategory": "no_inventory",
+                    "primaryProvider": "youtube",
+                    "retryableStep": "searching",
+                },
+            )
+            session_id = session_record.id
+            db.commit()
+
+        session = AgentReadService(session_factory=self.SessionLocal).read_session(session_id)
+
+        self.assertIsNotNone(session.diagnostic)
+        self.assertEqual(session.diagnostic.phase, "search_assets")
+        self.assertEqual(session.diagnostic.category, "no_inventory")
+        self.assertEqual(session.diagnostic.primaryProvider, "youtube")
+        self.assertEqual(session.diagnostic.failedSceneIds, [1])
+
+    def test_read_task_includes_diagnostic_for_failed_job(self):
+        from backend.db.repositories import AgentEventRepository, AgentJobRepository, AgentSessionRepository
+        from backend.services.agent_task_read_service import AgentTaskReadService
+
+        with self.SessionLocal() as db:
+            session_repo = AgentSessionRepository(db)
+            job_repo = AgentJobRepository(db)
+            event_repo = AgentEventRepository(db)
+            session_record = session_repo.create(title="诊断测试", status="failed")
+            job_record = job_repo.create(
+                session_id=session_record.id,
+                job_type="generate_video",
+                status="failed",
+                progress=35,
+                current_step="处理失败：没有下载到可用素材",
+                error_message="没有下载到可用素材",
+            )
+            event_repo.create(
+                session_id=session_record.id,
+                job_id=job_record.id,
+                event_type="job_failed",
+                step="failed",
+                message="没有下载到可用素材",
+                payload_json={
+                    "failureReason": "没有下载到可用素材",
+                    "failureCategory": "no_inventory",
+                    "primaryProvider": "youtube",
+                    "retryableStep": "searching",
+                },
+            )
+            job_id = job_record.id
+            db.commit()
+
+        task = AgentTaskReadService(session_factory=self.SessionLocal).read_task(job_id)
+
+        self.assertIsNotNone(task.diagnostic)
+        self.assertEqual(task.diagnostic.phase, "search_assets")
+        self.assertEqual(task.diagnostic.title, "素材搜索没有找到可用结果")
+        self.assertIn("请根据这次失败调整方案", task.diagnostic.repairPrompt)
+
     def test_execution_feedback_replan_clears_revision_trace_fields(self):
         from backend.db.repositories import AgentJobRepository, AgentPlanRepository, AgentSessionRepository
         from backend.services.agent_session_service import AgentSessionService

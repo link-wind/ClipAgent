@@ -11,6 +11,7 @@ from backend.models.agent import (
     AgentTaskDetail,
     AgentTaskSummary,
 )
+from backend.services.agent_diagnostic_service import AgentDiagnosticService
 from backend.services.agent_read_service import AgentReadService
 from backend.services.agent_step_snapshot_service import AgentStepSnapshotService
 
@@ -23,6 +24,7 @@ class AgentTaskReadService:
         self.session_factory = session_factory
         self.read_service = AgentReadService(session_factory=session_factory)
         self.step_snapshot_service = AgentStepSnapshotService()
+        self.diagnostic_service = AgentDiagnosticService()
 
     def list_tasks(self, limit: int = 50) -> list[AgentTaskSummary]:
         # 读取最近任务摘要
@@ -59,6 +61,11 @@ class AgentTaskReadService:
                 **summary.model_dump(),
                 events=self.read_service.build_event_response(events),
                 clips=[self.read_service._build_clip_info(row) for row in clip_rows],
+                diagnostic=self.diagnostic_service.build_diagnostic(
+                    session_record=session,
+                    job_record=job,
+                    event_rows=events,
+                ),
                 steps=self.step_snapshot_service.build_task_steps(
                     session_record=session,
                     job_record=job,
