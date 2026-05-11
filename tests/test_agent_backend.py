@@ -2006,6 +2006,21 @@ class FrontendClientContractTests(unittest.TestCase):
         self.assertIn("scrollIntoView({ behavior: 'smooth', block: 'start' })", workspace_source)
         self.assertIn("setHasAppliedRestoreJump(true)", workspace_source)
 
+    def test_workspace_revision_feedback_uses_current_plan_version(self):
+        api_source = (ROOT / "src" / "lib" / "agentApi.ts").read_text(encoding="utf-8")
+        workspace_source = (ROOT / "src" / "components" / "workspace" / "BriefWorkspacePage.tsx").read_text(
+            encoding="utf-8"
+        )
+
+        self.assertIn("currentPlanVersion: number | null", api_source)
+        self.assertIn("const [showPlanUpdatedNotice, setShowPlanUpdatedNotice] = useState(false);", workspace_source)
+        self.assertIn(
+            "const basePlanVersion = session?.plan && typeof session.currentPlanVersion === 'number' ? session.currentPlanVersion : null;",
+            workspace_source,
+        )
+        self.assertIn("nextSession.currentPlanVersion > basePlanVersion", workspace_source)
+        self.assertIn("已根据你的修改更新计划", workspace_source)
+
     def test_tasks_concept_pages_share_mock_data_and_cover_three_layouts(self):
         concepts_index = (ROOT / "src" / "app" / "tasks" / "concepts" / "page.tsx").read_text(encoding="utf-8")
         b1_source = (ROOT / "src" / "app" / "tasks" / "concepts" / "b1" / "page.tsx").read_text(

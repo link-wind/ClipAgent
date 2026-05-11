@@ -269,6 +269,7 @@ export default function BriefWorkspacePage() {
   const [selectedCandidateIds, setSelectedCandidateIds] = useState<string[]>([]);
   const [restoredSessionId, setRestoredSessionId] = useState<string | null>(null);
   const [hasAppliedRestoreJump, setHasAppliedRestoreJump] = useState(false);
+  const [showPlanUpdatedNotice, setShowPlanUpdatedNotice] = useState(false);
   const executionSectionRef = useRef<HTMLElement | null>(null);
   const resultSectionRef = useRef<HTMLElement | null>(null);
   const failureSectionRef = useRef<HTMLElement | null>(null);
@@ -318,6 +319,7 @@ export default function BriefWorkspacePage() {
   useEffect(() => {
     setSelectedDirection('');
     setSelectedCandidateIds(session?.grounding?.selectedCandidateIds ?? []);
+    setShowPlanUpdatedNotice(false);
   }, [session?.id]);
 
   useEffect(() => {
@@ -343,6 +345,8 @@ export default function BriefWorkspacePage() {
     if (!sessionId || !sessionStatus || !RUNNING_STATUSES.has(sessionStatus)) {
       return;
     }
+
+    setShowPlanUpdatedNotice(false);
 
     let isActive = true;
 
@@ -386,6 +390,8 @@ export default function BriefWorkspacePage() {
 
     setSubmitting(true);
     setErrorText('');
+    const basePlanVersion = session?.plan && typeof session.currentPlanVersion === 'number' ? session.currentPlanVersion : null;
+    setShowPlanUpdatedNotice(false);
 
     try {
       const nextSession = session
@@ -393,8 +399,14 @@ export default function BriefWorkspacePage() {
         : await createAgentSession(message);
       setActiveSessionId(nextSession.id);
       setSession(nextSession);
+      setShowPlanUpdatedNotice(
+        basePlanVersion !== null &&
+          typeof nextSession.currentPlanVersion === 'number' &&
+          nextSession.currentPlanVersion > basePlanVersion
+      );
       setMessage('');
     } catch (error) {
+      setShowPlanUpdatedNotice(false);
       setErrorText(toUserError(error, () => setSession(null)));
     } finally {
       setSubmitting(false);
@@ -725,6 +737,11 @@ export default function BriefWorkspacePage() {
                         </div>
 
                         <div className="mt-3 grid gap-3">
+                          {showPlanUpdatedNotice ? (
+                            <div className="rounded-lg border border-[rgba(168,198,108,0.38)] bg-[#f6faef] px-3 py-2 text-sm font-semibold text-accentink">
+                              已根据你的修改更新计划
+                            </div>
+                          ) : null}
                           <div className="grid gap-2 min-[861px]:grid-cols-3">
                             {buildFinalPlanSummaryItems(step).map((item) => (
                               <div key={item.label} className="rounded-lg border border-[#e4e8e3] bg-white p-2.5">

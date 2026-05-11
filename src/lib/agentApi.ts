@@ -127,6 +127,7 @@ export interface AgentSession {
   status: AgentStatus
   messages: AgentMessage[]
   plan: EditPlan | null
+  currentPlanVersion: number | null
   clips: ClipInfo[]
   events: AgentEvent[]
   steps: AgentStep[]
