@@ -2011,6 +2011,28 @@ class SessionServiceBehaviorTests(unittest.TestCase):
         self.assertEqual(read_session.plan.title, session.plan.title)
         self.assertEqual(read_session.plan.style, session.plan.style)
 
+    def test_read_service_falls_back_to_latest_plan_when_current_pointer_missing(self):
+        from backend.db.repositories import AgentSessionRepository
+        from backend.services.agent_read_service import AgentReadService
+        from backend.services.agent_session_service import AgentSessionService
+
+        service = AgentSessionService(session_factory=self.SessionLocal)
+        session = service.create_session("给 Linear 做一个 30 秒产品亮点视频")
+
+        self.assertEqual(session.currentPlanVersion, 1)
+
+        with self.SessionLocal() as db:
+            session_repo = AgentSessionRepository(db)
+            session_repo.set_current_plan(session.id, None)
+            db.commit()
+
+        read_session = AgentReadService(session_factory=self.SessionLocal).read_session(session.id)
+
+        self.assertIsNotNone(read_session.plan)
+        self.assertEqual(read_session.currentPlanVersion, 1)
+        self.assertEqual(read_session.plan.title, session.plan.title)
+        self.assertEqual(read_session.plan.style, session.plan.style)
+
     def test_execution_feedback_replan_clears_revision_trace_fields(self):
         from backend.db.repositories import AgentJobRepository, AgentPlanRepository, AgentSessionRepository
         from backend.services.agent_session_service import AgentSessionService

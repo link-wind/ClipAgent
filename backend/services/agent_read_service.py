@@ -46,7 +46,7 @@ class AgentReadService:
         # 读取会话当前指针指向的计划
         current_plan_id = getattr(session_record, "current_plan_id", None)
         if not current_plan_id:
-            return None
+            return self.load_latest_plan(db_session, session_record.id)
         return AgentPlanRepository(db_session).get(current_plan_id)
 
     def load_latest_plan(self, db_session, session_id: str):
