@@ -1657,8 +1657,10 @@ class SessionServiceBehaviorTests(unittest.TestCase):
 
         self.assertIn("events", AgentSession.model_fields)
         self.assertIn("activeJobId", AgentSession.model_fields)
+        self.assertIn("currentPlanVersion", AgentSession.model_fields)
         self.assertEqual(AgentSession.model_fields["events"].default_factory(), [])
         self.assertIsNone(AgentSession.model_fields["activeJobId"].default)
+        self.assertIsNone(AgentSession.model_fields["currentPlanVersion"].default)
         self.assertIn("message", AgentEvent.model_fields)
 
     def test_create_session_with_prompt_persists_session_message_and_initial_plan(self):
@@ -1698,6 +1700,15 @@ class SessionServiceBehaviorTests(unittest.TestCase):
             self.assertEqual(len(observation_repo.list_for_session(session.id)), 1)
         finally:
             db.close()
+
+    def test_create_session_response_exposes_current_plan_version(self):
+        from backend.services.agent_session_service import AgentSessionService
+
+        service = AgentSessionService(session_factory=self.SessionLocal)
+
+        session = service.create_session("做一个 30 秒科技短片")
+
+        self.assertEqual(session.currentPlanVersion, 1)
 
     def test_read_service_builds_agent_session_from_database_rows(self):
         from backend.db.repositories import (
@@ -1747,6 +1758,7 @@ class SessionServiceBehaviorTests(unittest.TestCase):
                     ],
                 },
             )
+            session_repo.set_current_plan(session_id, plan_repo.get_latest_for_session(session_id).id)
             job_record = job_repo.create(
                 session_id=session_id,
                 job_type="render",
@@ -1909,6 +1921,18 @@ class SessionServiceBehaviorTests(unittest.TestCase):
         finally:
             db.close()
 
+    def test_add_user_message_after_plan_returns_incremented_current_plan_version(self):
+        from backend.services.agent_session_service import AgentSessionService
+
+        service = AgentSessionService(session_factory=self.SessionLocal)
+        session = service.create_session("给 Notion AI 做一个 30 秒产品亮点视频")
+
+        self.assertEqual(session.currentPlanVersion, 1)
+
+        updated = service.add_user_message(session.id, "整体再商务一点，目标受众改成销售团队")
+
+        self.assertEqual(updated.currentPlanVersion, 2)
+
     def test_add_user_message_after_plan_persists_revision_plan_when_langchain_revision_falls_back(self):
         from backend.config import get_settings
         from backend.db.repositories import AgentPlanRepository, AgentSessionRepository
@@ -1962,6 +1986,30 @@ class SessionServiceBehaviorTests(unittest.TestCase):
             else:
                 os.environ["CLIPFORGE_PLANNER_MODE"] = self._planner_mode_before
             get_settings.cache_clear()
+
+    def test_read_service_uses_current_plan_pointer_for_plan_and_version(self):
+        from backend.db.repositories import AgentPlanRepository, AgentSessionRepository
+        from backend.services.agent_read_service import AgentReadService
+        from backend.services.agent_session_service import AgentSessionService
+
+        service = AgentSessionService(session_factory=self.SessionLocal)
+        session = service.create_session("给 Notion AI 做一个 30 秒产品亮点视频")
+        updated = service.add_user_message(session.id, "整体再商务一点，目标受众改成销售团队")
+
+        self.assertEqual(updated.currentPlanVersion, 2)
+
+        with self.SessionLocal() as db:
+            plan_repo = AgentPlanRepository(db)
+            session_repo = AgentSessionRepository(db)
+            plans = plan_repo.list_for_session(session.id)
+            session_repo.set_current_plan(session.id, plans[0].id)
+            db.commit()
+
+        read_session = AgentReadService(session_factory=self.SessionLocal).read_session(session.id)
+
+        self.assertEqual(read_session.currentPlanVersion, 1)
+        self.assertEqual(read_session.plan.title, session.plan.title)
+        self.assertEqual(read_session.plan.style, session.plan.style)
 
     def test_execution_feedback_replan_clears_revision_trace_fields(self):
         from backend.db.repositories import AgentJobRepository, AgentPlanRepository, AgentSessionRepository

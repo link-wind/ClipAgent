@@ -37,14 +37,17 @@ class AgentReadService:
             return self.build_session_response(
                 session_record=session_record,
                 message_rows=message_repo.list_for_session(session_id),
-                plan_row=self.load_latest_plan(db, session_id),
+                plan_row=self.load_current_plan(db, session_record),
                 artifact_rows=self.load_artifacts(db, session_id),
                 event_rows=AgentEventRepository(db).list_for_session(session_id),
             )
 
-    def load_latest_plan(self, db_session, session_id: str):
-        # 读取最新计划
-        return AgentPlanRepository(db_session).get_latest_for_session(session_id)
+    def load_current_plan(self, db_session, session_record):
+        # 读取会话当前指针指向的计划
+        current_plan_id = getattr(session_record, "current_plan_id", None)
+        if not current_plan_id:
+            return None
+        return AgentPlanRepository(db_session).get(current_plan_id)
 
     def load_artifacts(self, db_session, session_id: str):
         # 读取会话产物
@@ -79,6 +82,7 @@ class AgentReadService:
                 for row in message_rows
             ],
             plan=plan,
+            currentPlanVersion=getattr(plan_row, "version", None),
             clips=[
                 self._build_clip_info(row)
                 for row in clip_rows

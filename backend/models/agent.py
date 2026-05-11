@@ -137,6 +137,7 @@ class AgentSession(BaseModel):
     status: AgentStatus = AgentStatus.IDLE
     messages: List[AgentMessage] = Field(default_factory=list)
     plan: Optional[EditPlan] = None
+    currentPlanVersion: int | None = None
     clips: List[ClipInfo] = Field(default_factory=list)
     events: List[AgentEvent] = Field(default_factory=list)
     steps: List[AgentStep] = Field(default_factory=list)
