@@ -2006,6 +2006,34 @@ class FrontendClientContractTests(unittest.TestCase):
         self.assertIn("scrollIntoView({ behavior: 'smooth', block: 'start' })", workspace_source)
         self.assertIn("setHasAppliedRestoreJump(true)", workspace_source)
 
+    def test_workspace_failure_diagnostic_panel_and_repair_prompt_action(self):
+        api_source = (ROOT / "src" / "lib" / "agentApi.ts").read_text(encoding="utf-8")
+        workspace_source = (ROOT / "src" / "components" / "workspace" / "BriefWorkspacePage.tsx").read_text(
+            encoding="utf-8"
+        )
+
+        self.assertIn("export interface AgentDiagnostic", api_source)
+        self.assertIn("diagnostic: AgentDiagnostic | null", api_source)
+        self.assertIn("const diagnostic = session?.diagnostic ?? null;", workspace_source)
+        self.assertIn("function applyDiagnosticRepairPrompt()", workspace_source)
+        self.assertIn("setMessage(diagnostic.repairPrompt);", workspace_source)
+        self.assertIn("textareaRef.current?.focus();", workspace_source)
+        self.assertIn("用建议修复方案继续修改", workspace_source)
+        self.assertIn("diagnostic.primaryProvider", workspace_source)
+        self.assertIn("diagnostic.failedSceneIds", workspace_source)
+        self.assertIn("const isSessionActivelyExecuting = Boolean(", workspace_source)
+        self.assertIn("const showFailurePanel = Boolean(", workspace_source)
+        self.assertIn("{showFailurePanel ? (", workspace_source)
+
+    def test_workspace_surfaces_execution_feedback_requeue_note(self):
+        workspace_source = (ROOT / "src" / "components" / "workspace" / "BriefWorkspacePage.tsx").read_text(
+            encoding="utf-8"
+        )
+
+        self.assertIn("hasExecutionFeedbackRequeue", workspace_source)
+        self.assertIn("job_requeued_after_replan", workspace_source)
+        self.assertIn("已根据上一次失败自动调整方案并重新入队", workspace_source)
+
     def test_workspace_revision_feedback_uses_current_plan_version(self):
         api_source = (ROOT / "src" / "lib" / "agentApi.ts").read_text(encoding="utf-8")
         workspace_source = (ROOT / "src" / "components" / "workspace" / "BriefWorkspacePage.tsx").read_text(

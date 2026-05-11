@@ -90,6 +90,22 @@ export interface AgentStep {
   finishedAt: string | null
 }
 
+export type AgentDiagnosticSeverity = 'info' | 'warning' | 'error'
+
+export interface AgentDiagnostic {
+  phase: 'planning' | 'search_assets' | 'prepare_assets' | 'render_video' | 'unknown'
+  category: 'no_inventory' | 'provider_blocked' | 'download_failed' | 'render_failed' | 'planning_failed' | 'unknown'
+  title: string
+  message: string
+  primaryProvider: string | null
+  failedSceneIds: number[]
+  providerDiagnostics: Record<string, unknown>[]
+  sceneDiagnostics: Record<string, unknown>[]
+  retryStrategyHint: string | null
+  repairPrompt: string
+  severity: AgentDiagnosticSeverity
+}
+
 export type GroundingStatus = 'pending_search' | 'needs_confirmation' | 'confirmed'
 
 export interface AgentGroundingCandidate {
@@ -137,6 +153,7 @@ export interface AgentSession {
   currentStep: string
   grounding: AgentGroundingSummary | null
   error: AgentErrorInfo | null
+  diagnostic: AgentDiagnostic | null
 }
 
 type RequestOptions = {

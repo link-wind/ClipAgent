@@ -165,6 +165,22 @@ function getStepStatusText(status: string) {
   return STEP_STATUS_LABELS[status] ?? status;
 }
 
+function formatDiagnosticPhase(phase: string) {
+  return (
+    {
+      planning: '方案规划',
+      search_assets: '搜索素材',
+      prepare_assets: '准备素材',
+      render_video: '渲染视频',
+      unknown: '未知阶段',
+    }[phase] ?? phase
+  );
+}
+
+function formatSceneIds(sceneIds: number[]) {
+  return sceneIds.length ? sceneIds.map((sceneId) => `场景 ${sceneId}`).join('、') : '未指定';
+}
+
 function getStepProgress(step: WorkspaceStep, fallbackProgress: number) {
   const value = step.status === 'pending' ? fallbackProgress : step.progress;
   return Math.max(0, Math.min(100, value));
@@ -469,6 +485,14 @@ export default function BriefWorkspacePage() {
     textareaRef.current?.focus();
   };
 
+  function applyDiagnosticRepairPrompt() {
+    if (!diagnostic?.repairPrompt) {
+      return;
+    }
+    setMessage(diagnostic.repairPrompt);
+    textareaRef.current?.focus();
+  }
+
   const sessionMessages = session?.messages ?? [];
   const userMessages = sessionMessages.filter((item) => item.role === 'user');
   const assistantMessages = sessionMessages.filter((item) => item.role === 'assistant');
@@ -495,7 +519,18 @@ export default function BriefWorkspacePage() {
   }, [session?.steps]);
 
   const failedStep = findFailedStep(session);
+  const diagnostic = session?.diagnostic ?? null;
+  const isSessionActivelyExecuting = Boolean(
+    session?.status === 'queued' ||
+      session?.status === 'searching' ||
+      session?.status === 'downloading' ||
+      session?.status === 'rendering'
+  );
+  const showFailurePanel = Boolean((session?.status === 'failed' || failedStep) && !isSessionActivelyExecuting);
   const showExecutionHandoff = Boolean(session?.activeJobId || executionSteps.some((step) => step.status !== 'pending'));
+  const hasExecutionFeedbackRequeue = Boolean(
+    session?.events?.some((event) => event.eventType === 'job_requeued_after_replan')
+  );
   const resultUrl = getSafeResultUrl(session?.videoUrl);
   const generateOptionsStep = workspaceSteps.find((step) => step.id === 'generate_options');
   const generateOptionsStateSignature = useMemo(() => {
@@ -528,14 +563,14 @@ export default function BriefWorkspacePage() {
 
     const target =
       (resultUrl ? resultSectionRef.current : null) ||
-      (session?.error || failedStep ? failureSectionRef.current : null) ||
+      (showFailurePanel ? failureSectionRef.current : null) ||
       (showExecutionHandoff ? executionSectionRef.current : null);
 
     if (target) {
       target.scrollIntoView({ behavior: 'smooth', block: 'start' });
     }
     setHasAppliedRestoreJump(true);
-  }, [failedStep, hasAppliedRestoreJump, restoredSessionId, resultUrl, session?.error, session?.id, showExecutionHandoff]);
+  }, [hasAppliedRestoreJump, restoredSessionId, resultUrl, session?.id, showExecutionHandoff, showFailurePanel]);
 
   return (
     <ProductShell>
@@ -940,6 +975,11 @@ export default function BriefWorkspacePage() {
                   <span className="font-bold text-ink">Job ID：</span>
                   <span className="[overflow-wrap:anywhere]">{session?.activeJobId || '等待后端返回任务编号'}</span>
                 </div>
+                {hasExecutionFeedbackRequeue ? (
+                  <div className="rounded-lg border border-[rgba(168,198,108,0.38)] bg-[#f6faef] px-3 py-2 text-sm font-semibold text-accentink">
+                    已根据上一次失败自动调整方案并重新入队
+                  </div>
+                ) : null}
 
                 <div className="grid gap-3 sm:grid-cols-2">
                   {executionSteps.map((step, index) => (
@@ -982,7 +1022,7 @@ export default function BriefWorkspacePage() {
               </section>
             ) : null}
 
-            {session?.error || failedStep ? (
+            {showFailurePanel ? (
               <section
                 ref={failureSectionRef}
                 className="mx-5 mb-5 rounded-lg border border-[#f5c2c7] bg-[#fff7f7] p-4 text-sm text-[#8b1f2d]"
@@ -996,14 +1036,48 @@ export default function BriefWorkspacePage() {
                       failedStep.title
                     : '执行失败'}
                 </h2>
-                <p className="mt-2 leading-6">
-                  {failedStep?.error?.message || session?.error?.message || '任务执行失败，请查看任务详情。'}
-                </p>
-                <p className="mt-2 leading-6">
-                  {failedStep?.error?.retryable || session?.error?.retryableStep
-                    ? '该问题可能可以重试，请先在任务页查看事件时间线。'
-                    : '请在任务页查看事件时间线和外部素材下载日志。'}
-                </p>
+                {diagnostic ? (
+                  <div className="mt-3 grid gap-3">
+                    <div className="rounded-lg border border-[#f5c2c7] bg-white/75 p-3">
+                      <strong className="block text-sm text-[#641421]">{diagnostic.title}</strong>
+                      <p className="mt-2 leading-6">{diagnostic.message}</p>
+                      <div className="mt-3 grid gap-2 text-xs leading-5 sm:grid-cols-3">
+                        <span>
+                          <strong>阶段：</strong>
+                          {formatDiagnosticPhase(diagnostic.phase)}
+                        </span>
+                        <span>
+                          <strong>素材源：</strong>
+                          {diagnostic.primaryProvider || '未指定'}
+                        </span>
+                        <span>
+                          <strong>场景：</strong>
+                          {formatSceneIds(diagnostic.failedSceneIds)}
+                        </span>
+                      </div>
+                    </div>
+                    {diagnostic.repairPrompt ? (
+                      <button
+                        type="button"
+                        onClick={applyDiagnosticRepairPrompt}
+                        className="inline-flex min-h-10 w-fit items-center justify-center rounded-lg bg-[#8b1f2d] px-4 text-sm font-semibold text-white transition hover:bg-[#721827]"
+                      >
+                        用建议修复方案继续修改
+                      </button>
+                    ) : null}
+                  </div>
+                ) : (
+                  <>
+                    <p className="mt-2 leading-6">
+                      {failedStep?.error?.message || session?.error?.message || '任务执行失败，请查看任务详情。'}
+                    </p>
+                    <p className="mt-2 leading-6">
+                      {failedStep?.error?.retryable || session?.error?.retryableStep
+                        ? '该问题可能可以重试，请先在任务页查看事件时间线。'
+                        : '请在任务页查看事件时间线和外部素材下载日志。'}
+                    </p>
+                  </>
+                )}
               </section>
             ) : null}
 
