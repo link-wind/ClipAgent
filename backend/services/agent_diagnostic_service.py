@@ -23,6 +23,12 @@ SUPPORTED_CATEGORIES = {
     "unknown",
 }
 
+SOURCE_CATEGORY_ALIASES = {
+    "platform_blocked": "provider_blocked",
+    "download_transient": "download_failed",
+    "generic_retry": "unknown",
+}
+
 PROVIDER_LABELS = {
     "pexels": "Pexels",
     "youtube": "YouTube",
@@ -114,9 +120,25 @@ class AgentDiagnosticService:
         category = payload.get("failureCategory")
         if isinstance(category, str) and category in SUPPORTED_CATEGORIES:
             return category
+        if isinstance(category, str) and category in SOURCE_CATEGORY_ALIASES:
+            return SOURCE_CATEGORY_ALIASES[category]
 
         lowered = message.lower()
-        if any(token in lowered for token in ("403", "blocked", "rate limit", "unauthorized", "forbidden")):
+        if any(
+            token in lowered
+            for token in (
+                "403",
+                "blocked",
+                "rate limit",
+                "unauthorized",
+                "forbidden",
+                "po token",
+                "not a bot",
+                "sign in",
+                "challenge",
+                "signature",
+            )
+        ):
             return "provider_blocked"
         if phase == "render_video":
             return "render_failed"

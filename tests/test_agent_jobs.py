@@ -1502,6 +1502,37 @@ class AgentExecutionWorkerTests(unittest.TestCase):
         self.assertNotIn("场景 True", diagnostic.message)
         self.assertNotIn("场景 False", diagnostic.message)
 
+    def test_agent_diagnostic_service_maps_planner_platform_blocked_category(self):
+        from types import SimpleNamespace
+
+        from backend.services.agent_diagnostic_service import AgentDiagnosticService
+
+        diagnostic = AgentDiagnosticService().build_diagnostic(
+            session_record=None,
+            job_record=None,
+            event_rows=[
+                SimpleNamespace(
+                    event_type="job_failed",
+                    payload_json={
+                        "failureReason": "YouTube PO Token required; sign in to confirm you are not a bot",
+                        "failureCategory": "platform_blocked",
+                        "primaryProvider": "youtube",
+                        "retryStrategyHint": "stock_footage_fallback",
+                        "retryableStep": "searching",
+                    },
+                )
+            ],
+        )
+
+        self.assertIsNotNone(diagnostic)
+        self.assertEqual(diagnostic.phase, "search_assets")
+        self.assertEqual(diagnostic.category, "provider_blocked")
+        self.assertEqual(diagnostic.title, "外部素材源暂时不可用")
+        self.assertEqual(diagnostic.primaryProvider, "youtube")
+        self.assertEqual(diagnostic.retryStrategyHint, "stock_footage_fallback")
+        self.assertIn("YouTube", diagnostic.message)
+        self.assertIn("放宽检索关键词", diagnostic.repairPrompt)
+
     def test_agent_diagnostic_service_falls_back_from_plain_job_error(self):
         from types import SimpleNamespace
 
