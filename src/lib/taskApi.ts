@@ -1,5 +1,5 @@
 import { requestJson } from './agentApi'
-import type { AgentErrorInfo, AgentEvent, AgentStep, AgentStepId, ClipInfo } from './agentApi'
+import type { AgentDiagnostic, AgentErrorInfo, AgentEvent, AgentStep, AgentStepId, ClipInfo } from './agentApi'
 
 export interface AgentTaskSummary {
   id: string
@@ -17,6 +17,7 @@ export interface AgentTaskDetail extends AgentTaskSummary {
   events: AgentEvent[]
   clips: ClipInfo[]
   steps: AgentStep[]
+  diagnostic: AgentDiagnostic | null
   error: AgentErrorInfo | null
   videoUrl: string | null
 }

@@ -722,6 +722,16 @@ export default function TaskManagerPage() {
                       {activeTask.error ? activeTask.error.message ?? '任务存在错误信息，但未返回详细文案。' : '未检测到错误。'}
                     </p>
                   </div>
+
+                  {activeTask.diagnostic ? (
+                    <div className="mt-4 rounded-lg border border-rose-200 bg-white/85 p-4">
+                      <span className="block text-xs font-semibold text-secondary">诊断摘要</span>
+                      <strong className="mt-2 block text-sm font-semibold text-ink">
+                        {activeTask.diagnostic.title}
+                      </strong>
+                      <p className="mt-2 text-sm leading-6 text-ink">{activeTask.diagnostic.message}</p>
+                    </div>
+                  ) : null}
                 </section>
 
                 <section className="rounded-lg border border-border bg-slate-50/80 p-4">

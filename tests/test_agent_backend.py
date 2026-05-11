@@ -2085,6 +2085,18 @@ class FrontendClientContractTests(unittest.TestCase):
         self.assertIn("events", mock_source)
         self.assertIn("steps", mock_source)
 
+    def test_task_detail_renders_minimal_diagnostic_without_retry_action(self):
+        task_api_source = (ROOT / "src" / "lib" / "taskApi.ts").read_text(encoding="utf-8")
+        task_source = (ROOT / "src" / "components" / "tasks" / "TaskManagerPage.tsx").read_text(encoding="utf-8")
+
+        self.assertIn("AgentDiagnostic", task_api_source)
+        self.assertIn("diagnostic: AgentDiagnostic | null", task_api_source)
+        self.assertIn("activeTask.diagnostic", task_source)
+        self.assertIn("诊断摘要", task_source)
+        self.assertIn("activeTask.diagnostic.title", task_source)
+        self.assertIn("activeTask.diagnostic.message", task_source)
+        self.assertIn("任务级重新执行暂未开放", task_source)
+
     def test_tasks_page_is_tailwind_based(self):
         tasks_source = (ROOT / "src" / "components" / "tasks" / "TaskManagerPage.tsx").read_text(
             encoding="utf-8"
