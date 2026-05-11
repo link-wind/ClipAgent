@@ -69,6 +69,16 @@ AgentStepId = Literal[
 
 AgentStepStatus = Literal["pending", "running", "succeeded", "failed", "skipped"]
 GroundingStatus = Literal["pending_search", "needs_confirmation", "confirmed"]
+AgentDiagnosticSeverity = Literal["info", "warning", "error"]
+AgentDiagnosticPhase = Literal["planning", "search_assets", "prepare_assets", "render_video", "unknown"]
+AgentDiagnosticCategory = Literal[
+    "no_inventory",
+    "provider_blocked",
+    "download_failed",
+    "render_failed",
+    "planning_failed",
+    "unknown",
+]
 
 
 class AgentStepError(BaseModel):
@@ -98,6 +108,20 @@ class AgentEvent(BaseModel):
     message: Optional[str] = None
     payload: dict = Field(default_factory=dict)
     createdAt: str
+
+
+class AgentDiagnostic(BaseModel):
+    phase: AgentDiagnosticPhase
+    category: AgentDiagnosticCategory
+    title: str
+    message: str
+    primaryProvider: Optional[str] = None
+    failedSceneIds: List[int] = Field(default_factory=list)
+    providerDiagnostics: List[Dict[str, Any]] = Field(default_factory=list)
+    sceneDiagnostics: List[Dict[str, Any]] = Field(default_factory=list)
+    retryStrategyHint: Optional[str] = None
+    repairPrompt: str = ""
+    severity: AgentDiagnosticSeverity = "error"
 
 
 class AgentGroundingCandidate(BaseModel):
@@ -144,6 +168,7 @@ class AgentSession(BaseModel):
     videoUrl: Optional[str] = None
     activeJobId: Optional[str] = None
     grounding: Optional[AgentGroundingSummary] = None
+    diagnostic: Optional[AgentDiagnostic] = None
     plannerTrace: Dict[str, Any] | None = None
     error: Optional[AgentError] = None
     progress: float = 0.0
@@ -168,6 +193,7 @@ class AgentTaskDetail(AgentTaskSummary):
     steps: List[AgentStep] = Field(default_factory=list)
     error: Optional[AgentError] = None
     videoUrl: Optional[str] = None
+    diagnostic: Optional[AgentDiagnostic] = None
 
 
 class AgentDashboardSummary(BaseModel):

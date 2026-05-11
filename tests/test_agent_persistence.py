@@ -1653,7 +1653,7 @@ class SessionServiceBehaviorTests(unittest.TestCase):
         self.engine.dispose()
 
     def test_agent_session_schema_includes_events_and_active_job_id(self):
-        from backend.models.agent import AgentEvent, AgentSession
+        from backend.models.agent import AgentDiagnostic, AgentEvent, AgentSession
 
         self.assertIn("events", AgentSession.model_fields)
         self.assertIn("activeJobId", AgentSession.model_fields)
@@ -1662,6 +1662,31 @@ class SessionServiceBehaviorTests(unittest.TestCase):
         self.assertIsNone(AgentSession.model_fields["activeJobId"].default)
         self.assertIsNone(AgentSession.model_fields["currentPlanVersion"].default)
         self.assertIn("message", AgentEvent.model_fields)
+        self.assertIn("diagnostic", AgentSession.model_fields)
+        self.assertIsNone(AgentSession.model_fields["diagnostic"].default)
+        self.assertIn("phase", AgentDiagnostic.model_fields)
+        self.assertIn("category", AgentDiagnostic.model_fields)
+        self.assertIn("repairPrompt", AgentDiagnostic.model_fields)
+
+    def test_agent_diagnostic_schema_defaults(self):
+        from backend.models.agent import AgentDiagnostic
+
+        diagnostic = AgentDiagnostic(
+            phase="search_assets",
+            category="no_inventory",
+            title="素材搜索没有找到可用结果",
+            message="YouTube 没有返回可下载候选素材。",
+        )
+
+        self.assertEqual(diagnostic.phase, "search_assets")
+        self.assertEqual(diagnostic.category, "no_inventory")
+        self.assertEqual(diagnostic.primaryProvider, None)
+        self.assertEqual(diagnostic.failedSceneIds, [])
+        self.assertEqual(diagnostic.providerDiagnostics, [])
+        self.assertEqual(diagnostic.sceneDiagnostics, [])
+        self.assertEqual(diagnostic.retryStrategyHint, None)
+        self.assertEqual(diagnostic.repairPrompt, "")
+        self.assertEqual(diagnostic.severity, "error")
 
     def test_create_session_with_prompt_persists_session_message_and_initial_plan(self):
         from backend.db.repositories import (
