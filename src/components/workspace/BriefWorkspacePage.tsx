@@ -529,7 +529,8 @@ export default function BriefWorkspacePage() {
   const showFailurePanel = Boolean((session?.status === 'failed' || failedStep) && !isSessionActivelyExecuting);
   const showExecutionHandoff = Boolean(session?.activeJobId || executionSteps.some((step) => step.status !== 'pending'));
   const hasExecutionFeedbackRequeue = Boolean(
-    session?.events?.some((event) => event.eventType === 'job_requeued_after_replan')
+    isSessionActivelyExecuting &&
+      session?.events?.some((event) => event.eventType === 'job_requeued_after_replan')
   );
   const resultUrl = getSafeResultUrl(session?.videoUrl);
   const generateOptionsStep = workspaceSteps.find((step) => step.id === 'generate_options');

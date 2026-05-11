@@ -2023,6 +2023,12 @@ class FrontendClientContractTests(unittest.TestCase):
         self.assertIn("diagnostic.failedSceneIds", workspace_source)
         self.assertIn("const isSessionActivelyExecuting = Boolean(", workspace_source)
         self.assertIn("const showFailurePanel = Boolean(", workspace_source)
+        self.assertIn("const hasExecutionFeedbackRequeue = Boolean(", workspace_source)
+        self.assertIn("isSessionActivelyExecuting &&", workspace_source)
+        self.assertIn(
+            "session?.events?.some((event) => event.eventType === 'job_requeued_after_replan')",
+            workspace_source,
+        )
         self.assertIn("{showFailurePanel ? (", workspace_source)
 
     def test_workspace_surfaces_execution_feedback_requeue_note(self):
@@ -2033,6 +2039,7 @@ class FrontendClientContractTests(unittest.TestCase):
         self.assertIn("hasExecutionFeedbackRequeue", workspace_source)
         self.assertIn("job_requeued_after_replan", workspace_source)
         self.assertIn("已根据上一次失败自动调整方案并重新入队", workspace_source)
+        self.assertIn("isSessionActivelyExecuting &&", workspace_source)
 
     def test_workspace_revision_feedback_uses_current_plan_version(self):
         api_source = (ROOT / "src" / "lib" / "agentApi.ts").read_text(encoding="utf-8")
