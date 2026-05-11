@@ -1420,6 +1420,77 @@ class AgentExecutionWorkerTests(unittest.TestCase):
             },
         )
 
+    def test_agent_diagnostic_service_builds_search_no_inventory_diagnostic(self):
+        from types import SimpleNamespace
+
+        from backend.services.agent_diagnostic_service import AgentDiagnosticService
+
+        event_rows = [
+            SimpleNamespace(
+                event_type="job_failed",
+                step="failed",
+                message="没有下载到可用素材",
+                payload_json={
+                    "failedSceneIds": [1],
+                    "failureReason": "没有下载到可用素材",
+                    "failureCategory": "no_inventory",
+                    "primaryProvider": "youtube",
+                    "providerDiagnostics": [
+                        {"provider": "youtube", "message": "没有返回候选素材"}
+                    ],
+                    "sceneDiagnostics": [
+                        {
+                            "sceneId": 1,
+                            "retryable": True,
+                            "summary": "youtube returned no candidates",
+                        }
+                    ],
+                    "retryStrategyHint": "inventory_broaden",
+                    "retryable": True,
+                    "feedbackSource": "worker_failure",
+                    "retryableStep": "searching",
+                },
+            )
+        ]
+        job_record = SimpleNamespace(error_message="没有下载到可用素材", current_step="处理失败：没有下载到可用素材")
+        session_record = SimpleNamespace(error_message="没有下载到可用素材", error_retryable_step="searching")
+
+        diagnostic = AgentDiagnosticService().build_diagnostic(
+            session_record=session_record,
+            job_record=job_record,
+            event_rows=event_rows,
+        )
+
+        self.assertIsNotNone(diagnostic)
+        self.assertEqual(diagnostic.phase, "search_assets")
+        self.assertEqual(diagnostic.category, "no_inventory")
+        self.assertEqual(diagnostic.title, "素材搜索没有找到可用结果")
+        self.assertEqual(diagnostic.primaryProvider, "youtube")
+        self.assertEqual(diagnostic.failedSceneIds, [1])
+        self.assertEqual(diagnostic.retryStrategyHint, "inventory_broaden")
+        self.assertIn("场景 1", diagnostic.message)
+        self.assertIn("YouTube", diagnostic.message)
+        self.assertIn("请根据这次失败调整方案", diagnostic.repairPrompt)
+        self.assertIn("场景 1", diagnostic.repairPrompt)
+
+    def test_agent_diagnostic_service_falls_back_from_plain_job_error(self):
+        from types import SimpleNamespace
+
+        from backend.services.agent_diagnostic_service import AgentDiagnosticService
+
+        diagnostic = AgentDiagnosticService().build_diagnostic(
+            session_record=None,
+            job_record=SimpleNamespace(error_message="mocked missing render dependency", current_step="处理失败：mocked missing render dependency"),
+            event_rows=[],
+        )
+
+        self.assertIsNotNone(diagnostic)
+        self.assertEqual(diagnostic.phase, "unknown")
+        self.assertEqual(diagnostic.category, "unknown")
+        self.assertEqual(diagnostic.title, "任务执行失败")
+        self.assertEqual(diagnostic.message, "mocked missing render dependency")
+        self.assertEqual(diagnostic.repairPrompt, "请根据这次失败调整方案：mocked missing render dependency。请保持原始目标不变，改写为更容易执行的方案。")
+
     def test_run_agent_job_truncates_failed_current_step_but_keeps_full_error_message(self):
         from backend.db.repositories import AgentJobRepository
         from backend.services.agent_read_service import AgentReadService
