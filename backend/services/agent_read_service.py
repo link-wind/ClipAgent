@@ -49,6 +49,10 @@ class AgentReadService:
             return None
         return AgentPlanRepository(db_session).get(current_plan_id)
 
+    def load_latest_plan(self, db_session, session_id: str):
+        # 兼容保留：按会话读取最新版本计划
+        return AgentPlanRepository(db_session).get_latest_for_session(session_id)
+
     def load_artifacts(self, db_session, session_id: str):
         # 读取会话产物
         return AgentArtifactRepository(db_session).list_for_session(session_id)
