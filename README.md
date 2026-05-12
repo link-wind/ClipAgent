@@ -12,9 +12,46 @@
 - yt-dlp
 - FFmpeg / ffmpeg-python
 
+## Docker 一键部署
+
+先复制环境变量模板：
+
+```bash
+cp .env.example .env
+```
+
+启动完整 Docker 部署：
+
+```bash
+docker compose up --build -d
+docker compose ps
+```
+
+本机访问地址：
+
+- <http://127.0.0.1:3000/workspace>
+
+服务器访问地址：
+
+- `http://<server-ip>:3000/workspace`
+
+冒烟检查：
+
+```bash
+curl http://127.0.0.1:8010/health
+curl -I http://127.0.0.1:3000/workspace
+```
+
+停止服务：
+
+```bash
+docker compose down
+docker compose down -v
+```
+
 ## P0 本地开发方式
 
-当前阶段只容器化 PostgreSQL 和 Redis；前端、FastAPI、Celery worker 继续在本地环境运行，不放进 Docker。
+本地开发可以继续只启动 PostgreSQL 和 Redis，然后在宿主机运行前端、FastAPI 和 Celery worker。完整 Docker 部署方式见上方“Docker 一键部署”。
 
 ### 启动 PostgreSQL 和 Redis
 
