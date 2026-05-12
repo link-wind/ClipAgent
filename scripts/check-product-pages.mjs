@@ -81,6 +81,15 @@ async function main() {
   assertIncludes(tasksHtml, '失败优先关注', 'tasks 页面缺少运营摘要标签');
   assertIncludes(tasksHtml, '结果直达', 'tasks 页面缺少结果摘要标签');
 
+  const settingsHtml = await readText('.next/server/app/settings.html');
+  assertIncludes(settingsHtml, '运行设置', 'settings 页面缺少运行设置标题');
+  assertIncludes(settingsHtml, 'AI 配置', 'settings 页面缺少 AI 配置分组');
+  assertIncludes(settingsHtml, '素材源配置', 'settings 页面缺少素材源配置分组');
+  assertIncludes(settingsHtml, 'YouTube 高级配置', 'settings 页面缺少 YouTube 高级配置分组');
+  assertIncludes(settingsHtml, '基础设施配置', 'settings 页面缺少基础设施配置分组');
+  assertIncludes(settingsHtml, '保存修改', 'settings 页面缺少保存操作');
+  assertIncludes(settingsHtml, '放弃修改', 'settings 页面缺少放弃操作');
+
   const tasksConceptIndexHtml = await readText('.next/server/app/tasks/concepts.html');
   assertIncludes(tasksConceptIndexHtml, '任务页三种静态参考方案', 'tasks concepts 索引页缺少页面标题');
   assertIncludes(tasksConceptIndexHtml, 'B1 列表 + 弹窗详情', 'tasks concepts 索引页缺少 B1 入口');

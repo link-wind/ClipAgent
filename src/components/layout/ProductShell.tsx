@@ -9,6 +9,7 @@ const NAV_ITEMS = [
   { href: '/', label: '总览', shortLabel: 'D' },
   { href: '/workspace', label: '方案', shortLabel: 'W' },
   { href: '/tasks', label: '任务', shortLabel: 'T' },
+  { href: '/settings', label: '设置', shortLabel: 'S' },
 ];
 
 export default function ProductShell({ children }: { children: ReactNode }) {

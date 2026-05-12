@@ -10,6 +10,7 @@ backend/downloads/*
 !backend/downloads/.gitkeep
 backend/output/*
 !backend/output/.gitkeep
+backend/runtime_config.local.json
 
 __pycache__/
 *.py[cod]
