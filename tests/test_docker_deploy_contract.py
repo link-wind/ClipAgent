@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import unittest
+import re
 from pathlib import Path
 
 
@@ -21,8 +22,8 @@ class DockerDeployContractTests(unittest.TestCase):
     def test_compose_defines_full_clipforge_stack(self) -> None:
         compose = read("docker-compose.yml")
 
-        for service in ("postgres:", "redis:", "api:", "worker:", "frontend:"):
-            self.assertIn(service, compose)
+        for service_name in ("postgres", "redis", "api", "worker", "frontend"):
+            self.assertRegex(compose, rf"(?m)^  {re.escape(service_name)}:\s*$")
 
         self.assertIn("Dockerfile.backend", compose)
         self.assertIn("Dockerfile.frontend", compose)
