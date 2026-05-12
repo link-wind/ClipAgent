@@ -117,6 +117,8 @@ services:
     build:
       context: .
       dockerfile: Dockerfile.frontend
+      args:
+        CLIPFORGE_API_ORIGIN: ${CLIPFORGE_API_ORIGIN:-http://api:8010}
     environment:
       CLIPFORGE_API_ORIGIN: ${CLIPFORGE_API_ORIGIN:-http://api:8010}
     ports:

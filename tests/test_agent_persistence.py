@@ -9,6 +9,11 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import Mock, patch
 
+from alembic.runtime.migration import MigrationContext
+from backend.alembic_versioning import (
+    CLIPFORGE_ALEMBIC_VERSION_TABLE_LENGTH,
+    patch_alembic_version_table_impl,
+)
 from sqlalchemy import (
     JSON,
     Column,
@@ -499,6 +504,28 @@ class AlembicPersistenceTests(unittest.TestCase):
 
         self.assertIn("script_location = %(here)s/alembic", content)
         self.assertIn("prepend_sys_path = %(here)s/..", content)
+
+    def test_project_revision_ids_fit_within_configured_alembic_version_column(self):
+        longest_revision_length = max(
+            len(path.stem)
+            for path in (ROOT / "backend" / "alembic" / "versions").glob("*.py")
+            if path.name != "__init__.py"
+        )
+        self.assertGreaterEqual(
+            CLIPFORGE_ALEMBIC_VERSION_TABLE_LENGTH,
+            longest_revision_length,
+        )
+
+        patch_alembic_version_table_impl()
+        context = MigrationContext.configure(
+            dialect_name="postgresql",
+            opts={"version_table_pk": True},
+        )
+
+        self.assertGreaterEqual(
+            context._version.c.version_num.type.length,
+            longest_revision_length,
+        )
 
     def test_grounding_state_migration_applies_and_reverts_three_columns_in_order(self):
         module, fake_op = self._load_migration_module("20260507_add_agent_grounding_state.py")

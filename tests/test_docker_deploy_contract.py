@@ -3,6 +3,7 @@ from __future__ import annotations
 import unittest
 import re
 from pathlib import Path
+from packaging.version import Version
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -10,6 +11,17 @@ ROOT = Path(__file__).resolve().parents[1]
 
 def read(path: str) -> str:
     return (ROOT / path).read_text(encoding="utf-8")
+
+
+def parse_requirements() -> dict[str, str]:
+    requirements: dict[str, str] = {}
+    for line in read("backend/requirements.txt").splitlines():
+        line = line.strip()
+        if not line or line.startswith("#") or "==" not in line:
+            continue
+        package, version = line.split("==", 1)
+        requirements[package] = version
+    return requirements
 
 
 class DockerDeployContractTests(unittest.TestCase):
@@ -48,6 +60,27 @@ class DockerDeployContractTests(unittest.TestCase):
         self.assertIn("python -m celery -A backend.tasks.celery_app:celery_app worker", worker)
         self.assertIn('-Q "${CLIPFORGE_CELERY_QUEUE:-clipforge-agent}"', worker)
 
+    def test_backend_dockerfile_uses_node_runtime_without_debian_npm(self) -> None:
+        dockerfile = read("Dockerfile.backend")
+
+        self.assertIn("FROM node:20-slim AS node-runtime", dockerfile)
+        self.assertIn("FROM python:3.12-slim-bookworm", dockerfile)
+        self.assertIn("COPY --from=node-runtime /usr/local/bin/node /usr/local/bin/node", dockerfile)
+        self.assertIn("COPY --from=node-runtime /usr/local/bin/npm /usr/local/bin/npm", dockerfile)
+        self.assertNotRegex(dockerfile, r"apt-get install[^\n]*\bnodejs\b")
+        self.assertNotRegex(dockerfile, r"apt-get install[^\n]*\bnpm\b")
+
+    def test_frontend_docker_build_injects_api_origin_for_next_rewrites(self) -> None:
+        dockerfile = read("Dockerfile.frontend")
+        compose = read("docker-compose.yml")
+
+        self.assertIn("ARG CLIPFORGE_API_ORIGIN", dockerfile)
+        self.assertIn("ENV CLIPFORGE_API_ORIGIN=${CLIPFORGE_API_ORIGIN}", dockerfile)
+        self.assertRegex(
+            compose,
+            r"frontend:\n(?:.*\n)*?\s+build:\n(?:.*\n)*?\s+args:\n(?:.*\n)*?\s+CLIPFORGE_API_ORIGIN: \${CLIPFORGE_API_ORIGIN:-http://api:8010}",
+        )
+
     def test_next_rewrites_include_api_and_media_paths(self) -> None:
         next_config = read("next.config.js")
 
@@ -66,3 +99,15 @@ class DockerDeployContractTests(unittest.TestCase):
         self.assertIn("docker compose up --build -d", readme)
         self.assertIn("Docker 一键部署", readme)
         self.assertIn("docker compose ps", readme)
+
+    def test_backend_requirements_keep_langchain_and_pydantic_compatible(self) -> None:
+        requirements = parse_requirements()
+
+        self.assertEqual(requirements["langchain"], "0.3.25")
+        self.assertGreaterEqual(Version(requirements["pydantic"]), Version("2.7.4"))
+
+    def test_backend_requirements_keep_langchain_openai_and_openai_compatible(self) -> None:
+        requirements = parse_requirements()
+
+        self.assertEqual(requirements["langchain-openai"], "0.2.14")
+        self.assertGreaterEqual(Version(requirements["openai"]), Version("1.58.1"))
