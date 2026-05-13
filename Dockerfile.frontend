@@ -1,0 +1,37 @@
+FROM node:20-slim AS deps
+
+WORKDIR /app
+
+COPY package.json package-lock.json ./
+RUN npm ci
+
+FROM node:20-slim AS builder
+
+WORKDIR /app
+
+ARG CLIPFORGE_API_ORIGIN=http://api:8010
+ENV NEXT_TELEMETRY_DISABLED=1
+ENV CLIPFORGE_API_ORIGIN=${CLIPFORGE_API_ORIGIN}
+
+COPY --from=deps /app/node_modules ./node_modules
+COPY package.json package-lock.json next.config.js postcss.config.js tailwind.config.ts tsconfig.json ./
+COPY src ./src
+RUN npm run build
+
+FROM node:20-slim AS runner
+
+WORKDIR /app
+
+ENV NODE_ENV=production \
+    NEXT_TELEMETRY_DISABLED=1 \
+    HOSTNAME=0.0.0.0 \
+    PORT=3000
+
+COPY package.json package-lock.json ./
+COPY --from=deps /app/node_modules ./node_modules
+COPY --from=builder /app/.next ./.next
+COPY next.config.js ./
+
+EXPOSE 3000
+
+CMD ["npm", "run", "start"]

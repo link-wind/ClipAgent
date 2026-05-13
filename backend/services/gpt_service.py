@@ -1,7 +1,7 @@
-import os
 from typing import List, Optional
 from openai import OpenAI
 from backend.models.task import Scene
+from backend.services.runtime_config_service import runtime_config_service
 
 SYSTEM_PROMPT = "你是一个视频脚本分析专家。请根据用户提供的视频脚本，将其分解成多个场景。每个场景需要包含：1) 场景描述 2) 搜索关键词列表。直接返回场景列表，不要包含其他内容。"
 
@@ -13,14 +13,14 @@ class GPTService:
     @property
     def client(self) -> OpenAI:
         if self._client is None:
-            api_key = os.getenv("OPENAI_API_KEY", "")
+            api_key = str(runtime_config_service.get_effective_value("OPENAI_API_KEY") or "")
             if not api_key:
                 raise RuntimeError("OPENAI_API_KEY is not configured")
 
             # 延迟创建客户端，避免模块导入阶段依赖 OpenAI/httpx 初始化。
             self._client = OpenAI(
-                base_url=os.getenv("OPENAI_BASE_URL", "https://api.openai.com/v1"),
                 api_key=api_key,
+                base_url=str(runtime_config_service.get_effective_value("OPENAI_BASE_URL") or "https://api.openai.com/v1"),
             )
         return self._client
 

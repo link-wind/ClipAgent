@@ -1,9 +1,12 @@
 import os
 from dataclasses import dataclass
 
-DEFAULT_YTDLP_FORMAT = "bestvideo[height<=720][ext=mp4]+bestaudio[ext=m4a]/best[height<=720][ext=mp4]/best[height<=720]"
-DEFAULT_ASSET_PROVIDER_ORDER = ["youtube", "pexels"]
-DEFAULT_FIXTURE_LIBRARY_PATH = "fixtures/videos.json"
+from backend.services.runtime_config_service import (
+    DEFAULT_ASSET_PROVIDER_ORDER,
+    DEFAULT_FIXTURE_LIBRARY_PATH,
+    DEFAULT_YTDLP_FORMAT,
+    runtime_config_service,
+)
 
 
 def env_flag(name: str, default: bool = False) -> bool:
@@ -22,7 +25,8 @@ def env_csv(name: str, default: list[str]) -> list[str]:
 
 
 def get_asset_provider_order() -> list[str]:
-    configured = env_csv("CLIPFORGE_ASSET_PROVIDER_ORDER", DEFAULT_ASSET_PROVIDER_ORDER)
+    default_order = DEFAULT_ASSET_PROVIDER_ORDER.split(",")
+    configured = runtime_config_service.get_csv("CLIPFORGE_ASSET_PROVIDER_ORDER", default_order)
     allowed = {"fixture", "youtube", "pexels"}
     ordered: list[str] = []
 
@@ -30,7 +34,7 @@ def get_asset_provider_order() -> list[str]:
         if provider in allowed and provider not in ordered:
             ordered.append(provider)
 
-    for provider in DEFAULT_ASSET_PROVIDER_ORDER:
+    for provider in default_order:
         if provider not in ordered:
             ordered.append(provider)
 
@@ -61,26 +65,31 @@ class FixtureProviderConfig:
 
 def get_youtube_config() -> YoutubeProviderConfig:
     return YoutubeProviderConfig(
-        enabled=env_flag("YTDLP_PROVIDER_ENABLED", default=True),
-        cookies_file=os.environ.get("YTDLP_COOKIES_FILE", "").strip(),
-        player_clients=env_csv("YTDLP_PLAYER_CLIENTS", ["mweb", "web_safari", "web"]),
-        po_token=os.environ.get("YTDLP_PO_TOKEN", "").strip(),
-        impersonate=os.environ.get("YTDLP_IMPERSONATE", "").strip(),
-        format_selector=os.environ.get("YTDLP_FORMAT", DEFAULT_YTDLP_FORMAT).strip() or DEFAULT_YTDLP_FORMAT,
+        enabled=runtime_config_service.get_bool("YOUTUBE_PROVIDER_ENABLED"),
+        cookies_file=str(runtime_config_service.get_effective_value("YTDLP_COOKIES_FILE") or "").strip(),
+        player_clients=runtime_config_service.get_csv("YTDLP_PLAYER_CLIENTS", ["mweb", "web_safari", "web"]),
+        po_token=str(runtime_config_service.get_effective_value("YTDLP_PO_TOKEN") or "").strip(),
+        impersonate=str(runtime_config_service.get_effective_value("YTDLP_IMPERSONATE") or "").strip(),
+        format_selector=str(
+            runtime_config_service.get_effective_value("YTDLP_FORMAT") or DEFAULT_YTDLP_FORMAT
+        ).strip()
+        or DEFAULT_YTDLP_FORMAT,
     )
 
 
 def get_pexels_config() -> PexelsProviderConfig:
-    api_key = os.environ.get("PEXELS_API_KEY", "").strip()
+    api_key = str(runtime_config_service.get_effective_value("PEXELS_API_KEY") or "").strip()
     return PexelsProviderConfig(
-        enabled=env_flag("PEXELS_PROVIDER_ENABLED", default=bool(api_key)),
+        enabled=runtime_config_service.get_bool("PEXELS_PROVIDER_ENABLED"),
         api_key=api_key,
     )
 
 
 def get_fixture_config() -> FixtureProviderConfig:
-    library_path = os.environ.get("FIXTURE_LIBRARY_PATH", DEFAULT_FIXTURE_LIBRARY_PATH).strip()
+    library_path = str(
+        runtime_config_service.get_effective_value("FIXTURE_LIBRARY_PATH") or DEFAULT_FIXTURE_LIBRARY_PATH
+    ).strip()
     return FixtureProviderConfig(
-        enabled=env_flag("FIXTURE_PROVIDER_ENABLED", default=True),
+        enabled=runtime_config_service.get_bool("FIXTURE_PROVIDER_ENABLED"),
         library_path=library_path or DEFAULT_FIXTURE_LIBRARY_PATH,
     )

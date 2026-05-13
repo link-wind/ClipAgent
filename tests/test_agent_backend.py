@@ -1,12 +1,15 @@
 import asyncio
 import importlib
+import json
 import os
 import sys
+import tempfile
 import unittest
 from pathlib import Path
 from unittest.mock import AsyncMock, patch
 
 import httpx
+import openai
 from sqlalchemy import create_engine, event
 from sqlalchemy import func
 from sqlalchemy import select
@@ -42,6 +45,12 @@ def _make_test_client(app, raise_server_exceptions=True):
         return TestClient(app, raise_server_exceptions=raise_server_exceptions)
     finally:
         httpx.Client.__init__ = original_init
+
+
+def _make_openai_status_error(exception_cls, status_code: int, body: dict):
+    request = httpx.Request("POST", "https://example.com/v1/chat/completions")
+    response = httpx.Response(status_code, request=request, json=body)
+    return exception_cls(body["error"]["message"], response=response, body=body)
 
 
 class BackendImportTests(unittest.TestCase):
@@ -286,6 +295,124 @@ class AgentApiTests(unittest.TestCase):
         self.assertEqual(response.status_code, 500)
         self.assertEqual(response.text, "Internal Server Error")
 
+    def test_create_session_api_surfaces_upstream_auth_errors(self):
+        from backend.main import app
+
+        with patch.object(
+            agent_api_module.session_service,
+            "create_session",
+            side_effect=_make_openai_status_error(
+                openai.AuthenticationError,
+                401,
+                {
+                    "error": {
+                        "message": "Incorrect API key provided.",
+                        "type": "invalid_request_error",
+                        "code": "invalid_api_key",
+                    }
+                },
+            ),
+        ):
+            client = _make_test_client(app, raise_server_exceptions=False)
+            response = client.post(
+                "/api/agent/sessions",
+                json={"message": "给 Notion AI 做一个 30 秒产品亮点视频"},
+            )
+
+        self.assertEqual(response.status_code, 401)
+        self.assertEqual(
+            response.json(),
+            {"detail": "OpenAI 兼容服务鉴权失败，请检查 API Key 或 Base URL。"},
+        )
+
+    def test_create_session_api_surfaces_upstream_service_unavailable(self):
+        from backend.main import app
+
+        with patch.object(
+            agent_api_module.session_service,
+            "create_session",
+            side_effect=_make_openai_status_error(
+                openai.InternalServerError,
+                503,
+                {
+                    "error": {
+                        "message": "Service temporarily unavailable",
+                        "type": "api_error",
+                    }
+                },
+            ),
+        ):
+            client = _make_test_client(app, raise_server_exceptions=False)
+            response = client.post(
+                "/api/agent/sessions",
+                json={"message": "给 Notion AI 做一个 30 秒产品亮点视频"},
+            )
+
+        self.assertEqual(response.status_code, 503)
+        self.assertEqual(
+            response.json(),
+            {"detail": "OpenAI 兼容服务暂时不可用，请稍后重试。"},
+        )
+
+    def test_add_message_api_surfaces_upstream_service_unavailable(self):
+        from backend.main import app
+
+        with patch.object(
+            agent_api_module.session_service,
+            "add_user_message",
+            side_effect=_make_openai_status_error(
+                openai.InternalServerError,
+                503,
+                {
+                    "error": {
+                        "message": "Service temporarily unavailable",
+                        "type": "api_error",
+                    }
+                },
+            ),
+        ):
+            client = _make_test_client(app, raise_server_exceptions=False)
+            response = client.post(
+                "/api/agent/sessions/session-1/messages",
+                json={"message": "继续细化方案"},
+            )
+
+        self.assertEqual(response.status_code, 503)
+        self.assertEqual(
+            response.json(),
+            {"detail": "OpenAI 兼容服务暂时不可用，请稍后重试。"},
+        )
+
+    def test_confirm_grounding_api_surfaces_upstream_auth_errors(self):
+        from backend.main import app
+
+        with patch.object(
+            agent_api_module.session_service,
+            "confirm_grounding_candidates",
+            side_effect=_make_openai_status_error(
+                openai.AuthenticationError,
+                401,
+                {
+                    "error": {
+                        "message": "Incorrect API key provided.",
+                        "type": "invalid_request_error",
+                        "code": "invalid_api_key",
+                    }
+                },
+            ),
+        ):
+            client = _make_test_client(app, raise_server_exceptions=False)
+            response = client.post(
+                "/api/agent/sessions/session-1/grounding/confirm",
+                json={"candidateIds": ["cand-1"]},
+            )
+
+        self.assertEqual(response.status_code, 401)
+        self.assertEqual(
+            response.json(),
+            {"detail": "OpenAI 兼容服务鉴权失败，请检查 API Key 或 Base URL。"},
+        )
+
     def test_confirm_candidates_api_builds_grounded_plan(self):
         from backend.main import app
 
@@ -498,6 +625,166 @@ class AgentApiTests(unittest.TestCase):
         data = response.json()
         self.assertEqual(data["id"], created["id"])
         self.assertEqual(data["status"], created["status"])
+
+
+class RuntimeConfigServiceTests(unittest.TestCase):
+    def setUp(self):
+        self.temp_dir = tempfile.TemporaryDirectory()
+        self.runtime_path = Path(self.temp_dir.name) / "runtime_config.local.json"
+
+    def tearDown(self):
+        self.temp_dir.cleanup()
+
+    def test_runtime_config_file_is_gitignored(self):
+        gitignore = (ROOT / ".gitignore").read_text(encoding="utf-8")
+
+        self.assertIn("backend/runtime/runtime_config.local.json", gitignore)
+
+    def test_runtime_values_override_environment_and_defaults_without_leaking_secrets(self):
+        from backend.services.runtime_config_service import RuntimeConfigService
+
+        self.runtime_path.write_text(
+            json.dumps(
+                {
+                    "PEXELS_API_KEY": "runtime-pexels-key",
+                    "CLIPFORGE_ASSET_PROVIDER_ORDER": "pexels,youtube",
+                }
+            ),
+            encoding="utf-8",
+        )
+        service = RuntimeConfigService(config_path=self.runtime_path)
+
+        with patch.dict(os.environ, {"PEXELS_API_KEY": "env-pexels-key"}, clear=False):
+            self.assertEqual(service.get_effective_value("PEXELS_API_KEY"), "runtime-pexels-key")
+            response = service.get_settings_response()
+
+        providers = next(group for group in response["groups"] if group["id"] == "providers")
+        pexels_key = next(field for field in providers["fields"] if field["key"] == "PEXELS_API_KEY")
+        provider_order = next(
+            field for field in providers["fields"] if field["key"] == "CLIPFORGE_ASSET_PROVIDER_ORDER"
+        )
+
+        self.assertTrue(pexels_key["configured"])
+        self.assertEqual(pexels_key["source"], "runtime")
+        self.assertIsNone(pexels_key.get("value"))
+        self.assertNotIn("runtime-pexels-key", json.dumps(response, ensure_ascii=False))
+        self.assertEqual(provider_order["value"], "pexels,youtube")
+
+    def test_clear_runtime_override_falls_back_to_environment(self):
+        from backend.services.runtime_config_service import RuntimeConfigService
+
+        self.runtime_path.write_text(json.dumps({"PEXELS_API_KEY": "runtime-key"}), encoding="utf-8")
+        service = RuntimeConfigService(config_path=self.runtime_path)
+
+        with patch.dict(os.environ, {"PEXELS_API_KEY": "env-key"}, clear=False):
+            service.clear(["PEXELS_API_KEY"])
+            self.assertEqual(service.get_effective_value("PEXELS_API_KEY"), "env-key")
+            response = service.get_settings_response()
+
+        providers = next(group for group in response["groups"] if group["id"] == "providers")
+        pexels_key = next(field for field in providers["fields"] if field["key"] == "PEXELS_API_KEY")
+        self.assertEqual(pexels_key["source"], "env")
+        self.assertTrue(pexels_key["configured"])
+
+    def test_invalid_provider_order_is_rejected(self):
+        from backend.services.runtime_config_service import RuntimeConfigService
+
+        service = RuntimeConfigService(config_path=self.runtime_path)
+
+        with self.assertRaisesRegex(ValueError, "Unknown asset provider"):
+            service.update({"CLIPFORGE_ASSET_PROVIDER_ORDER": "pexels,vimeo"})
+
+    def test_runtime_settings_api_returns_grouped_sanitized_fields(self):
+        from fastapi import FastAPI
+
+        from backend.api.config import create_config_router
+        from backend.services.runtime_config_service import RuntimeConfigService
+
+        service = RuntimeConfigService(config_path=self.runtime_path)
+        app = FastAPI()
+        app.include_router(create_config_router(service), prefix="/api/test-config")
+        client = _make_test_client(app)
+
+        response = client.patch(
+            "/api/test-config/settings",
+            json={"updates": {"PEXELS_API_KEY": "secret-value", "CLIPFORGE_ASSET_PROVIDER_ORDER": "pexels,youtube"}},
+        )
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+
+        self.assertIn("mode", data)
+        self.assertIn("groups", data)
+        self.assertNotIn("secret-value", json.dumps(data, ensure_ascii=False))
+        self.assertTrue(self.runtime_path.exists())
+
+        clear_response = client.post("/api/test-config/settings/clear", json={"keys": ["PEXELS_API_KEY"]})
+        self.assertEqual(clear_response.status_code, 200)
+
+
+class RuntimeConfigIntegrationTests(unittest.TestCase):
+    def setUp(self):
+        self.temp_dir = tempfile.TemporaryDirectory()
+        self.runtime_path = Path(self.temp_dir.name) / "runtime_config.local.json"
+
+    def tearDown(self):
+        self.temp_dir.cleanup()
+
+    def test_asset_provider_config_reads_runtime_overrides(self):
+        import backend.services.asset_providers.config as provider_config
+        from backend.services.runtime_config_service import RuntimeConfigService
+
+        service = RuntimeConfigService(config_path=self.runtime_path)
+        service.update(
+            {
+                "CLIPFORGE_ASSET_PROVIDER_ORDER": "fixture,pexels,youtube",
+                "PEXELS_API_KEY": "runtime-pexels",
+                "PEXELS_PROVIDER_ENABLED": True,
+                "YOUTUBE_PROVIDER_ENABLED": False,
+            }
+        )
+
+        with patch.object(provider_config, "runtime_config_service", service):
+            self.assertEqual(provider_config.get_asset_provider_order(), ["fixture", "pexels", "youtube"])
+            self.assertEqual(provider_config.get_pexels_config().api_key, "runtime-pexels")
+            self.assertTrue(provider_config.get_pexels_config().enabled)
+            self.assertFalse(provider_config.get_youtube_config().enabled)
+
+    def test_gpt_service_reads_runtime_openai_config(self):
+        import backend.services.gpt_service as gpt_service_module
+        from backend.services.runtime_config_service import RuntimeConfigService
+
+        service = RuntimeConfigService(config_path=self.runtime_path)
+        service.update({"OPENAI_API_KEY": "runtime-openai", "OPENAI_BASE_URL": "https://example.test/v1"})
+
+        with patch.object(gpt_service_module, "runtime_config_service", service):
+            with patch.object(gpt_service_module, "OpenAI") as openai_client:
+                gpt_service_module.GPTService().client
+
+        openai_client.assert_called_once_with(api_key="runtime-openai", base_url="https://example.test/v1")
+
+    def test_backend_settings_reads_runtime_infrastructure_values(self):
+        import backend.config as backend_config
+        from backend.services.runtime_config_service import RuntimeConfigService
+
+        service = RuntimeConfigService(config_path=self.runtime_path)
+        service.update(
+            {
+                "CLIPFORGE_DATABASE_URL": "postgresql+psycopg://runtime/runtime",
+                "CLIPFORGE_REDIS_URL": "redis://localhost:6379/9",
+                "CLIPFORGE_CELERY_QUEUE": "clipforge-runtime",
+            }
+        )
+
+        backend_config.get_settings.cache_clear()
+        with patch.object(backend_config, "runtime_config_service", service):
+            settings = backend_config.get_settings()
+        backend_config.get_settings.cache_clear()
+
+        self.assertEqual(settings.database_url, "postgresql+psycopg://runtime/runtime")
+        self.assertEqual(settings.redis_url, "redis://localhost:6379/9")
+        self.assertEqual(settings.celery_broker_url, "redis://localhost:6379/9")
+        self.assertEqual(settings.celery_result_backend, "redis://localhost:6379/9")
+        self.assertEqual(settings.celery_queue, "clipforge-runtime")
 
 
 class AgentExecutionContractTests(unittest.TestCase):
@@ -2004,6 +2291,16 @@ class FrontendClientContractTests(unittest.TestCase):
         self.assertNotIn("const sessionToConfirm = pendingMessage ? await sendAgentMessage(session.id, pendingMessage) : session;\n      const nextSession = await confirmGroundingCandidates(sessionToConfirm.id, selectedCandidateIds);", workspace_source)
         self.assertIn("const canConfirmGrounding = awaitingGroundingConfirmation && selectedCandidateIds.length > 0 && !isSubmitting && !trimmedMessage;", workspace_source)
 
+    def test_workspace_plan_confirm_allows_direct_plan_ready_sessions_without_grounding(self):
+        workspace_source = (ROOT / "src" / "components" / "workspace" / "BriefWorkspacePage.tsx").read_text(
+            encoding="utf-8"
+        )
+
+        self.assertIn(
+            "const canConfirmPlan = session?.status === 'plan_ready' && (!session?.grounding || session.grounding.status === 'confirmed') && !isSubmitting;",
+            workspace_source,
+        )
+
     def test_workspace_grounding_confirmation_renders_candidate_visual_previews(self):
         workspace_source = (ROOT / "src" / "components" / "workspace" / "BriefWorkspacePage.tsx").read_text(
             encoding="utf-8"
@@ -2178,6 +2475,31 @@ class FrontendClientContractTests(unittest.TestCase):
 
         self.assertNotIn("text-rose-700 transition hover:text-rose-800", tasks_source)
         self.assertNotIn(">\\n                          重试\\n                        </button>", tasks_source)
+
+    def test_settings_page_renders_editable_runtime_settings_contract(self):
+        settings_page = (ROOT / "src" / "components" / "settings" / "SettingsPage.tsx").read_text(
+            encoding="utf-8"
+        )
+        settings_route = (ROOT / "src" / "app" / "settings" / "page.tsx").read_text(encoding="utf-8")
+        settings_api = (ROOT / "src" / "lib" / "settingsApi.ts").read_text(encoding="utf-8")
+        shell_source = (ROOT / "src" / "components" / "layout" / "ProductShell.tsx").read_text(
+            encoding="utf-8"
+        )
+
+        self.assertIn("运行设置", settings_page)
+        self.assertIn("AI 配置", settings_page)
+        self.assertIn("素材源配置", settings_page)
+        self.assertIn("YouTube 高级配置", settings_page)
+        self.assertIn("基础设施配置", settings_page)
+        self.assertIn("输入新值以替换当前配置", settings_page)
+        self.assertIn("保存修改", settings_page)
+        self.assertIn("放弃修改", settings_page)
+        self.assertIn("清除", settings_page)
+        self.assertIn("getRuntimeSettings", settings_api)
+        self.assertIn("updateRuntimeSettings", settings_api)
+        self.assertIn("clearRuntimeSettings", settings_api)
+        self.assertIn("SettingsPage", settings_route)
+        self.assertIn("href: '/settings'", shell_source)
 
     def test_tasks_operations_console_copy(self):
         tasks_source = (ROOT / "src" / "components" / "tasks" / "TaskManagerPage.tsx").read_text(

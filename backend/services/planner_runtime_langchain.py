@@ -13,6 +13,7 @@ from backend.services.planner_models import (
     UserRevisionFeedback,
 )
 from backend.services.planner_runtime_deterministic import DeterministicPlannerRuntime
+from backend.services.runtime_config_service import runtime_config_service
 
 INITIAL_PLANNER_SYSTEM_PROMPT = """
 You are a planning runtime for product intro videos.
@@ -52,7 +53,12 @@ class LangChainPlannerRuntime:
         deterministic_delegate: DeterministicPlannerRuntime | None = None,
     ):
         self.model_name = model_name
-        self.llm = llm or ChatOpenAI(model=model_name, temperature=0)
+        self.llm = llm or ChatOpenAI(
+            model=model_name,
+            temperature=0,
+            api_key=str(runtime_config_service.get_effective_value("OPENAI_API_KEY") or ""),
+            base_url=str(runtime_config_service.get_effective_value("OPENAI_BASE_URL") or "https://api.openai.com/v1"),
+        )
         self.deterministic_delegate = deterministic_delegate or DeterministicPlannerRuntime()
 
     def _planner_runnable(self):

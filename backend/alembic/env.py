@@ -5,9 +5,12 @@ from sqlalchemy import engine_from_config, pool
 
 from backend.config import get_settings
 from backend.db import Base
+from backend.alembic_versioning import patch_alembic_version_table_impl
 
 
 config = context.config
+
+patch_alembic_version_table_impl()
 
 if config.config_file_name is not None:
     fileConfig(config.config_file_name)
