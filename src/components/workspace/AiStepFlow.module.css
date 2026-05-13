@@ -124,6 +124,33 @@
   overflow-wrap: anywhere;
 }
 
+.stepProgress {
+  margin-top: 10px;
+  display: grid;
+  gap: 6px;
+}
+
+.stepProgressMeta {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  color: var(--text-muted);
+  font-size: 11px;
+}
+
+.stepProgressTrack {
+  height: 6px;
+  border-radius: 999px;
+  background: rgba(30, 30, 27, 0.96);
+  overflow: hidden;
+}
+
+.stepProgressBar {
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, rgba(75, 191, 208, 0.95), rgba(239, 199, 94, 0.95));
+}
+
 .stepComplete .stepMark,
 .stepActive .stepMark,
 .stepFailed .stepMark {
@@ -138,10 +165,20 @@
 .stepActive .stepBody {
   border-color: rgba(239, 199, 94, 0.5);
   background: rgba(40, 37, 24, 0.92);
+  box-shadow: 0 0 0 1px rgba(239, 199, 94, 0.08);
 }
 
 .stepFailed .stepMark span {
   background: #ff8fa6;
+}
+
+.stepPlaceholder .stepBody {
+  opacity: 0.6;
+  border-style: dashed;
+}
+
+.stepPlaceholder .stepMark span {
+  background: rgba(126, 122, 100, 0.7);
 }
 
 @media (max-width: 640px) {

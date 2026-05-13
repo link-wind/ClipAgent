@@ -395,11 +395,12 @@ export default function TaskManagerPage() {
 
   return (
     <ProductShell>
-      <div className="grid min-w-0 gap-4 lg:gap-5">
-        <section
-          className="rounded-lg border border-border bg-white/90 p-5 shadow-soft sm:p-6"
-          aria-label="任务管理"
-        >
+      <div className="min-h-full">
+        <div className="grid min-w-0 gap-4 lg:gap-5">
+          <section
+            className="rounded-lg border border-border bg-white/90 p-5 shadow-soft sm:p-6"
+            aria-label="任务管理页面"
+          >
           <div className="flex flex-col gap-5 xl:flex-row xl:items-start xl:justify-between">
             <div className="min-w-0 flex-1 space-y-4">
               <nav className="flex items-center gap-2 text-xs font-medium text-secondary" aria-label="面包屑">
@@ -418,6 +419,13 @@ export default function TaskManagerPage() {
                 <p className="max-w-3xl text-sm leading-6 text-secondary sm:text-base">
                   统一扫读任务状态、最近活动和结果入口；先在列表判断下一步，再按需进入详情弹窗。
                 </p>
+                <div className="flex flex-wrap gap-2 text-xs font-medium text-secondary">
+                  <span>任务管理页面</span>
+                  <span aria-hidden="true">·</span>
+                  <span>失败优先关注</span>
+                  <span aria-hidden="true">·</span>
+                  <span>结果直达</span>
+                </div>
               </div>
             </div>
 
@@ -629,7 +637,8 @@ export default function TaskManagerPage() {
               </div>
             )}
           </div>
-        </section>
+          </section>
+        </div>
       </div>
 
       {activeTask ? (
@@ -735,7 +744,12 @@ export default function TaskManagerPage() {
                 </section>
 
                 <section className="rounded-lg border border-border bg-slate-50/80 p-4">
-                  <h3 className="text-sm font-semibold text-ink">标准步骤</h3>
+                  <div className="flex items-center justify-between gap-3">
+                    <h3 className="text-sm font-semibold text-ink">标准步骤</h3>
+                    {activeTask.status === 'failed' || activeTask.status === 'error' ? (
+                      <span className="text-xs font-semibold text-rose-700">失败步骤</span>
+                    ) : null}
+                  </div>
                   <div className="mt-3 grid gap-3">
                     {activeTask.steps.length > 0 ? (
                       activeTask.steps.map((step) => (
@@ -824,7 +838,8 @@ export default function TaskManagerPage() {
                   </div>
 
                   <div className="mt-4 rounded-lg border border-border bg-white/90 p-4">
-                    <span className="block text-xs font-semibold text-secondary">输出视频</span>
+                    <span className="block text-xs font-semibold text-secondary">结果预览</span>
+                    <span className="mt-1 block text-xs font-medium text-secondary">输出视频</span>
                     <p className="mt-2 text-sm leading-6 text-ink">
                       {activeTask.videoUrl ? '已生成成片，可继续预览或下载。' : '还没有最终视频，等待渲染完成。'}
                     </p>

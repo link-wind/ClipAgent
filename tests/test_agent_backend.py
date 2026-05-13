@@ -2227,6 +2227,31 @@ class FrontendClientContractTests(unittest.TestCase):
         self.assertNotIn("workspaceSteps.map(", workspace_source)
         self.assertNotIn("AI 分析步骤流", workspace_source)
 
+    def test_workspace_step_flow_uses_conversational_progress_cards(self):
+        step_flow_source = (ROOT / "src" / "components" / "workspace" / "AiStepFlow.tsx").read_text(
+            encoding="utf-8"
+        )
+
+        self.assertIn("buildConversationalStepCards", step_flow_source)
+        self.assertIn("ConversationalStepCard", step_flow_source)
+        self.assertIn("clampProgress", step_flow_source)
+        self.assertIn("buildStepMessage", step_flow_source)
+        self.assertIn("只展示已经开始或已经完成的步骤", step_flow_source)
+        self.assertIn("下一张卡片会在当前步骤完成后出现", step_flow_source)
+        self.assertIn("步骤进度", step_flow_source)
+        self.assertIn("step.progress", step_flow_source)
+        self.assertIn("totalProgress", step_flow_source)
+
+    def test_workspace_step_flow_css_supports_card_level_progress(self):
+        step_flow_css = (ROOT / "src" / "components" / "workspace" / "AiStepFlow.module.css").read_text(
+            encoding="utf-8"
+        )
+
+        self.assertIn(".stepProgress", step_flow_css)
+        self.assertIn(".stepProgressTrack", step_flow_css)
+        self.assertIn(".stepProgressBar", step_flow_css)
+        self.assertIn(".stepPlaceholder", step_flow_css)
+
     def test_task_manager_page_is_tailwind_based(self):
         task_source = (ROOT / "src" / "components" / "tasks" / "TaskManagerPage.tsx").read_text(
             encoding="utf-8"
