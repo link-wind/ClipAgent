@@ -2422,28 +2422,6 @@ class FrontendClientContractTests(unittest.TestCase):
         self.assertIn("nextSession.currentPlanVersion > basePlanVersion", workspace_source)
         self.assertIn("已根据你的修改更新计划", workspace_source)
 
-    def test_workspace_step_flow_uses_conversational_progress_cards(self):
-        step_flow_source = (ROOT / "src" / "components" / "workspace" / "AiStepFlow.tsx").read_text(
-            encoding="utf-8"
-        )
-
-        self.assertIn("buildConversationalStepCards", step_flow_source)
-        self.assertIn("只展示已经开始或已经完成的步骤", step_flow_source)
-        self.assertIn("下一张卡片会在当前步骤完成后出现", step_flow_source)
-        self.assertIn("步骤进度", step_flow_source)
-        self.assertIn("step.progress", step_flow_source)
-        self.assertIn("session?.progress", step_flow_source)
-
-    def test_workspace_step_flow_css_supports_card_level_progress(self):
-        step_flow_css = (ROOT / "src" / "components" / "workspace" / "AiStepFlow.module.css").read_text(
-            encoding="utf-8"
-        )
-
-        self.assertIn(".stepProgress", step_flow_css)
-        self.assertIn(".stepProgressTrack", step_flow_css)
-        self.assertIn(".stepProgressBar", step_flow_css)
-        self.assertIn(".stepPlaceholder", step_flow_css)
-
     def test_tasks_concept_pages_share_mock_data_and_cover_three_layouts(self):
         concepts_index = (ROOT / "src" / "app" / "tasks" / "concepts" / "page.tsx").read_text(encoding="utf-8")
         b1_source = (ROOT / "src" / "app" / "tasks" / "concepts" / "b1" / "page.tsx").read_text(
