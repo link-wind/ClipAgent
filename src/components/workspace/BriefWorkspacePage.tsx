@@ -396,7 +396,7 @@ export default function BriefWorkspacePage() {
   const canSend = Boolean(trimmedMessage) && !isSubmitting;
   const awaitingGroundingConfirmation = session?.grounding?.status === 'needs_confirmation';
   const canConfirmGrounding = awaitingGroundingConfirmation && selectedCandidateIds.length > 0 && !isSubmitting && !trimmedMessage;
-  const canConfirmPlan = session?.status === 'plan_ready' && session?.grounding?.status === 'confirmed' && !isSubmitting;
+  const canConfirmPlan = session?.status === 'plan_ready' && (!session?.grounding || session.grounding.status === 'confirmed') && !isSubmitting;
 
   const submitMessage = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();

@@ -1,6 +1,8 @@
 import importlib
 import sys
+import tempfile
 import unittest
+from pathlib import Path
 from unittest.mock import Mock, patch
 
 from backend.services.planner_models import InitialPlanningResult
@@ -772,6 +774,37 @@ class PlannerRuntimeTests(unittest.TestCase):
                 runtime = planner_runtime.get_planner_runtime()
                 self.assertEqual(runtime.__class__.__name__, "LangChainPlannerRuntime")
             reloaded_config.get_settings.cache_clear()
+
+    def test_langchain_runtime_reads_openai_credentials_from_runtime_settings(self):
+        import backend.services.planner_runtime_langchain as planner_runtime_langchain
+        from backend.services.runtime_config_service import RuntimeConfigService
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            service = RuntimeConfigService(config_path=Path(temp_dir) / "runtime_config.local.json")
+            service.update(
+                {
+                    "OPENAI_API_KEY": "runtime-openai-key",
+                    "OPENAI_BASE_URL": "https://runtime.example/v1",
+                }
+            )
+
+            captured = {}
+
+            class FakeChatOpenAI:
+                def __init__(self, **kwargs):
+                    captured.update(kwargs)
+
+            with patch.object(planner_runtime_langchain, "ChatOpenAI", FakeChatOpenAI), patch.object(
+                planner_runtime_langchain,
+                "runtime_config_service",
+                service,
+                create=True,
+            ):
+                planner_runtime_langchain.LangChainPlannerRuntime(model_name="gpt-4o-mini")
+
+            self.assertEqual(captured.get("api_key"), "runtime-openai-key")
+            self.assertEqual(captured.get("base_url"), "https://runtime.example/v1")
+            self.assertEqual(captured["model"], "gpt-4o-mini")
 
     def test_deterministic_runtime_replans_after_grounding(self):
         from backend.services.planner_models import (

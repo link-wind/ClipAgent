@@ -60,6 +60,15 @@ class DockerDeployContractTests(unittest.TestCase):
         self.assertIn("python -m celery -A backend.tasks.celery_app:celery_app worker", worker)
         self.assertIn('-Q "${CLIPFORGE_CELERY_QUEUE:-clipforge-agent}"', worker)
 
+    def test_compose_persists_runtime_settings_for_api_and_worker(self) -> None:
+        compose = read("docker-compose.yml")
+        runtime_service = read("backend/services/runtime_config_service.py")
+
+        self.assertIn("CLIPFORGE_RUNTIME_CONFIG_PATH", compose)
+        self.assertIn("clipforge-runtime-config:", compose)
+        self.assertIn("/app/backend/runtime", compose)
+        self.assertIn("DEFAULT_RUNTIME_CONFIG_PATH = ROOT_DIR / \"backend\" / \"runtime\" / \"runtime_config.local.json\"", runtime_service)
+
     def test_backend_dockerfile_uses_node_runtime_without_debian_npm(self) -> None:
         dockerfile = read("Dockerfile.backend")
 

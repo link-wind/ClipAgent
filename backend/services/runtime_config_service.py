@@ -7,7 +7,7 @@ from typing import Any
 
 
 ROOT_DIR = Path(__file__).resolve().parents[2]
-DEFAULT_RUNTIME_CONFIG_PATH = ROOT_DIR / "backend" / "runtime_config.local.json"
+DEFAULT_RUNTIME_CONFIG_PATH = ROOT_DIR / "backend" / "runtime" / "runtime_config.local.json"
 DEFAULT_DATABASE_URL = "postgresql+psycopg://clipforge:clipforge@localhost:5432/clipforge"
 DEFAULT_REDIS_URL = "redis://localhost:6379/0"
 DEFAULT_YTDLP_FORMAT = "bestvideo[height<=720][ext=mp4]+bestaudio[ext=m4a]/best[height<=720][ext=mp4]/best[height<=720]"
@@ -60,7 +60,8 @@ GROUPS = {
 
 class RuntimeConfigService:
     def __init__(self, config_path: Path | None = None):
-        self.config_path = config_path or DEFAULT_RUNTIME_CONFIG_PATH
+        configured_path = os.environ.get("CLIPFORGE_RUNTIME_CONFIG_PATH")
+        self.config_path = config_path or Path(configured_path) if configured_path else config_path or DEFAULT_RUNTIME_CONFIG_PATH
         self.fields = {field.key: field for field in FIELD_DEFINITIONS}
 
     def get_effective_value(self, key: str) -> Any:

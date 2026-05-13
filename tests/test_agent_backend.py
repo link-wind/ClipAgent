@@ -9,6 +9,7 @@ from pathlib import Path
 from unittest.mock import AsyncMock, patch
 
 import httpx
+import openai
 from sqlalchemy import create_engine, event
 from sqlalchemy import func
 from sqlalchemy import select
@@ -44,6 +45,12 @@ def _make_test_client(app, raise_server_exceptions=True):
         return TestClient(app, raise_server_exceptions=raise_server_exceptions)
     finally:
         httpx.Client.__init__ = original_init
+
+
+def _make_openai_status_error(exception_cls, status_code: int, body: dict):
+    request = httpx.Request("POST", "https://example.com/v1/chat/completions")
+    response = httpx.Response(status_code, request=request, json=body)
+    return exception_cls(body["error"]["message"], response=response, body=body)
 
 
 class BackendImportTests(unittest.TestCase):
@@ -288,6 +295,124 @@ class AgentApiTests(unittest.TestCase):
         self.assertEqual(response.status_code, 500)
         self.assertEqual(response.text, "Internal Server Error")
 
+    def test_create_session_api_surfaces_upstream_auth_errors(self):
+        from backend.main import app
+
+        with patch.object(
+            agent_api_module.session_service,
+            "create_session",
+            side_effect=_make_openai_status_error(
+                openai.AuthenticationError,
+                401,
+                {
+                    "error": {
+                        "message": "Incorrect API key provided.",
+                        "type": "invalid_request_error",
+                        "code": "invalid_api_key",
+                    }
+                },
+            ),
+        ):
+            client = _make_test_client(app, raise_server_exceptions=False)
+            response = client.post(
+                "/api/agent/sessions",
+                json={"message": "给 Notion AI 做一个 30 秒产品亮点视频"},
+            )
+
+        self.assertEqual(response.status_code, 401)
+        self.assertEqual(
+            response.json(),
+            {"detail": "OpenAI 兼容服务鉴权失败，请检查 API Key 或 Base URL。"},
+        )
+
+    def test_create_session_api_surfaces_upstream_service_unavailable(self):
+        from backend.main import app
+
+        with patch.object(
+            agent_api_module.session_service,
+            "create_session",
+            side_effect=_make_openai_status_error(
+                openai.InternalServerError,
+                503,
+                {
+                    "error": {
+                        "message": "Service temporarily unavailable",
+                        "type": "api_error",
+                    }
+                },
+            ),
+        ):
+            client = _make_test_client(app, raise_server_exceptions=False)
+            response = client.post(
+                "/api/agent/sessions",
+                json={"message": "给 Notion AI 做一个 30 秒产品亮点视频"},
+            )
+
+        self.assertEqual(response.status_code, 503)
+        self.assertEqual(
+            response.json(),
+            {"detail": "OpenAI 兼容服务暂时不可用，请稍后重试。"},
+        )
+
+    def test_add_message_api_surfaces_upstream_service_unavailable(self):
+        from backend.main import app
+
+        with patch.object(
+            agent_api_module.session_service,
+            "add_user_message",
+            side_effect=_make_openai_status_error(
+                openai.InternalServerError,
+                503,
+                {
+                    "error": {
+                        "message": "Service temporarily unavailable",
+                        "type": "api_error",
+                    }
+                },
+            ),
+        ):
+            client = _make_test_client(app, raise_server_exceptions=False)
+            response = client.post(
+                "/api/agent/sessions/session-1/messages",
+                json={"message": "继续细化方案"},
+            )
+
+        self.assertEqual(response.status_code, 503)
+        self.assertEqual(
+            response.json(),
+            {"detail": "OpenAI 兼容服务暂时不可用，请稍后重试。"},
+        )
+
+    def test_confirm_grounding_api_surfaces_upstream_auth_errors(self):
+        from backend.main import app
+
+        with patch.object(
+            agent_api_module.session_service,
+            "confirm_grounding_candidates",
+            side_effect=_make_openai_status_error(
+                openai.AuthenticationError,
+                401,
+                {
+                    "error": {
+                        "message": "Incorrect API key provided.",
+                        "type": "invalid_request_error",
+                        "code": "invalid_api_key",
+                    }
+                },
+            ),
+        ):
+            client = _make_test_client(app, raise_server_exceptions=False)
+            response = client.post(
+                "/api/agent/sessions/session-1/grounding/confirm",
+                json={"candidateIds": ["cand-1"]},
+            )
+
+        self.assertEqual(response.status_code, 401)
+        self.assertEqual(
+            response.json(),
+            {"detail": "OpenAI 兼容服务鉴权失败，请检查 API Key 或 Base URL。"},
+        )
+
     def test_confirm_candidates_api_builds_grounded_plan(self):
         from backend.main import app
 
@@ -513,7 +638,7 @@ class RuntimeConfigServiceTests(unittest.TestCase):
     def test_runtime_config_file_is_gitignored(self):
         gitignore = (ROOT / ".gitignore").read_text(encoding="utf-8")
 
-        self.assertIn("backend/runtime_config.local.json", gitignore)
+        self.assertIn("backend/runtime/runtime_config.local.json", gitignore)
 
     def test_runtime_values_override_environment_and_defaults_without_leaking_secrets(self):
         from backend.services.runtime_config_service import RuntimeConfigService
@@ -2143,6 +2268,16 @@ class FrontendClientContractTests(unittest.TestCase):
         self.assertIn("const sessionToConfirm = pendingMessage ? await sendAgentMessage(session.id, pendingMessage) : session;", workspace_source)
         self.assertNotIn("const sessionToConfirm = pendingMessage ? await sendAgentMessage(session.id, pendingMessage) : session;\n      const nextSession = await confirmGroundingCandidates(sessionToConfirm.id, selectedCandidateIds);", workspace_source)
         self.assertIn("const canConfirmGrounding = awaitingGroundingConfirmation && selectedCandidateIds.length > 0 && !isSubmitting && !trimmedMessage;", workspace_source)
+
+    def test_workspace_plan_confirm_allows_direct_plan_ready_sessions_without_grounding(self):
+        workspace_source = (ROOT / "src" / "components" / "workspace" / "BriefWorkspacePage.tsx").read_text(
+            encoding="utf-8"
+        )
+
+        self.assertIn(
+            "const canConfirmPlan = session?.status === 'plan_ready' && (!session?.grounding || session.grounding.status === 'confirmed') && !isSubmitting;",
+            workspace_source,
+        )
 
     def test_workspace_grounding_confirmation_renders_candidate_visual_previews(self):
         workspace_source = (ROOT / "src" / "components" / "workspace" / "BriefWorkspacePage.tsx").read_text(
