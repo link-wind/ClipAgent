@@ -50,10 +50,14 @@ FIELD_DEFINITIONS: tuple[RuntimeField, ...] = (
     RuntimeField("CLIPFORGE_CELERY_QUEUE", "Celery Queue", "infrastructure", "string", False, "clipforge-agent", ("CLIPFORGE_CELERY_QUEUE",), "api_worker", "API 入队和 worker 监听必须使用同一个队列名。"),
 )
 
-GROUPS = {
+VISIBLE_GROUPS = {
     "ai": ("AI 配置", "OpenAI 兼容服务配置。"),
     "providers": ("素材源配置", "控制 fixture、Pexels、YouTube 的启用状态和搜索顺序。"),
-    "youtube": ("YouTube 高级配置", "yt-dlp 相关增强参数。"),
+    "youtube": ("高级设置", "高级联调参数。只有在真实外部素材链路需要时才需要调整。"),
+}
+
+GROUPS = {
+    **VISIBLE_GROUPS,
     "infrastructure": ("基础设施配置", "数据库、Redis 和 Celery 运行配置。"),
 }
 
@@ -112,9 +116,10 @@ class RuntimeConfigService:
         return self.get_settings_response()
 
     def get_settings_response(self) -> dict[str, Any]:
-        fields_by_group: dict[str, list[dict[str, Any]]] = {group_id: [] for group_id in GROUPS}
+        fields_by_group: dict[str, list[dict[str, Any]]] = {group_id: [] for group_id in VISIBLE_GROUPS}
         for field in FIELD_DEFINITIONS:
-            fields_by_group[field.group].append(self._field_response(field))
+            if field.group in fields_by_group:
+                fields_by_group[field.group].append(self._field_response(field))
 
         return {
             "mode": self._mode_response(),
@@ -125,7 +130,7 @@ class RuntimeConfigService:
                     "description": description,
                     "fields": fields_by_group[group_id],
                 }
-                for group_id, (title, description) in GROUPS.items()
+                for group_id, (title, description) in VISIBLE_GROUPS.items()
             ],
         }
 

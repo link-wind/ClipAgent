@@ -85,8 +85,8 @@ async function main() {
   assertIncludes(settingsHtml, '运行设置', 'settings 页面缺少运行设置标题');
   assertIncludes(settingsHtml, 'AI 配置', 'settings 页面缺少 AI 配置分组');
   assertIncludes(settingsHtml, '素材源配置', 'settings 页面缺少素材源配置分组');
-  assertIncludes(settingsHtml, 'YouTube 高级配置', 'settings 页面缺少 YouTube 高级配置分组');
-  assertIncludes(settingsHtml, '基础设施配置', 'settings 页面缺少基础设施配置分组');
+  assertIncludes(settingsHtml, '高级设置', 'settings 页面缺少高级设置分组');
+  assertExcludes(settingsHtml, '基础设施配置', 'settings 页面不应再暴露基础设施配置分组');
   assertIncludes(settingsHtml, '保存修改', 'settings 页面缺少保存操作');
   assertIncludes(settingsHtml, '放弃修改', 'settings 页面缺少放弃操作');
 
