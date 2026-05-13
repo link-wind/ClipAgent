@@ -2220,7 +2220,12 @@ class FrontendClientContractTests(unittest.TestCase):
         self.assertNotIn("BriefWorkspacePage.module.css", workspace_source)
         self.assertNotIn("styles.", workspace_source)
         self.assertIn("className=\"min-h-full", workspace_source)
-        self.assertIn("grid w-full max-w-[980px]", workspace_source)
+        self.assertIn("grid w-full max-w-[1240px]", workspace_source)
+        self.assertIn("min-[1080px]:grid-cols-[minmax(0,1fr)_360px]", workspace_source)
+        self.assertIn("import AiStepFlow from '@/components/workspace/AiStepFlow';", workspace_source)
+        self.assertIn("<AiStepFlow />", workspace_source)
+        self.assertNotIn("workspaceSteps.map(", workspace_source)
+        self.assertNotIn("AI 分析步骤流", workspace_source)
 
     def test_task_manager_page_is_tailwind_based(self):
         task_source = (ROOT / "src" / "components" / "tasks" / "TaskManagerPage.tsx").read_text(
@@ -2249,6 +2254,7 @@ class FrontendClientContractTests(unittest.TestCase):
             encoding="utf-8"
         )
 
+        self.assertIn("方案工作区", workspace_source)
         self.assertIn("EXECUTION_STEP_IDS", workspace_source)
         self.assertIn("create_task", workspace_source)
         self.assertIn("search_assets", workspace_source)
@@ -2259,6 +2265,8 @@ class FrontendClientContractTests(unittest.TestCase):
         self.assertIn("查看任务详情", workspace_source)
         self.assertIn("结果预览", workspace_source)
         self.assertIn("失败步骤", workspace_source)
+        self.assertIn("候选产品画面确认", workspace_source)
+        self.assertIn("恢复的方案会话", workspace_source)
 
     def test_workspace_renders_candidate_confirmation_stage(self):
         workspace_source = (ROOT / "src" / "components" / "workspace" / "BriefWorkspacePage.tsx").read_text(
@@ -2398,7 +2406,7 @@ class FrontendClientContractTests(unittest.TestCase):
             workspace_source,
         )
         self.assertIn("nextSession.currentPlanVersion > basePlanVersion", workspace_source)
-        self.assertIn("已根据你的修改更新计划", workspace_source)
+        self.assertIn("setShowPlanUpdatedNotice(false);", workspace_source)
 
     def test_tasks_concept_pages_share_mock_data_and_cover_three_layouts(self):
         concepts_index = (ROOT / "src" / "app" / "tasks" / "concepts" / "page.tsx").read_text(encoding="utf-8")
