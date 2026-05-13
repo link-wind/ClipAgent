@@ -1910,6 +1910,28 @@ class FrontendClientContractTests(unittest.TestCase):
         self.assertIn("className=\"min-h-full", workspace_source)
         self.assertIn("grid w-full max-w-[980px]", workspace_source)
 
+    def test_task_manager_page_is_tailwind_based(self):
+        task_source = (ROOT / "src" / "components" / "tasks" / "TaskManagerPage.tsx").read_text(
+            encoding="utf-8"
+        )
+
+        self.assertNotIn("TaskManagerPage.module.css", task_source)
+        self.assertNotIn("styles.", task_source)
+        self.assertIn("className=\"min-h-full", task_source)
+        self.assertIn("任务管理页面", task_source)
+
+    def test_task_manager_page_exposes_failure_and_result_states(self):
+        task_source = (ROOT / "src" / "components" / "tasks" / "TaskManagerPage.tsx").read_text(
+            encoding="utf-8"
+        )
+
+        self.assertIn("标准步骤", task_source)
+        self.assertIn("事件时间线", task_source)
+        self.assertIn("结果与操作", task_source)
+        self.assertIn("失败步骤", task_source)
+        self.assertIn("结果预览", task_source)
+        self.assertIn("重新执行", task_source)
+
     def test_workspace_handoff_renders_execution_steps_and_result_states(self):
         workspace_source = (ROOT / "src" / "components" / "workspace" / "BriefWorkspacePage.tsx").read_text(
             encoding="utf-8"
