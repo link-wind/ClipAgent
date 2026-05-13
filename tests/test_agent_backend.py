@@ -2194,6 +2194,16 @@ class FrontendClientContractTests(unittest.TestCase):
         self.assertIn("getAgentSessionEvents", api_source)
         self.assertIn("queued", api_source)
 
+    def test_globals_css_exposes_shell_refresh_tokens(self):
+        globals_css = (ROOT / "src" / "app" / "globals.css").read_text(encoding="utf-8")
+
+        self.assertIn("--page-bg: #f5f7fb;", globals_css)
+        self.assertIn("--surface: #ffffff;", globals_css)
+        self.assertIn("--ink: #111b33;", globals_css)
+        self.assertIn("--text-secondary: #64748b;", globals_css)
+        self.assertIn("--shadow-soft: 0 18px 40px rgba(148, 163, 184, 0.14);", globals_css)
+        self.assertIn("--radius-lg: 24px;", globals_css)
+
     def test_workspace_polls_running_sessions_and_restores_events(self):
         workspace_source = (ROOT / "src" / "components" / "agent" / "AgentWorkspace.tsx").read_text(
             encoding="utf-8"
