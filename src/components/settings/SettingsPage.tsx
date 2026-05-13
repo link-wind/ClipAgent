@@ -19,7 +19,8 @@ const RESTART_LABELS: Record<string, string> = {
 }
 
 const PROVIDER_ORDER_PRESETS = ['fixture,pexels,youtube', 'pexels,youtube', 'youtube,pexels']
-const EXPECTED_GROUP_TITLES = ['AI 配置', '素材源配置', 'YouTube 高级配置', '基础设施配置']
+const EXPECTED_GROUP_TITLES = ['AI 配置', '素材源配置', '高级设置']
+const ADVANCED_OPTIONAL_KEYS = ['YTDLP_FORMAT', 'YTDLP_IMPERSONATE']
 
 function stringifyFieldValue(field: RuntimeSettingsField) {
   if (field.sensitive) {
@@ -126,6 +127,7 @@ export default function SettingsPage() {
   const [dirtyKeys, setDirtyKeys] = useState<string[]>([])
   const [errorText, setErrorText] = useState<string | null>(null)
   const [saveState, setSaveState] = useState<'saved' | 'dirty' | 'saving' | 'failed'>('saved')
+  const [showMoreAdvanced, setShowMoreAdvanced] = useState(false)
 
   useEffect(() => {
     void loadSettings()
@@ -222,7 +224,7 @@ export default function SettingsPage() {
               <div className="space-y-2">
                 <h1 className="text-3xl font-semibold tracking-tight text-ink sm:text-4xl">运行设置</h1>
                 <p className="max-w-3xl text-sm leading-6 text-secondary sm:text-base">
-                  编辑本地 runtime 配置，管理 AI、素材源、YouTube 高级参数和基础设施连接。
+                  编辑本地 runtime 配置，管理 AI、素材源和高级联调参数。
                 </p>
               </div>
             </div>
@@ -272,10 +274,29 @@ export default function SettingsPage() {
               <div className="space-y-1">
                 <h2 className="text-xl font-semibold text-ink">{group.title}</h2>
                 <p className="text-sm text-secondary">{group.description}</p>
+                {group.id === 'youtube' ? (
+                  <button
+                    className="inline-flex items-center rounded-md border border-border bg-white px-3 py-1.5 text-sm font-medium text-ink transition hover:border-accentstrong"
+                    type="button"
+                    onClick={() => setShowMoreAdvanced((value) => !value)}
+                  >
+                    {showMoreAdvanced ? '收起更多' : '展开更多'}
+                  </button>
+                ) : null}
               </div>
 
               <div className="grid gap-3">
-                {group.fields.map((field) => {
+                {group.fields
+                  .filter((field) => {
+                    if (group.id !== 'youtube') {
+                      return true
+                    }
+                    if (showMoreAdvanced) {
+                      return true
+                    }
+                    return !ADVANCED_OPTIONAL_KEYS.includes(field.key)
+                  })
+                  .map((field) => {
                   const value = drafts[field.key] ?? stringifyFieldValue(field)
                   const isDirty = dirtyKeys.includes(field.key)
                   const showClear = field.source === 'runtime' || field.sensitive

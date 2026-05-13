@@ -404,6 +404,7 @@ class RuntimeConfigServiceTests(unittest.TestCase):
         self.assertIn("groups", data)
         self.assertNotIn("secret-value", json.dumps(data, ensure_ascii=False))
         self.assertTrue(self.runtime_path.exists())
+        self.assertFalse(any(group["id"] == "infrastructure" for group in data["groups"]))
 
         clear_response = client.post("/api/test-config/settings/clear", json={"keys": ["PEXELS_API_KEY"]})
         self.assertEqual(clear_response.status_code, 200)
@@ -1682,6 +1683,30 @@ class FrontendProxyConfigTests(unittest.TestCase):
             rewrites,
         )
 
+    def test_next_uses_separate_dist_dir_for_dev_server(self):
+        import subprocess
+
+        command = ["node", "-e", "const config = require('./next.config.js'); console.log(config.distDir);"]
+        dev_result = subprocess.run(
+            command,
+            cwd=str(ROOT),
+            capture_output=True,
+            text=True,
+            check=True,
+            env={**os.environ, "NODE_ENV": "development"},
+        )
+        prod_result = subprocess.run(
+            command,
+            cwd=str(ROOT),
+            capture_output=True,
+            text=True,
+            check=True,
+            env={**os.environ, "NODE_ENV": "production"},
+        )
+
+        self.assertEqual(dev_result.stdout.strip(), ".next-dev")
+        self.assertEqual(prod_result.stdout.strip(), ".next")
+
 
 class FrontendClientContractTests(unittest.TestCase):
     def setUp(self):
@@ -1917,12 +1942,17 @@ class FrontendClientContractTests(unittest.TestCase):
         self.assertIn("运行设置", settings_page)
         self.assertIn("AI 配置", settings_page)
         self.assertIn("素材源配置", settings_page)
-        self.assertIn("YouTube 高级配置", settings_page)
-        self.assertIn("基础设施配置", settings_page)
+        self.assertIn("高级设置", settings_page)
+        self.assertNotIn("基础设施配置", settings_page)
         self.assertIn("输入新值以替换当前配置", settings_page)
         self.assertIn("保存修改", settings_page)
         self.assertIn("放弃修改", settings_page)
         self.assertIn("清除", settings_page)
+        self.assertIn("高级联调参数", settings_page)
+        self.assertIn("展开更多", settings_page)
+        self.assertIn("YTDLP_FORMAT", settings_page)
+        self.assertIn("YTDLP_IMPERSONATE", settings_page)
+        self.assertIn("ADVANCED_OPTIONAL_KEYS", settings_page)
         self.assertIn("getRuntimeSettings", settings_api)
         self.assertIn("updateRuntimeSettings", settings_api)
         self.assertIn("clearRuntimeSettings", settings_api)
