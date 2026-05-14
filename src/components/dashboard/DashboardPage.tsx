@@ -28,6 +28,19 @@ const WORKFLOW_STEPS = [
   },
 ];
 
+const INPUT_OUTPUT_ITEMS = [
+  {
+    label: 'Input',
+    title: '产品链接、卖点与受众',
+    description: '把现有产品资料、投放目标和风格要求交给工作区，先形成一份清晰的创作 brief。',
+  },
+  {
+    label: 'Output',
+    title: '脚本、镜头节奏与结果资产',
+    description: 'Agent 会把搜索素材、脚本结构和成片方向整理成团队可以继续评审与迭代的输出。',
+  },
+];
+
 function formatCount(value: number) {
   return new Intl.NumberFormat('zh-CN').format(value);
 }
@@ -182,13 +195,13 @@ export default function DashboardPage() {
                 <div className="rounded-lg border border-border bg-white/92 p-4">
                   <p className="text-[11px] font-semibold uppercase tracking-[0.02em] text-secondary">素材搜索</p>
                   <strong className="mt-2 block text-2xl font-semibold text-ink">
-                    {formatCount(dashboard.activeTasks || 28)}
+                    {formatCount(dashboard.activeTasks)}
                   </strong>
                 </div>
                 <div className="rounded-lg border border-border bg-white/92 p-4">
                   <p className="text-[11px] font-semibold uppercase tracking-[0.02em] text-secondary">脚本镜头</p>
                   <strong className="mt-2 block text-2xl font-semibold text-ink">
-                    {Math.max(12, dashboard.completedTasks || 0)}
+                    {formatCount(dashboard.completedTasks)}
                   </strong>
                 </div>
                 <div className="rounded-lg border border-border bg-white/92 p-4">
@@ -202,6 +215,111 @@ export default function DashboardPage() {
               </p>
             </div>
           </div>
+        </section>
+
+        <section className="grid gap-5 rounded-lg border border-border bg-white/88 p-5 shadow-soft sm:p-6 lg:grid-cols-[0.82fr_1.18fr]">
+          <div className="space-y-3">
+            <p className="text-[11px] font-semibold uppercase tracking-[0.02em] text-secondary">How it works</p>
+            <h2 className="text-2xl font-semibold leading-tight text-ink">
+              把产品资料变成一条可以讨论的视频方案。
+            </h2>
+            <p className="text-sm leading-6 text-secondary">
+              ClipForge 不把首页做成传统数据面板，而是把已有任务数据放回产品流程里：它解释 Agent 如何接收 brief、
+              使用素材搜索，并把结果交给团队继续判断。
+            </p>
+          </div>
+
+          <div className="grid gap-3 md:grid-cols-3">
+            {WORKFLOW_STEPS.map((step, index) => (
+              <article key={step.title} className="grid gap-3 rounded-lg border border-border bg-slate-50/70 p-4">
+                <span className="text-[11px] font-semibold uppercase tracking-[0.02em] text-secondary">
+                  Stage {index + 1}
+                </span>
+                <div className="space-y-2">
+                  <h3 className="text-base font-semibold text-ink">{step.title}</h3>
+                  <p className="text-sm leading-6 text-secondary">{step.description}</p>
+                </div>
+              </article>
+            ))}
+          </div>
+        </section>
+
+        <section className="grid gap-5 rounded-lg border border-border bg-surface p-5 shadow-soft sm:p-6 lg:grid-cols-[0.8fr_1.2fr]">
+          <div className="space-y-3">
+            <p className="text-[11px] font-semibold uppercase tracking-[0.02em] text-secondary">Input / Output</p>
+            <h2 className="text-2xl font-semibold leading-tight text-ink">从零散产品信息到可交付资产。</h2>
+            <p className="text-sm leading-6 text-secondary">
+              下半屏用产品语言解释工作区的价值：输入是什么、Agent 会整理什么、团队最终拿到什么。
+            </p>
+          </div>
+
+          <div className="grid gap-3 sm:grid-cols-2">
+            {INPUT_OUTPUT_ITEMS.map((item) => (
+              <article key={item.label} className="grid min-h-44 gap-4 rounded-lg border border-border bg-white p-4">
+                <div className="flex items-center justify-between gap-3">
+                  <span className="text-[11px] font-semibold uppercase tracking-[0.02em] text-secondary">
+                    {item.label}
+                  </span>
+                  <span className="rounded-full bg-slate-50 px-3 py-1 text-xs font-medium text-secondary ring-1 ring-border">
+                    Workspace
+                  </span>
+                </div>
+                <div className="space-y-2">
+                  <h3 className="text-lg font-semibold text-ink">{item.title}</h3>
+                  <p className="text-sm leading-6 text-secondary">{item.description}</p>
+                </div>
+              </article>
+            ))}
+          </div>
+        </section>
+
+        <section className="grid gap-5 rounded-lg border border-border bg-white/88 p-5 shadow-soft sm:p-6 lg:grid-cols-[0.78fr_1.22fr]">
+          <div className="space-y-3">
+            <p className="text-[11px] font-semibold uppercase tracking-[0.02em] text-secondary">Example results</p>
+            <h2 className="text-2xl font-semibold leading-tight text-ink">用当前任务记录说明 Agent 输出形态。</h2>
+            <p className="text-sm leading-6 text-secondary">
+              这些数字来自后端返回的任务摘要，只作为当前工作区状态的解释，不包装成客户案例或增长承诺。
+            </p>
+          </div>
+
+          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+            <article className="rounded-lg border border-border bg-slate-50/70 p-4">
+              <p className="text-[11px] font-semibold uppercase tracking-[0.02em] text-secondary">Sessions</p>
+              <strong className="mt-2 block text-2xl font-semibold text-ink">{formatCount(dashboard.totalSessions)}</strong>
+              <p className="mt-2 text-sm leading-6 text-secondary">已进入 Agent 流程的产品创作会话。</p>
+            </article>
+            <article className="rounded-lg border border-border bg-slate-50/70 p-4">
+              <p className="text-[11px] font-semibold uppercase tracking-[0.02em] text-secondary">In progress</p>
+              <strong className="mt-2 block text-2xl font-semibold text-ink">{formatCount(dashboard.activeTasks)}</strong>
+              <p className="mt-2 text-sm leading-6 text-secondary">正在整理素材、脚本或结果的任务。</p>
+            </article>
+            <article className="rounded-lg border border-border bg-slate-50/70 p-4">
+              <p className="text-[11px] font-semibold uppercase tracking-[0.02em] text-secondary">Ready</p>
+              <strong className="mt-2 block text-2xl font-semibold text-ink">{formatCount(dashboard.completedTasks)}</strong>
+              <p className="mt-2 text-sm leading-6 text-secondary">已经产出可评审结果的任务。</p>
+            </article>
+            <article className="rounded-lg border border-border bg-slate-50/70 p-4">
+              <p className="text-[11px] font-semibold uppercase tracking-[0.02em] text-secondary">Needs attention</p>
+              <strong className="mt-2 block text-2xl font-semibold text-ink">{formatCount(dashboard.failedTasks)}</strong>
+              <p className="mt-2 text-sm leading-6 text-secondary">需要重新检查输入或素材链路的任务。</p>
+            </article>
+          </div>
+        </section>
+
+        <section className="grid gap-4 rounded-lg border border-border bg-ink p-5 text-white shadow-soft sm:p-6 lg:grid-cols-[1fr_auto] lg:items-center">
+          <div className="space-y-2">
+            <p className="text-[11px] font-semibold uppercase tracking-[0.02em] text-white/65">Final CTA</p>
+            <h2 className="text-2xl font-semibold leading-tight">把下一条产品 brief 放进工作区。</h2>
+            <p className="max-w-2xl text-sm leading-6 text-white/72">
+              从一个产品链接开始，让 Agent 先交出脚本、素材方向和成片草案，再由团队继续判断和精修。
+            </p>
+          </div>
+          <Link
+            href="/workspace"
+            className="inline-flex min-h-11 items-center justify-center rounded-lg bg-white px-5 text-sm font-semibold text-ink transition hover:bg-slate-100"
+          >
+            开始创建
+          </Link>
         </section>
 
         {error ? (
