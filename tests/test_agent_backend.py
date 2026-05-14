@@ -2199,15 +2199,40 @@ class FrontendClientContractTests(unittest.TestCase):
             ROOT / "src" / "components" / "dashboard" / "DashboardPage.tsx"
         ).read_text(encoding="utf-8")
 
-        self.assertIn("Product-to-video agent", dashboard_source)
-        self.assertIn("把产品 brief 交给 Agent，自动产出可用成片", dashboard_source)
-        self.assertIn("How it works", dashboard_source)
-        self.assertIn("Input / Output", dashboard_source)
-        self.assertIn("Example results", dashboard_source)
+        self.assertIn("把产品 brief 交给 Agent，", dashboard_source)
+        self.assertIn("自动产出可用成片。", dashboard_source)
+        self.assertIn("从链接、卖点和受众开始，快速得到脚本、素材方向和可评审的视频草案。", dashboard_source)
         self.assertIn("开始创建", dashboard_source)
+        self.assertIn("查看样片", dashboard_source)
+        self.assertIn("Agent preview", dashboard_source)
+        self.assertIn("读取产品", dashboard_source)
+        self.assertIn("匹配素材", dashboard_source)
+        self.assertIn("生成草案", dashboard_source)
+        self.assertNotIn("Product-to-video agent", dashboard_source)
+        self.assertNotIn("How it works", dashboard_source)
+        self.assertNotIn("Input / Output", dashboard_source)
+        self.assertNotIn("Example results", dashboard_source)
+        self.assertNotIn("Final CTA", dashboard_source)
         self.assertNotIn("关键指标", dashboard_source)
         self.assertNotIn("最近工作", dashboard_source)
         self.assertNotIn("运行证明", dashboard_source)
+
+    def test_product_shell_uses_top_navigation(self):
+        shell_source = (ROOT / "src" / "components" / "layout" / "ProductShell.tsx").read_text(
+            encoding="utf-8"
+        )
+
+        self.assertIn("mobileNavOpen", shell_source)
+        self.assertIn('aria-label="主导航"', shell_source)
+        self.assertIn('aria-label="移动导航"', shell_source)
+        self.assertIn("ClipForge 首页", shell_source)
+        self.assertIn("开始创建", shell_source)
+        self.assertIn("总览", shell_source)
+        self.assertIn("方案", shell_source)
+        self.assertIn("任务", shell_source)
+        self.assertIn("设置", shell_source)
+        self.assertNotIn("ProductShell.module.css", shell_source)
+        self.assertNotIn("shortLabel", shell_source)
 
     def test_globals_css_exposes_marketing_homepage_tokens(self):
         globals_css = (ROOT / "src" / "app" / "globals.css").read_text(encoding="utf-8")

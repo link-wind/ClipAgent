@@ -47,16 +47,26 @@ function assertExcludes(html, needle, message) {
 async function main() {
   const dashboardHtml = await readDashboardHtml();
   assertIncludes(dashboardHtml, 'ClipForge', 'dashboard 页面缺少产品标题');
-  assertIncludes(dashboardHtml, 'Product-to-video agent', 'dashboard 页面缺少产品类型标签');
   assertIncludes(
     dashboardHtml,
-    '把产品 brief 交给 Agent，自动产出可用成片。',
+    '把产品 brief 交给 Agent，',
     'dashboard 页面缺少产品定位文案',
   );
-  assertIncludes(dashboardHtml, 'How it works', 'dashboard 页面缺少工作流说明区块');
-  assertIncludes(dashboardHtml, 'Input / Output', 'dashboard 页面缺少输入输出区块');
-  assertIncludes(dashboardHtml, 'Example results', 'dashboard 页面缺少结果示例区块');
-  assertIncludes(dashboardHtml, 'Final CTA', 'dashboard 页面缺少最终行动区块');
+  assertIncludes(dashboardHtml, '自动产出可用成片。', 'dashboard 页面缺少产品定位文案');
+  assertIncludes(
+    dashboardHtml,
+    '从链接、卖点和受众开始，快速得到脚本、素材方向和可评审的视频草案。',
+    'dashboard 页面缺少简洁副标题',
+  );
+  assertIncludes(dashboardHtml, 'Agent preview', 'dashboard 页面缺少预览面板');
+  assertIncludes(dashboardHtml, '读取产品', 'dashboard 页面缺少简化流程卡');
+  assertIncludes(dashboardHtml, '匹配素材', 'dashboard 页面缺少简化流程卡');
+  assertIncludes(dashboardHtml, '生成草案', 'dashboard 页面缺少简化流程卡');
+  assertExcludes(dashboardHtml, 'Product-to-video agent', 'dashboard 页面仍保留过多说明标签');
+  assertExcludes(dashboardHtml, 'How it works', 'dashboard 页面仍保留过多说明小标题');
+  assertExcludes(dashboardHtml, 'Input / Output', 'dashboard 页面仍保留过多说明小标题');
+  assertExcludes(dashboardHtml, 'Example results', 'dashboard 页面仍保留过多说明小标题');
+  assertExcludes(dashboardHtml, 'Final CTA', 'dashboard 页面仍保留过多说明小标题');
   assertExcludes(dashboardHtml, '关键指标', 'dashboard 页面仍保留旧关键指标区块');
   assertExcludes(dashboardHtml, '运行证明', 'dashboard 页面仍保留旧运行证明区块');
   assertExcludes(dashboardHtml, '最近工作', 'dashboard 页面仍保留旧最近工作区块');
