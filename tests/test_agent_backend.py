@@ -2194,6 +2194,32 @@ class FrontendClientContractTests(unittest.TestCase):
         self.assertIn("getAgentSessionEvents", api_source)
         self.assertIn("queued", api_source)
 
+    def test_dashboard_page_uses_marketing_hero_structure(self):
+        dashboard_source = (
+            ROOT / "src" / "components" / "dashboard" / "DashboardPage.tsx"
+        ).read_text(encoding="utf-8")
+
+        self.assertIn("Product-to-video agent", dashboard_source)
+        self.assertIn("把产品 brief 交给 Agent，自动产出可用成片", dashboard_source)
+        self.assertIn("How it works", dashboard_source)
+        self.assertIn("Input / Output", dashboard_source)
+        self.assertIn("Example results", dashboard_source)
+        self.assertIn("开始创建", dashboard_source)
+        self.assertNotIn("关键指标", dashboard_source)
+        self.assertNotIn("最近工作", dashboard_source)
+        self.assertNotIn("运行证明", dashboard_source)
+
+    def test_globals_css_exposes_marketing_homepage_tokens(self):
+        globals_css = (ROOT / "src" / "app" / "globals.css").read_text(encoding="utf-8")
+
+        self.assertIn("--page-bg: #f5f7f6;", globals_css)
+        self.assertIn("--surface-subtle: #f8fbfa;", globals_css)
+        self.assertIn("--surface-muted: #eef3f1;", globals_css)
+        self.assertIn("--ink: #10201b;", globals_css)
+        self.assertIn("--text-secondary: #5f7069;", globals_css)
+        self.assertIn("--accent: #1f6a5b;", globals_css)
+        self.assertIn("--accent-strong: #2d8aa4;", globals_css)
+
     def test_globals_css_exposes_shell_refresh_tokens(self):
         globals_css = (ROOT / "src" / "app" / "globals.css").read_text(encoding="utf-8")
 
