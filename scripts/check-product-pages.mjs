@@ -47,24 +47,28 @@ function assertExcludes(html, needle, message) {
 async function main() {
   const dashboardHtml = await readDashboardHtml();
   assertIncludes(dashboardHtml, 'ClipForge', 'dashboard 页面缺少产品标题');
+  assertIncludes(dashboardHtml, 'Product-to-video agent', 'dashboard 页面缺少产品类型标签');
   assertIncludes(
     dashboardHtml,
-    '对话式短视频制作工作台，把创意 brief 推进成可执行方案、任务流程和最终产出。',
+    '把产品 brief 交给 Agent，自动产出可用成片。',
     'dashboard 页面缺少产品定位文案',
   );
-  assertIncludes(dashboardHtml, '运行概况', 'dashboard 页面缺少运行概况区块');
-  assertIncludes(dashboardHtml, '关键指标', 'dashboard 页面缺少关键指标区块');
-  assertIncludes(dashboardHtml, '运行证明', 'dashboard 页面缺少运行证明区块');
-  assertIncludes(dashboardHtml, '最近工作', 'dashboard 页面缺少最近工作区块');
+  assertIncludes(dashboardHtml, 'How it works', 'dashboard 页面缺少工作流说明区块');
+  assertIncludes(dashboardHtml, 'Input / Output', 'dashboard 页面缺少输入输出区块');
+  assertIncludes(dashboardHtml, 'Example results', 'dashboard 页面缺少结果示例区块');
+  assertIncludes(dashboardHtml, 'Final CTA', 'dashboard 页面缺少最终行动区块');
+  assertExcludes(dashboardHtml, '关键指标', 'dashboard 页面仍保留旧关键指标区块');
+  assertExcludes(dashboardHtml, '运行证明', 'dashboard 页面仍保留旧运行证明区块');
+  assertExcludes(dashboardHtml, '最近工作', 'dashboard 页面仍保留旧最近工作区块');
   assertExcludes(dashboardHtml, 'Dashboard Home', 'dashboard 页面仍保留旧首页标题');
 
   const workspaceHtml = await readText('.next/server/app/workspace.html');
-  assertIncludes(workspaceHtml, '步骤 1：理解原始需求', 'workspace 页面缺少后端步骤 1 标题');
-  assertIncludes(workspaceHtml, '步骤 2：提炼目标与限制', 'workspace 页面缺少后端步骤 2 标题');
-  assertIncludes(workspaceHtml, '步骤 3：生成多个方案方向', 'workspace 页面缺少后端步骤 3 标题');
-  assertIncludes(workspaceHtml, '步骤 4：输出最终执行方案', 'workspace 页面缺少后端步骤 4 标题');
-  assertIncludes(workspaceHtml, '方案方向', 'workspace 页面缺少方案方向区块标题');
-  assertIncludes(workspaceHtml, '等待后端返回方案方向。', 'workspace 页面缺少方案方向空态文案');
+  assertIncludes(workspaceHtml, '方案沟通页面', 'workspace 页面缺少页面标题');
+  assertIncludes(workspaceHtml, '方案沟通', 'workspace 页面缺少方案沟通区块标题');
+  assertIncludes(workspaceHtml, '每一步先显示进度，再给出结果', 'workspace 页面缺少步骤流说明');
+  assertIncludes(workspaceHtml, 'AI STEP FLOW', 'workspace 页面缺少 AI 步骤流标题');
+  assertIncludes(workspaceHtml, '先看进度，再看每一步结果', 'workspace 页面缺少步骤流主标题');
+  assertIncludes(workspaceHtml, '下一张卡片会在当前步骤完成后出现。', 'workspace 页面缺少渐进步骤占位文案');
   assertIncludes(workspaceHtml, '确认方案并生成任务', 'workspace 页面缺少确认方案主动作');
   assertIncludes(workspaceHtml, '方案工作区', 'workspace 页面缺少主工作区 aria 标签');
   assertIncludes(workspaceHtml, '描述你想完成的视频', 'workspace 页面缺少空态标题');
