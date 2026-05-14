@@ -1,201 +1,73 @@
 .flow {
-  padding: 18px 22px 22px;
-  border-top: 1px solid rgba(76, 67, 43, 0.58);
-  background: rgba(18, 18, 17, 0.9);
-}
-
-.header {
   display: flex;
-  justify-content: space-between;
-  align-items: flex-start;
-  gap: 16px;
+  min-height: 100%;
+  height: 100%;
+  flex-direction: column;
+  justify-content: flex-start;
+  padding: 22px;
+  color: var(--ink);
+  border: 1px solid var(--border);
+  border-radius: 20px;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.84), var(--surface-muted));
+  box-shadow: 0 18px 46px rgba(31, 106, 91, 0.08);
 }
 
 .eyebrow {
-  color: var(--accent);
+  display: block;
+  color: var(--accentink);
   font-size: 12px;
   font-weight: 800;
 }
 
-.header h2 {
+.flow h2 {
   margin-top: 6px;
   font-size: 18px;
   line-height: 1.2;
   letter-spacing: 0;
 }
 
-.progressLabel {
-  flex: 0 0 auto;
-  min-width: 120px;
-  text-align: right;
+.statusPanel {
+  display: grid;
+  margin-top: 14px;
+  gap: 6px;
 }
 
-.progressLabel strong {
-  display: block;
-  font-size: 22px;
-  line-height: 1;
+.statusRow {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
 }
 
-.progressLabel span {
+.statusRow span {
   display: block;
-  margin-top: 4px;
-  color: var(--text-secondary);
-  font-size: 12px;
+  color: var(--secondary);
+  font-size: 13px;
   overflow-wrap: anywhere;
 }
 
+.statusRow strong {
+  flex: 0 0 auto;
+  font-size: 13px;
+  line-height: 1;
+}
+
 .progressTrack {
-  margin-top: 14px;
   height: 10px;
-  border: 1px solid rgba(76, 67, 43, 0.72);
+  border: 1px solid rgba(31, 106, 91, 0.16);
   border-radius: 999px;
-  background: rgba(30, 30, 27, 0.96);
+  background: rgba(255, 255, 255, 0.78);
   overflow: hidden;
 }
 
 .progressBar {
   height: 100%;
   border-radius: inherit;
-  background: linear-gradient(90deg, rgba(239, 199, 94, 0.96), rgba(75, 191, 208, 0.9));
-}
-
-.steps {
-  margin-top: 16px;
-  display: grid;
-  gap: 10px;
-}
-
-.step {
-  display: grid;
-  grid-template-columns: 18px minmax(0, 1fr);
-  gap: 12px;
-  align-items: flex-start;
-}
-
-.stepMark {
-  width: 18px;
-  height: 18px;
-  border-radius: 999px;
-  border: 1px solid rgba(90, 86, 68, 0.96);
-  background: rgba(24, 24, 22, 0.94);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.stepMark span {
-  width: 8px;
-  height: 8px;
-  border-radius: 999px;
-  background: rgba(126, 122, 100, 0.96);
-}
-
-.stepBody {
-  min-width: 0;
-  padding: 12px 14px;
-  border: 1px solid rgba(76, 67, 43, 0.58);
-  border-radius: 8px;
-  background: rgba(29, 30, 28, 0.86);
-}
-
-.stepTitleRow {
-  display: flex;
-  justify-content: space-between;
-  gap: 12px;
-}
-
-.stepTitleRow h3 {
-  font-size: 14px;
-  line-height: 1.3;
-  letter-spacing: 0;
-}
-
-.stepTitleRow span {
-  flex: 0 0 auto;
-  color: var(--text-muted);
-  font-size: 12px;
-}
-
-.stepBody p {
-  margin-top: 6px;
-  color: var(--text-secondary);
-  font-size: 13px;
-  line-height: 1.55;
-  overflow-wrap: anywhere;
-}
-
-.stepProgress {
-  margin-top: 10px;
-  display: grid;
-  gap: 6px;
-}
-
-.stepProgressMeta {
-  display: flex;
-  justify-content: space-between;
-  gap: 10px;
-  color: var(--text-muted);
-  font-size: 11px;
-}
-
-.stepProgressTrack {
-  height: 6px;
-  border-radius: 999px;
-  background: rgba(30, 30, 27, 0.96);
-  overflow: hidden;
-}
-
-.stepProgressBar {
-  height: 100%;
-  border-radius: inherit;
-  background: linear-gradient(90deg, rgba(75, 191, 208, 0.95), rgba(239, 199, 94, 0.95));
-}
-
-.stepComplete .stepMark,
-.stepActive .stepMark,
-.stepFailed .stepMark {
-  border-color: rgba(239, 199, 94, 0.45);
-}
-
-.stepComplete .stepMark span,
-.stepActive .stepMark span {
-  background: var(--accent);
-}
-
-.stepActive .stepBody {
-  border-color: rgba(239, 199, 94, 0.5);
-  background: rgba(40, 37, 24, 0.92);
-  box-shadow: 0 0 0 1px rgba(239, 199, 94, 0.08);
-}
-
-.stepFailed .stepMark span {
-  background: #ff8fa6;
-}
-
-.stepPlaceholder .stepBody {
-  opacity: 0.6;
-  border-style: dashed;
-}
-
-.stepPlaceholder .stepMark span {
-  background: rgba(126, 122, 100, 0.7);
+  background: linear-gradient(90deg, var(--accentstrong), var(--accent));
 }
 
 @media (max-width: 640px) {
   .flow {
     padding: 16px;
-  }
-
-  .header {
-    flex-direction: column;
-  }
-
-  .progressLabel {
-    min-width: 0;
-    text-align: left;
-  }
-
-  .stepTitleRow {
-    flex-direction: column;
   }
 }

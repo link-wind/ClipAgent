@@ -420,6 +420,7 @@ export default function BriefWorkspacePage() {
   );
   const showFailurePanel = Boolean((session?.status === 'failed' || failedStep) && !isSessionActivelyExecuting);
   const showExecutionHandoff = Boolean(session?.activeJobId || executionSteps.some((step) => step.status !== 'pending'));
+  const showPlanConfirmAction = Boolean(canConfirmPlan || session?.status === 'plan_ready');
   const hasExecutionFeedbackRequeue = Boolean(
     isSessionActivelyExecuting &&
       session?.events?.some((event) => event.eventType === 'job_requeued_after_replan')
@@ -470,38 +471,14 @@ export default function BriefWorkspacePage() {
 
   return (
     <ProductShell>
-      <div className="min-h-full px-4 py-4 sm:px-5">
-        <header className="mx-auto w-full max-w-[980px] rounded-lg border border-border bg-white p-5 shadow-soft sm:p-6">
-          <div>
-            <nav className="flex items-center gap-2 text-[13px] font-bold text-secondary" aria-label="面包屑">
-              <Link href="/" className="text-ink no-underline">
-                ClipForge
-              </Link>
-              <span aria-hidden="true">/</span>
-              <span>方案沟通</span>
-            </nav>
-            <div className="mt-3.5 flex flex-col gap-4 min-[861px]:flex-row min-[861px]:items-end min-[861px]:justify-between">
-              <div className="min-w-0">
-                <h1 className="text-[28px] font-semibold leading-[1.12] text-ink">方案沟通页面</h1>
-                <p className="mt-2 max-w-[68ch] text-sm leading-6 text-secondary sm:text-base">
-                  单栏推进需求理解、方向选择和最终确认，AI 的每一步都先给进度，再展示结果。
-                </p>
-              </div>
-              <div className="w-full rounded-full border border-[rgba(168,198,108,0.38)] bg-[#e3efd4] px-3.5 py-2.5 text-left min-[861px]:w-auto min-[861px]:min-w-[130px] min-[861px]:text-right">
-                <span className="block text-xs text-secondary">当前状态</span>
-                <strong className="mt-1 block text-sm font-semibold text-accentink">{getWorkspaceStatus(session)}</strong>
-              </div>
-            </div>
-          </div>
-        </header>
-
+      <div className="min-h-full">
         <main
-          className="mx-auto mt-5 grid w-full max-w-[1240px] gap-4 min-[1080px]:grid-cols-[minmax(0,1fr)_360px]"
-          aria-label="方案工作区"
+          className="grid min-h-[calc(100vh-7.5rem)] w-full max-w-none overflow-hidden rounded-[24px] border border-border bg-white/88 shadow-soft xl:grid-cols-[minmax(0,1fr)_380px]"
+          aria-label="方案工作台"
         >
-          <div className="grid gap-4 min-w-0">
+          <div className="grid min-h-0 min-w-0 content-stretch gap-4 p-4 sm:p-5 lg:p-6">
             {restoredSessionId && session?.id === restoredSessionId ? (
-              <section className="grid gap-3 rounded-lg border border-border bg-white p-4 shadow-soft sm:flex sm:items-center sm:justify-between" aria-label="恢复的方案会话">
+              <section className="grid gap-3 rounded-[18px] border border-border bg-[color:var(--surface-muted)] p-4 sm:flex sm:items-center sm:justify-between" aria-label="恢复的方案会话">
                 <div className="min-w-0">
                   <h2 className="text-base font-semibold text-ink">已恢复到当前方案会话</h2>
                   <p className="mt-1 text-sm leading-6 text-secondary">你可以继续查看执行进度、回到任务列表，或补充新的方案修改意见。</p>
@@ -521,13 +498,13 @@ export default function BriefWorkspacePage() {
                 <div className="flex flex-wrap gap-2.5">
                   <Link
                     href="/tasks"
-                    className="inline-flex min-h-10 items-center justify-center rounded-lg border border-border bg-white px-4 text-sm font-semibold text-ink transition hover:bg-slate-50"
+                    className="inline-flex min-h-10 items-center justify-center rounded-full border border-border bg-white px-4 text-sm font-semibold text-ink transition hover:bg-[color:var(--surface-subtle)]"
                   >
                     查看任务列表
                   </Link>
                   <button
                     type="button"
-                    className="inline-flex min-h-10 items-center justify-center rounded-lg bg-ink px-4 text-sm font-semibold text-white transition hover:bg-slate-800"
+                    className="inline-flex min-h-10 items-center justify-center rounded-full bg-ink px-4 text-sm font-semibold text-white transition hover:opacity-90"
                     onClick={focusComposer}
                   >
                     继续补充方案
@@ -536,26 +513,16 @@ export default function BriefWorkspacePage() {
               </section>
             ) : null}
 
-            <section className="overflow-hidden rounded-lg border border-border bg-white shadow-soft" aria-label="方案沟通">
-              <div className="flex flex-col gap-3 border-b border-bordersoft px-5 py-4 min-[861px]:flex-row min-[861px]:items-start min-[861px]:justify-between">
-                <div>
-                  <h2 className="text-lg font-semibold leading-tight text-ink">方案沟通</h2>
-                  <p className="mt-1 text-[13px] leading-5 text-secondary">
-                    用户原始输入保留原样，目标和结构化信息由 AI 在后续步骤提炼。
-                  </p>
-                </div>
-                <span className="text-[13px] font-bold text-secondary min-[861px]:whitespace-nowrap">每一步先显示进度，再给出结果</span>
+            <section className="flex min-h-full flex-col overflow-hidden rounded-[20px] border border-border bg-white" aria-label="方案工作会话">
+              <div className="flex items-center justify-between gap-3 border-b border-bordersoft px-5 py-4">
+                <span className="text-sm font-semibold text-ink">Clip Chat</span>
+                <span className="w-fit rounded-full border border-[rgba(31,106,91,0.18)] bg-[#e7f1ec] px-3 py-1.5 text-xs font-semibold text-accentink">
+                  {getWorkspaceStatus(session)}
+                </span>
               </div>
 
-              <div className="grid gap-3.5 bg-[linear-gradient(180deg,rgba(168,198,108,0.05),transparent_280px),#ffffff] p-5">
-                {!session ? (
-                  <div className="max-w-[620px] px-0 pb-2.5 pt-6">
-                    <h3 className="text-[22px] font-semibold leading-tight text-ink">描述你想完成的视频</h3>
-                    <p className="mt-2 leading-6 text-secondary">
-                      直接说你的想法即可，目标、格式、风格和执行拆分会由 AI 在后续步骤里提炼。
-                    </p>
-                  </div>
-                ) : (
+              <div className="grid flex-1 content-end gap-3.5 bg-[linear-gradient(180deg,rgba(31,106,91,0.05),transparent_280px),#ffffff] p-5" aria-label="对话消息">
+                {session ? (
                   <>
                     {userMessages.map((item) => (
                       <article key={item.id} className="ml-auto grid w-full gap-2 min-[861px]:max-w-[84%]">
@@ -574,12 +541,19 @@ export default function BriefWorkspacePage() {
                         <span>ClipForge Agent</span>
                         <span>{session ? formatTime(sessionMessages.at(-1)?.createdAt ?? new Date().toISOString()) : ''}</span>
                       </div>
-                      <div className="rounded-lg border border-[#e2e7e1] bg-[#f7f9f6] p-3.5 leading-[1.58] text-[#303a34]">
+                      <div className="grid gap-3 rounded-[18px] border border-[#e2e7e1] bg-[#f7f9f6] p-3.5 leading-[1.58] text-[#303a34]">
                         <p>{latestAssistantMessage}</p>
+                        {showPlanConfirmAction ? (
+                          <div className="flex flex-wrap items-center gap-2.5 border-t border-[#e3e9e0] pt-3" aria-label="Agent 操作">
+                            <Button type="button" variant="secondary" onClick={confirmPlan} disabled={!canConfirmPlan}>
+                              确认方案并生成任务
+                            </Button>
+                          </div>
+                        ) : null}
                       </div>
                     </article>
                   </>
-                )}
+                ) : null}
               </div>
 
               {awaitingGroundingConfirmation ? (
@@ -812,40 +786,40 @@ export default function BriefWorkspacePage() {
               ) : null}
 
               <form className="grid gap-3 border-t border-bordersoft bg-[#fcfdfb] p-4" onSubmit={submitMessage}>
-                <textarea
-                  ref={textareaRef}
-                  value={message}
-                  onChange={(event) => setMessage(event.target.value)}
-                  onKeyDown={submitMessageFromKeyboard}
-                  placeholder="继续补充你的修改意见，或直接确认最终方案。"
-                  rows={4}
-                  disabled={isSubmitting}
-                  className="min-h-[92px] w-full resize-y rounded-lg border border-border bg-white p-3 text-sm text-ink outline-none [font:inherit] placeholder:text-secondary focus:border-slate-400 focus:ring-2 focus:ring-slate-200"
-                />
-                <div className="flex flex-col gap-3 min-[861px]:flex-row min-[861px]:items-center min-[861px]:justify-between">
-                  <span className="text-xs text-secondary">底部输入区用于继续补充信息、修改方案，或推动下一轮细化。</span>
-                  <div className="flex flex-wrap gap-2.5">
-                    <Button
-                      type="button"
-                      variant="secondary"
-                      onClick={awaitingGroundingConfirmation ? confirmGrounding : confirmPlan}
-                      disabled={awaitingGroundingConfirmation ? !canConfirmGrounding : !canConfirmPlan}
-                    >
-                      {awaitingGroundingConfirmation ? '确认这些画面' : '确认方案并生成任务'}
-                    </Button>
-                    <Button type="submit" disabled={!canSend}>
-                      {isSubmitting ? '处理中' : '发送'}
+                {awaitingGroundingConfirmation ? (
+                  <div className="flex flex-wrap items-center justify-end gap-2.5">
+                    <Button type="button" variant="secondary" onClick={confirmGrounding} disabled={!canConfirmGrounding}>
+                      确认这些画面
                     </Button>
                   </div>
+                ) : null}
+                <div className="relative">
+                  <textarea
+                    ref={textareaRef}
+                    value={message}
+                    onChange={(event) => setMessage(event.target.value)}
+                    onKeyDown={submitMessageFromKeyboard}
+                    placeholder="继续补充你的修改意见。"
+                    rows={4}
+                    disabled={isSubmitting}
+                    className="min-h-[112px] w-full resize-y rounded-[16px] border border-border bg-white px-3 pb-14 pt-3 text-sm text-ink outline-none [font:inherit] placeholder:text-secondary focus:border-[rgba(31,106,91,0.42)] focus:ring-2 focus:ring-[rgba(31,106,91,0.12)]"
+                  />
+                  <button
+                    type="submit"
+                    disabled={!canSend}
+                    className={`absolute bottom-3 right-3 inline-flex min-h-10 items-center justify-center rounded-full px-4 text-sm font-semibold transition ${
+                      canSend ? 'bg-accentstrong text-white shadow-[0_10px_24px_rgba(31,106,91,0.18)] hover:bg-accentink' : 'bg-[#e6ece8] text-[#9aa7a1]'
+                    }`}
+                  >
+                    {isSubmitting ? '处理中' : '发送'}
+                  </button>
                 </div>
               </form>
             </section>
           </div>
 
-          <aside className="min-w-0 self-start min-[1080px]:sticky min-[1080px]:top-4" aria-label="步骤进度">
-            <div className="overflow-hidden rounded-lg border border-border shadow-soft">
-              <AiStepFlow />
-            </div>
+          <aside className="min-w-0 border-t border-border bg-[color:var(--surface-muted)] p-4 xl:border-l xl:border-t-0 xl:p-5" aria-label="步骤进度">
+            <AiStepFlow />
           </aside>
         </main>
       </div>

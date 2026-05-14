@@ -71,7 +71,7 @@ export default function DashboardPage() {
           <div className="grid min-h-[680px] gap-8 p-5 sm:p-7 lg:grid-cols-[minmax(0,1.02fr)_minmax(360px,0.98fr)] lg:p-8 xl:min-h-[620px]">
             <div className="flex min-w-0 flex-col justify-between gap-10">
               <div className="max-w-[720px] space-y-5 pt-2 lg:pt-8">
-                <h1 className="max-w-[720px] text-6xl font-semibold leading-[0.98] tracking-normal text-ink sm:text-7xl lg:text-8xl">
+                <h1 className="max-w-[720px] text-5xl font-semibold leading-[1.02] tracking-normal text-ink sm:text-6xl lg:text-7xl">
                   把产品 brief 交给 Agent，
                   <span className="block">自动产出可用成片。</span>
                 </h1>

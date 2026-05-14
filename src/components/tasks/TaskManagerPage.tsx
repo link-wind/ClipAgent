@@ -1,7 +1,6 @@
 'use client';
 
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from 'react';
-import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import ProductShell from '@/components/layout/ProductShell';
 import { getAgentTask, listAgentTasks, type AgentTaskDetail, type AgentTaskSummary } from '@/lib/taskApi';
@@ -208,11 +207,6 @@ export default function TaskManagerPage() {
 
   const hasTasks = filteredTasks.length > 0;
 
-  const selectedTasks = useMemo(
-    () => filteredTasks.filter((task) => selectedIds.includes(task.id)),
-    [filteredTasks, selectedIds],
-  );
-
   useEffect(() => {
     filteredTasks.forEach((task) => {
       if (isCompletedTask(task.status) && !taskVideoUrls[task.id] && taskResultLoadingIds[task.id] === undefined) {
@@ -396,59 +390,35 @@ export default function TaskManagerPage() {
   return (
     <ProductShell>
       <div className="min-h-full">
-        <div className="grid min-w-0 gap-4 lg:gap-5">
-          <section
-            className="rounded-lg border border-border bg-white/90 p-5 shadow-soft sm:p-6"
-            aria-label="任务管理页面"
-          >
-          <div className="flex flex-col gap-5 xl:flex-row xl:items-start xl:justify-between">
-            <div className="min-w-0 flex-1 space-y-4">
-              <nav className="flex items-center gap-2 text-xs font-medium text-secondary" aria-label="面包屑">
-                <Link href="/" className="font-semibold text-ink">
-                  总览
-                </Link>
-                <span aria-hidden="true">/</span>
-                <span>任务</span>
-              </nav>
-
-              <div className="space-y-3">
-                <div className="inline-flex items-center rounded-full bg-slate-100 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.02em] text-secondary">
-                  {isLoading ? '加载中' : `${filteredTasks.length} 项`}
-                </div>
-                <h1 className="text-3xl font-semibold tracking-tight text-ink sm:text-4xl">任务控制台</h1>
-                <p className="max-w-3xl text-sm leading-6 text-secondary sm:text-base">
-                  统一扫读任务状态、最近活动和结果入口；先在列表判断下一步，再按需进入详情弹窗。
-                </p>
-                <div className="flex flex-wrap gap-2 text-xs font-medium text-secondary">
-                  <span>任务管理页面</span>
-                  <span aria-hidden="true">·</span>
-                  <span>失败优先关注</span>
-                  <span aria-hidden="true">·</span>
-                  <span>结果直达</span>
-                </div>
-              </div>
+        <section
+          className="grid min-h-[calc(100vh-7.5rem)] min-w-0 content-start overflow-hidden rounded-[24px] border border-border bg-white/88 shadow-soft"
+          aria-label="任务管理页面"
+        >
+          <header className="grid gap-4 border-b border-border bg-[color:var(--surface-muted)] p-4 sm:p-5 lg:grid-cols-[minmax(0,1fr)_minmax(360px,0.66fr)] lg:items-start lg:p-6">
+            <div className="min-w-0 self-start">
+              <h1 className="text-3xl font-semibold tracking-normal text-ink sm:text-4xl">任务控制台</h1>
             </div>
 
-            <div className="grid w-full gap-3 md:grid-cols-[minmax(0,1fr)_160px_auto] xl:max-w-xl">
-              <label className="grid gap-2">
-                <span className="text-[11px] font-semibold uppercase tracking-[0.02em] text-secondary">搜索</span>
+            <div className="grid w-full gap-3 md:grid-cols-[minmax(0,1fr)_160px]">
+              <label>
+                <span className="sr-only">搜索</span>
                 <input
                   type="search"
                   value={query}
                   onChange={(event) => setQuery(event.target.value)}
                   placeholder="按标题、ID、状态或步骤筛选"
                   aria-label="搜索任务"
-                  className="min-h-11 w-full rounded-lg border border-border bg-white px-4 py-3 text-sm text-ink outline-none transition focus:border-slate-400 focus:ring-2 focus:ring-slate-200"
+                  className="min-h-11 w-full rounded-full border border-border bg-white px-4 py-3 text-sm text-ink outline-none transition placeholder:text-mutedtext focus:border-[rgba(31,106,91,0.42)] focus:ring-2 focus:ring-[rgba(31,106,91,0.12)]"
                 />
               </label>
 
-              <label className="grid gap-2">
-                <span className="text-[11px] font-semibold uppercase tracking-[0.02em] text-secondary">状态</span>
+              <label>
+                <span className="sr-only">状态</span>
                 <select
                   value={filter}
                   onChange={(event) => setFilter(event.target.value)}
                   aria-label="筛选状态"
-                  className="min-h-11 w-full rounded-lg border border-border bg-white px-4 py-3 text-sm text-ink outline-none transition focus:border-slate-400 focus:ring-2 focus:ring-slate-200"
+                  className="min-h-11 w-full rounded-full border border-border bg-white px-4 py-3 text-sm text-ink outline-none transition focus:border-[rgba(31,106,91,0.42)] focus:ring-2 focus:ring-[rgba(31,106,91,0.12)]"
                 >
                   {statusOptions.map((status) => (
                     <option key={status} value={status}>
@@ -458,36 +428,28 @@ export default function TaskManagerPage() {
                 </select>
               </label>
 
-              <div className="grid gap-2">
+              <div className="md:col-span-2">
                 <button
                   type="button"
-                  className="inline-flex min-h-11 items-center justify-center rounded-lg border border-border bg-slate-100 px-5 text-sm font-semibold text-slate-500"
+                  className="inline-flex min-h-10 w-full items-center justify-center rounded-full border border-border bg-white px-5 text-sm font-semibold text-mutedtext disabled:cursor-not-allowed"
                   disabled
                 >
                   批量操作将在后续阶段开放
                 </button>
-                <p className="text-xs leading-5 text-secondary">
-                  本阶段先支持单任务查看、回到方案和结果直达。
-                </p>
               </div>
             </div>
-          </div>
-        </section>
+          </header>
 
-        {errorText ? (
-          <p className="rounded-lg border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700 shadow-soft">
-            {errorText}
-          </p>
-        ) : null}
+          {errorText ? (
+            <p className="mx-4 mt-4 rounded-[16px] border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700 sm:mx-5 lg:mx-6">
+              {errorText}
+            </p>
+          ) : null}
 
-        <section className="rounded-lg border border-border bg-white/85 p-5 shadow-soft sm:p-6" aria-label="任务列表">
-          <div className="flex flex-col gap-4 border-b border-border pb-4 lg:flex-row lg:items-end lg:justify-between">
-            <div className="space-y-2">
-              <span className="text-[11px] font-semibold uppercase tracking-[0.02em] text-secondary">任务列表</span>
-              <div className="space-y-1">
-                <h2 className="text-xl font-semibold text-ink">可管理任务列表</h2>
-                <p className="text-sm leading-6 text-secondary">列表 + 弹窗详情，聚焦状态、进度与待处理异常。</p>
-              </div>
+          <section className="grid min-w-0 gap-4 p-4 sm:p-5 lg:p-6" aria-label="任务列表">
+          <div className="flex flex-col gap-4 border-b border-border pb-4 lg:flex-row lg:items-center lg:justify-between">
+            <div>
+              <h2 className="text-xl font-semibold text-ink">可管理任务列表</h2>
             </div>
 
             <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center sm:justify-end">
@@ -517,22 +479,7 @@ export default function TaskManagerPage() {
             </div>
           </div>
 
-          <div className="mt-4 flex flex-wrap gap-2">
-            <span className="rounded-full border border-border bg-slate-50 px-3 py-1 text-xs font-semibold text-secondary">
-              {tasks.length} 个任务
-            </span>
-            <span className="rounded-full border border-border bg-slate-50 px-3 py-1 text-xs font-semibold text-secondary">
-              {selectedTasks.length} 个已选
-            </span>
-            <span className="rounded-full border border-border bg-slate-50 px-3 py-1 text-xs font-semibold text-secondary">
-              失败优先关注
-            </span>
-            <span className="rounded-full border border-border bg-slate-50 px-3 py-1 text-xs font-semibold text-secondary">
-              结果直达
-            </span>
-          </div>
-
-          <div className="mt-4 hidden min-h-11 grid-cols-[28px_minmax(220px,1.45fr)_110px_130px_minmax(140px,0.9fr)_130px_220px] items-center gap-3 border-b border-border px-3 text-xs font-semibold text-secondary lg:grid">
+          <div className="hidden min-h-11 grid-cols-[28px_minmax(220px,1.45fr)_110px_130px_minmax(140px,0.9fr)_130px_220px] items-center gap-3 border-b border-border px-3 text-xs font-semibold text-secondary lg:grid">
             <span />
             <span>任务</span>
             <span>状态</span>
@@ -638,7 +585,7 @@ export default function TaskManagerPage() {
             )}
           </div>
           </section>
-        </div>
+        </section>
       </div>
 
       {activeTask ? (

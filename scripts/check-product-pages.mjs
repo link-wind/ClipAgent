@@ -73,16 +73,16 @@ async function main() {
   assertExcludes(dashboardHtml, 'Dashboard Home', 'dashboard 页面仍保留旧首页标题');
 
   const workspaceHtml = await readText('.next/server/app/workspace.html');
-  assertIncludes(workspaceHtml, '方案沟通页面', 'workspace 页面缺少页面标题');
-  assertIncludes(workspaceHtml, '方案沟通', 'workspace 页面缺少方案沟通区块标题');
-  assertIncludes(workspaceHtml, '每一步先显示进度，再给出结果', 'workspace 页面缺少步骤流说明');
   assertIncludes(workspaceHtml, 'AI STEP FLOW', 'workspace 页面缺少 AI 步骤流标题');
   assertIncludes(workspaceHtml, '先看进度，再看每一步结果', 'workspace 页面缺少步骤流主标题');
-  assertIncludes(workspaceHtml, '下一张卡片会在当前步骤完成后出现。', 'workspace 页面缺少渐进步骤占位文案');
-  assertIncludes(workspaceHtml, '确认方案并生成任务', 'workspace 页面缺少确认方案主动作');
-  assertIncludes(workspaceHtml, '方案工作区', 'workspace 页面缺少主工作区 aria 标签');
-  assertIncludes(workspaceHtml, '描述你想完成的视频', 'workspace 页面缺少空态标题');
-  assertIncludes(workspaceHtml, '底部输入区用于继续补充信息', 'workspace 页面缺少输入区说明');
+  assertIncludes(workspaceHtml, '方案工作台', 'workspace 页面缺少主工作台 aria 标签');
+  assertIncludes(workspaceHtml, '继续补充你的修改意见。', 'workspace 页面缺少输入区占位文案');
+  assertExcludes(workspaceHtml, '描述你想完成的视频', 'workspace 页面仍保留空态提示卡');
+  assertExcludes(workspaceHtml, '下一张卡片会在当前步骤完成后出现。', 'workspace 页面仍保留步骤占位文案');
+  assertExcludes(workspaceHtml, '方案沟通', 'workspace 页面仍保留页内标题');
+  assertExcludes(workspaceHtml, '方案沟通页面', 'workspace 页面仍保留冗长页面标题');
+  assertExcludes(workspaceHtml, '每一步先显示进度，再给出结果', 'workspace 页面仍保留过多解释文案');
+  assertExcludes(workspaceHtml, '底部输入区用于继续补充信息', 'workspace 页面仍保留过多输入说明');
 
   const tasksHtml = await readText('.next/server/app/tasks.html');
   assertIncludes(tasksHtml, '任务控制台', 'tasks 页面缺少控制台标题');
@@ -90,10 +90,12 @@ async function main() {
   assertIncludes(tasksHtml, '搜索任务', 'tasks 页面缺少搜索输入');
   assertIncludes(tasksHtml, '可管理任务列表', 'tasks 页面缺少 B1 列表标题');
   assertIncludes(tasksHtml, '查看已选', 'tasks 页面缺少 B1 已选操作入口');
-  assertIncludes(tasksHtml, '列表 + 弹窗详情', 'tasks 页面缺少 B1 布局说明');
   assertIncludes(tasksHtml, '批量操作将在后续阶段开放', 'tasks 页面缺少诚实的批量操作提示');
-  assertIncludes(tasksHtml, '失败优先关注', 'tasks 页面缺少运营摘要标签');
-  assertIncludes(tasksHtml, '结果直达', 'tasks 页面缺少结果摘要标签');
+  assertExcludes(tasksHtml, '列表 + 弹窗详情。', 'tasks 页面仍保留解释型布局说明');
+  assertExcludes(tasksHtml, '状态、进度、结果入口', 'tasks 页面仍保留解释型副标题');
+  assertExcludes(tasksHtml, '失败优先关注', 'tasks 页面仍保留过多摘要标签');
+  assertExcludes(tasksHtml, '结果直达', 'tasks 页面仍保留过多摘要标签');
+  assertExcludes(tasksHtml, '本阶段先支持单任务查看、回到方案和结果直达。', 'tasks 页面仍保留解释型小字');
 
   const settingsHtml = await readText('.next/server/app/settings.html');
   assertIncludes(settingsHtml, '运行设置', 'settings 页面缺少运行设置标题');
@@ -103,6 +105,8 @@ async function main() {
   assertExcludes(settingsHtml, '基础设施配置', 'settings 页面不应再暴露基础设施配置分组');
   assertIncludes(settingsHtml, '保存修改', 'settings 页面缺少保存操作');
   assertIncludes(settingsHtml, '放弃修改', 'settings 页面缺少放弃操作');
+  assertExcludes(settingsHtml, '高级联调参数', 'settings 页面仍保留解释型标签');
+  assertExcludes(settingsHtml, '正在读取运行设置。', 'settings 页面仍保留加载说明小字');
 
   const tasksConceptIndexHtml = await readText('.next/server/app/tasks/concepts.html');
   assertIncludes(tasksConceptIndexHtml, '任务页三种静态参考方案', 'tasks concepts 索引页缺少页面标题');

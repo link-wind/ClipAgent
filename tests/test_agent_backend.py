@@ -2201,6 +2201,9 @@ class FrontendClientContractTests(unittest.TestCase):
 
         self.assertIn("把产品 brief 交给 Agent，", dashboard_source)
         self.assertIn("自动产出可用成片。", dashboard_source)
+        self.assertIn("text-5xl font-semibold", dashboard_source)
+        self.assertIn("lg:text-7xl", dashboard_source)
+        self.assertNotIn("lg:text-8xl", dashboard_source)
         self.assertIn("从链接、卖点和受众开始，快速得到脚本、素材方向和可评审的视频草案。", dashboard_source)
         self.assertIn("开始创建", dashboard_source)
         self.assertIn("查看样片", dashboard_source)
@@ -2281,37 +2284,70 @@ class FrontendClientContractTests(unittest.TestCase):
         self.assertNotIn("BriefWorkspacePage.module.css", workspace_source)
         self.assertNotIn("styles.", workspace_source)
         self.assertIn("className=\"min-h-full", workspace_source)
-        self.assertIn("grid w-full max-w-[1240px]", workspace_source)
-        self.assertIn("min-[1080px]:grid-cols-[minmax(0,1fr)_360px]", workspace_source)
+        self.assertIn("max-w-none", workspace_source)
+        self.assertIn("xl:grid-cols-[minmax(0,1fr)_380px]", workspace_source)
+        self.assertIn("min-h-[calc(100vh-7.5rem)]", workspace_source)
+        self.assertIn("aria-label=\"方案工作台\"", workspace_source)
+        self.assertIn("aria-label=\"对话消息\"", workspace_source)
+        self.assertIn("flex min-h-full flex-col", workspace_source)
+        self.assertIn("min-h-[calc(100vh-7.5rem)]", workspace_source)
         self.assertIn("import AiStepFlow from '@/components/workspace/AiStepFlow';", workspace_source)
         self.assertIn("<AiStepFlow />", workspace_source)
+        self.assertIn("Clip Chat", workspace_source)
+        self.assertIn("Agent 操作", workspace_source)
+        self.assertIn("mr-auto grid w-full", workspace_source)
+        self.assertIn("确认方案并生成任务", workspace_source)
+        self.assertIn("relative", workspace_source)
+        self.assertIn("absolute bottom-3 right-3", workspace_source)
+        self.assertIn("canSend ? 'bg-accentstrong", workspace_source)
+        self.assertNotIn("方案沟通页面", workspace_source)
+        self.assertNotIn("面包屑", workspace_source)
+        self.assertNotIn("max-w-[980px]", workspace_source)
+        self.assertNotIn("描述你想完成的视频", workspace_source)
+        self.assertNotIn("或直接确认最终方案", workspace_source)
         self.assertNotIn("workspaceSteps.map(", workspace_source)
         self.assertNotIn("AI 分析步骤流", workspace_source)
 
-    def test_workspace_step_flow_uses_conversational_progress_cards(self):
+    def test_workspace_step_flow_uses_summary_progress_only(self):
         step_flow_source = (ROOT / "src" / "components" / "workspace" / "AiStepFlow.tsx").read_text(
             encoding="utf-8"
         )
 
-        self.assertIn("buildConversationalStepCards", step_flow_source)
-        self.assertIn("ConversationalStepCard", step_flow_source)
         self.assertIn("clampProgress", step_flow_source)
-        self.assertIn("buildStepMessage", step_flow_source)
-        self.assertIn("只展示已经开始或已经完成的步骤", step_flow_source)
-        self.assertIn("下一张卡片会在当前步骤完成后出现", step_flow_source)
-        self.assertIn("步骤进度", step_flow_source)
-        self.assertIn("step.progress", step_flow_source)
         self.assertIn("totalProgress", step_flow_source)
+        self.assertIn("currentStep", step_flow_source)
+        self.assertNotIn("buildConversationalStepCards", step_flow_source)
+        self.assertNotIn("ConversationalStepCard", step_flow_source)
+        self.assertNotIn("buildStepMessage", step_flow_source)
+        self.assertNotIn("cards.map", step_flow_source)
+        self.assertNotIn("<ol", step_flow_source)
+        self.assertNotIn("<li", step_flow_source)
+        self.assertNotIn("isPlaceholder", step_flow_source)
+        self.assertNotIn("下一张卡片会在当前步骤完成后出现", step_flow_source)
 
-    def test_workspace_step_flow_css_supports_card_level_progress(self):
+    def test_workspace_step_flow_css_supports_full_height_summary(self):
         step_flow_css = (ROOT / "src" / "components" / "workspace" / "AiStepFlow.module.css").read_text(
             encoding="utf-8"
         )
 
-        self.assertIn(".stepProgress", step_flow_css)
-        self.assertIn(".stepProgressTrack", step_flow_css)
-        self.assertIn(".stepProgressBar", step_flow_css)
-        self.assertIn(".stepPlaceholder", step_flow_css)
+        self.assertIn(".statusPanel", step_flow_css)
+        self.assertIn(".statusRow", step_flow_css)
+        self.assertIn("justify-content: space-between", step_flow_css)
+        self.assertIn("margin-top: 14px", step_flow_css)
+        self.assertIn("font-size: 13px", step_flow_css)
+        self.assertNotIn("font-size: 44px", step_flow_css)
+        self.assertNotIn("font-size: 24px", step_flow_css)
+        self.assertNotIn("18vh", step_flow_css)
+        self.assertIn("var(--surface-muted)", step_flow_css)
+        self.assertIn("color: var(--ink)", step_flow_css)
+        self.assertIn("min-height: 100%", step_flow_css)
+        self.assertIn("height: 100%", step_flow_css)
+        self.assertNotIn(".stepProgress", step_flow_css)
+        self.assertNotIn(".stepBody", step_flow_css)
+        self.assertNotIn(".stepMark", step_flow_css)
+        self.assertNotIn(".stepPlaceholder", step_flow_css)
+        self.assertNotIn("rgba(18, 18, 17", step_flow_css)
+        self.assertNotIn("rgba(29, 30, 28", step_flow_css)
 
     def test_task_manager_page_is_tailwind_based(self):
         task_source = (ROOT / "src" / "components" / "tasks" / "TaskManagerPage.tsx").read_text(
@@ -2322,6 +2358,18 @@ class FrontendClientContractTests(unittest.TestCase):
         self.assertNotIn("styles.", task_source)
         self.assertIn("className=\"min-h-full", task_source)
         self.assertIn("任务管理页面", task_source)
+        self.assertIn("rounded-[24px] border border-border bg-white/88 shadow-soft", task_source)
+        self.assertIn("grid min-h-[calc(100vh-7.5rem)]", task_source)
+        self.assertIn("lg:items-start", task_source)
+        self.assertIn("self-start", task_source)
+        self.assertNotIn("lg:items-end", task_source)
+        self.assertNotIn("`${filteredTasks.length} 项`", task_source)
+        self.assertNotIn("加载中", task_source)
+        self.assertNotIn("面包屑", task_source)
+        self.assertNotIn("统一扫读任务状态、最近活动和结果入口", task_source)
+        self.assertNotIn("任务管理页面</span>", task_source)
+        self.assertNotIn("本阶段先支持单任务查看、回到方案和结果直达。", task_source)
+        self.assertNotIn("列表 + 弹窗详情。</p>", task_source)
 
     def test_task_manager_page_exposes_failure_and_result_states(self):
         task_source = (ROOT / "src" / "components" / "tasks" / "TaskManagerPage.tsx").read_text(
@@ -2340,7 +2388,7 @@ class FrontendClientContractTests(unittest.TestCase):
             encoding="utf-8"
         )
 
-        self.assertIn("方案工作区", workspace_source)
+        self.assertIn("方案工作台", workspace_source)
         self.assertIn("EXECUTION_STEP_IDS", workspace_source)
         self.assertIn("create_task", workspace_source)
         self.assertIn("search_assets", workspace_source)
@@ -2614,7 +2662,6 @@ class FrontendClientContractTests(unittest.TestCase):
         self.assertIn("保存修改", settings_page)
         self.assertIn("放弃修改", settings_page)
         self.assertIn("清除", settings_page)
-        self.assertIn("高级联调参数", settings_page)
         self.assertIn("展开更多", settings_page)
         self.assertIn("YTDLP_FORMAT", settings_page)
         self.assertIn("YTDLP_IMPERSONATE", settings_page)
@@ -2624,6 +2671,17 @@ class FrontendClientContractTests(unittest.TestCase):
         self.assertIn("clearRuntimeSettings", settings_api)
         self.assertIn("SettingsPage", settings_route)
         self.assertIn("href: '/settings'", shell_source)
+        self.assertIn("rounded-[24px] border border-border bg-white/88 shadow-soft", settings_page)
+        self.assertIn("lg:items-start", settings_page)
+        self.assertIn("self-start", settings_page)
+        self.assertNotIn("lg:items-end", settings_page)
+        self.assertIn("sticky bottom-4", settings_page)
+        self.assertIn("divide-y divide-border", settings_page)
+        self.assertNotIn("编辑本地 runtime 配置，管理 AI、素材源和高级联调参数。", settings_page)
+        self.assertNotIn("group.description", settings_page)
+        self.assertNotIn("field.help", settings_page)
+        self.assertNotIn("高级联调参数", settings_page)
+        self.assertNotIn("正在读取运行设置。", settings_page)
 
     def test_tasks_operations_console_copy(self):
         tasks_source = (ROOT / "src" / "components" / "tasks" / "TaskManagerPage.tsx").read_text(
@@ -2631,9 +2689,9 @@ class FrontendClientContractTests(unittest.TestCase):
         )
 
         self.assertIn("任务控制台", tasks_source)
-        self.assertIn("统一扫读任务状态、最近活动和结果入口", tasks_source)
-        self.assertIn("失败优先关注", tasks_source)
-        self.assertIn("结果直达", tasks_source)
+        self.assertNotIn("失败优先关注", tasks_source)
+        self.assertNotIn("结果直达", tasks_source)
+        self.assertNotIn("状态、进度、结果入口", tasks_source)
 
     def test_tasks_row_actions_include_workspace_and_result_paths(self):
         tasks_source = (ROOT / "src" / "components" / "tasks" / "TaskManagerPage.tsx").read_text(
@@ -2652,7 +2710,7 @@ class FrontendClientContractTests(unittest.TestCase):
         )
 
         self.assertIn("批量操作将在后续阶段开放", tasks_source)
-        self.assertIn("本阶段先支持单任务查看、回到方案和结果直达。", tasks_source)
+        self.assertNotIn("本阶段先支持单任务查看、回到方案和结果直达。", tasks_source)
         self.assertIn("disabled", tasks_source)
 
     def test_agent_chat_resets_stale_session_on_missing_backend_session(self):

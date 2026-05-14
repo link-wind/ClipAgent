@@ -30,7 +30,7 @@ export default function ProductShell({ children }: { children: ReactNode }) {
   return (
     <div className="min-h-screen bg-[color:var(--page-bg)] text-ink">
       <header className="sticky top-0 z-30 border-b border-border/80 bg-[color:var(--page-bg)]/92 backdrop-blur">
-        <div className="mx-auto flex min-h-16 w-full max-w-[1180px] items-center justify-between gap-4 px-4 sm:px-6 lg:px-8">
+        <div className="mx-auto flex min-h-16 w-full max-w-[1440px] items-center justify-between gap-4 px-4 sm:px-6 lg:px-8">
           <Link href="/" className="text-base font-semibold tracking-[-0.01em] text-ink" aria-label="ClipForge 首页">
             ClipForge
           </Link>
@@ -83,7 +83,7 @@ export default function ProductShell({ children }: { children: ReactNode }) {
         </div>
       </header>
 
-      <main className="mx-auto w-full max-w-[1180px] px-4 py-5 sm:px-6 sm:py-6 lg:px-8 lg:py-7">
+      <main className="mx-auto w-full max-w-[1440px] px-4 py-5 sm:px-6 sm:py-6 lg:px-8 lg:py-7">
         {children}
       </main>
     </div>

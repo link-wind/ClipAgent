@@ -217,19 +217,13 @@ export default function SettingsPage() {
   return (
     <ProductShell>
       <div className="grid min-w-0 gap-4 lg:gap-5">
-        <section className="rounded-lg border border-border bg-white p-5 shadow-soft sm:p-6" aria-label="运行设置">
-          <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-            <div className="space-y-3">
-              <span className="text-[11px] font-semibold uppercase tracking-[0.02em] text-secondary">Settings</span>
-              <div className="space-y-2">
-                <h1 className="text-3xl font-semibold tracking-tight text-ink sm:text-4xl">运行设置</h1>
-                <p className="max-w-3xl text-sm leading-6 text-secondary sm:text-base">
-                  编辑本地 runtime 配置，管理 AI、素材源和高级联调参数。
-                </p>
-              </div>
+        <section className="overflow-hidden rounded-[24px] border border-border bg-white/88 shadow-soft" aria-label="运行设置">
+          <header className="grid gap-4 border-b border-border bg-[color:var(--surface-muted)] p-4 sm:p-5 lg:grid-cols-[minmax(0,1fr)_320px] lg:items-start lg:p-6">
+            <div className="self-start">
+              <h1 className="text-3xl font-semibold tracking-normal text-ink sm:text-4xl">运行设置</h1>
             </div>
 
-            <div className="grid gap-3 rounded-md border border-border bg-subtle p-3 text-sm lg:min-w-[280px]">
+            <div className="grid gap-3 rounded-[18px] border border-border bg-white p-4 text-sm">
               <div className="flex items-center justify-between gap-3">
                 <span className="text-secondary">保存状态</span>
                 <strong className="text-ink">{getStatusLabel(saveState)}</strong>
@@ -237,137 +231,140 @@ export default function SettingsPage() {
               <div className="grid gap-1">
                 <span className="text-secondary">当前模式</span>
                 <strong className="text-ink">{settings?.mode.label ?? '读取中'}</strong>
-                <p className="text-xs leading-5 text-mutedtext">{settings?.mode.description ?? '正在读取设置服务。'}</p>
               </div>
             </div>
+          </header>
+
+          <div className="grid gap-5 p-4 sm:p-5 lg:p-6">
+            {errorText ? (
+              <div className="rounded-[16px] border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
+                {errorText}
+              </div>
+            ) : null}
+
+            {settings ? (
+              settings.groups.map((group) => (
+                <section key={group.id} className="grid gap-3 rounded-[20px] border border-border bg-white" aria-label={group.title}>
+                  <div className="flex flex-col gap-3 border-b border-border p-4 sm:flex-row sm:items-center sm:justify-between">
+                    <div>
+                      <h2 className="text-xl font-semibold text-ink">{group.title}</h2>
+                    </div>
+                    {group.id === 'youtube' ? (
+                      <button
+                        className="inline-flex min-h-10 w-fit items-center rounded-full border border-border bg-white px-4 text-sm font-semibold text-ink transition hover:border-accentstrong"
+                        type="button"
+                        onClick={() => setShowMoreAdvanced((value) => !value)}
+                      >
+                        {showMoreAdvanced ? '收起更多' : '展开更多'}
+                      </button>
+                    ) : null}
+                  </div>
+
+                  <div className="divide-y divide-border">
+                    {group.fields
+                      .filter((field) => {
+                        if (group.id !== 'youtube') {
+                          return true
+                        }
+                        if (showMoreAdvanced) {
+                          return true
+                        }
+                        return !ADVANCED_OPTIONAL_KEYS.includes(field.key)
+                      })
+                      .map((field) => {
+                      const value = drafts[field.key] ?? stringifyFieldValue(field)
+                      const isDirty = dirtyKeys.includes(field.key)
+                      const showClear = field.source === 'runtime' || field.sensitive
+
+                      return (
+                        <div
+                          key={field.key}
+                          className="grid gap-3 p-4 lg:grid-cols-[minmax(220px,0.8fr)_minmax(280px,1fr)_88px] lg:items-start"
+                        >
+                          <div className="grid gap-2">
+                            <div className="flex flex-wrap items-center gap-2">
+                              <h3 className="text-sm font-semibold text-ink">{field.label}</h3>
+                              {field.configured ? (
+                                <span className="rounded border border-border bg-muted px-2 py-0.5 text-[11px] font-semibold text-secondary">
+                                  已配置
+                                </span>
+                              ) : null}
+                              {isDirty ? (
+                                <span className="rounded border border-amber-200 bg-amber-50 px-2 py-0.5 text-[11px] font-semibold text-amber-700">
+                                  已修改
+                                </span>
+                              ) : null}
+                            </div>
+                            <code className="text-xs text-mutedtext">{field.key}</code>
+                          </div>
+
+                          <div className="grid gap-2">
+                            <div className="flex flex-wrap gap-2">
+                              <span
+                                className={`rounded border px-2 py-0.5 text-[11px] font-semibold ${sourceBadgeClass(
+                                  field.source,
+                                )}`}
+                              >
+                                {field.source}
+                              </span>
+                              <span className="rounded border border-border bg-subtle px-2 py-0.5 text-[11px] font-semibold text-secondary">
+                                {RESTART_LABELS[field.restart] ?? field.restart}
+                              </span>
+                            </div>
+                            {renderFieldInput(field, value, (nextValue) => updateDraft(field, nextValue))}
+                          </div>
+
+                          <div className="flex items-center justify-end">
+                            {showClear ? (
+                              <button
+                                className="rounded-full border border-border bg-white px-3 py-2 text-sm font-semibold text-ink transition hover:border-accentstrong disabled:cursor-not-allowed disabled:opacity-50"
+                                type="button"
+                                onClick={() => void clearField(field)}
+                                disabled={saveState === 'saving'}
+                              >
+                                清除
+                              </button>
+                            ) : null}
+                          </div>
+                        </div>
+                      )
+                    })}
+                  </div>
+                </section>
+              ))
+            ) : (
+              <div className="grid gap-3" aria-label="设置分组加载中">
+                {EXPECTED_GROUP_TITLES.map((title) => (
+                  <section key={title} className="rounded-[20px] border border-border bg-white p-5" aria-label={title}>
+                    <h2 className="text-xl font-semibold text-ink">{title}</h2>
+                  </section>
+                ))}
+              </div>
+            )}
           </div>
         </section>
 
-        {errorText ? (
-          <div className="rounded-md border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
-            {errorText}
+        <div className="sticky bottom-4 z-20 flex flex-wrap items-center justify-between gap-3 rounded-full border border-border bg-white/92 px-4 py-3 shadow-soft backdrop-blur">
+          <span className="text-sm font-semibold text-secondary">{dirtyKeys.length} 项修改</span>
+          <div className="flex flex-wrap items-center gap-2">
+            <button
+              className="rounded-full bg-ink px-5 py-2.5 text-sm font-semibold text-white transition hover:bg-ink/90 disabled:cursor-not-allowed disabled:opacity-50"
+              type="button"
+              onClick={saveChanges}
+              disabled={dirtyKeys.length === 0 || saveState === 'saving'}
+            >
+              保存修改
+            </button>
+            <button
+              className="rounded-full border border-border bg-white px-5 py-2.5 text-sm font-semibold text-ink transition hover:border-accentstrong disabled:cursor-not-allowed disabled:opacity-50"
+              type="button"
+              onClick={resetDrafts}
+              disabled={dirtyKeys.length === 0 || saveState === 'saving'}
+            >
+              放弃修改
+            </button>
           </div>
-        ) : null}
-
-        <div className="flex flex-wrap items-center gap-2">
-          <button
-            className="rounded-md bg-ink px-4 py-2 text-sm font-semibold text-white transition hover:bg-ink/90 disabled:cursor-not-allowed disabled:opacity-50"
-            type="button"
-            onClick={saveChanges}
-            disabled={dirtyKeys.length === 0 || saveState === 'saving'}
-          >
-            保存修改
-          </button>
-          <button
-            className="rounded-md border border-border bg-white px-4 py-2 text-sm font-semibold text-ink transition hover:border-accentstrong disabled:cursor-not-allowed disabled:opacity-50"
-            type="button"
-            onClick={resetDrafts}
-            disabled={dirtyKeys.length === 0 || saveState === 'saving'}
-          >
-            放弃修改
-          </button>
         </div>
-
-        {settings ? (
-          settings.groups.map((group) => (
-            <section key={group.id} className="grid gap-3" aria-label={group.title}>
-              <div className="space-y-1">
-                <h2 className="text-xl font-semibold text-ink">{group.title}</h2>
-                <p className="text-sm text-secondary">{group.description}</p>
-                {group.id === 'youtube' ? (
-                  <button
-                    className="inline-flex items-center rounded-md border border-border bg-white px-3 py-1.5 text-sm font-medium text-ink transition hover:border-accentstrong"
-                    type="button"
-                    onClick={() => setShowMoreAdvanced((value) => !value)}
-                  >
-                    {showMoreAdvanced ? '收起更多' : '展开更多'}
-                  </button>
-                ) : null}
-              </div>
-
-              <div className="grid gap-3">
-                {group.fields
-                  .filter((field) => {
-                    if (group.id !== 'youtube') {
-                      return true
-                    }
-                    if (showMoreAdvanced) {
-                      return true
-                    }
-                    return !ADVANCED_OPTIONAL_KEYS.includes(field.key)
-                  })
-                  .map((field) => {
-                  const value = drafts[field.key] ?? stringifyFieldValue(field)
-                  const isDirty = dirtyKeys.includes(field.key)
-                  const showClear = field.source === 'runtime' || field.sensitive
-
-                  return (
-                    <div
-                      key={field.key}
-                      className="grid gap-3 rounded-lg border border-border bg-white p-4 shadow-soft lg:grid-cols-[minmax(220px,0.85fr)_minmax(260px,1.1fr)_auto] lg:items-start"
-                    >
-                      <div className="grid gap-2">
-                        <div className="flex flex-wrap items-center gap-2">
-                          <h3 className="text-sm font-semibold text-ink">{field.label}</h3>
-                          {field.configured ? (
-                            <span className="rounded border border-border bg-muted px-2 py-0.5 text-[11px] font-semibold text-secondary">
-                              已配置
-                            </span>
-                          ) : null}
-                          {isDirty ? (
-                            <span className="rounded border border-amber-200 bg-amber-50 px-2 py-0.5 text-[11px] font-semibold text-amber-700">
-                              已修改
-                            </span>
-                          ) : null}
-                        </div>
-                        <code className="text-xs text-mutedtext">{field.key}</code>
-                        <p className="text-xs leading-5 text-secondary">{field.help}</p>
-                      </div>
-
-                      <div className="grid gap-2">
-                        <div className="flex flex-wrap gap-2">
-                          <span
-                            className={`rounded border px-2 py-0.5 text-[11px] font-semibold ${sourceBadgeClass(
-                              field.source,
-                            )}`}
-                          >
-                            {field.source}
-                          </span>
-                          <span className="rounded border border-border bg-subtle px-2 py-0.5 text-[11px] font-semibold text-secondary">
-                            {RESTART_LABELS[field.restart] ?? field.restart}
-                          </span>
-                        </div>
-                        {renderFieldInput(field, value, (nextValue) => updateDraft(field, nextValue))}
-                      </div>
-
-                      <div className="flex items-center justify-end">
-                        {showClear ? (
-                          <button
-                            className="rounded-md border border-border bg-white px-3 py-2 text-sm font-semibold text-ink transition hover:border-accentstrong disabled:cursor-not-allowed disabled:opacity-50"
-                            type="button"
-                            onClick={() => void clearField(field)}
-                            disabled={saveState === 'saving'}
-                          >
-                            清除
-                          </button>
-                        ) : null}
-                      </div>
-                    </div>
-                  )
-                })}
-              </div>
-            </section>
-          ))
-        ) : (
-          <div className="grid gap-3" aria-label="设置分组加载中">
-            {EXPECTED_GROUP_TITLES.map((title) => (
-              <section key={title} className="rounded-lg border border-border bg-white p-5 shadow-soft" aria-label={title}>
-                <h2 className="text-xl font-semibold text-ink">{title}</h2>
-                <p className="mt-2 text-sm text-secondary">正在读取运行设置。</p>
-              </section>
-            ))}
-          </div>
-        )}
       </div>
     </ProductShell>
   )
