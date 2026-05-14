@@ -3,25 +3,25 @@
 @tailwind utilities;
 
 :root {
-  --page-bg: #f5f7fb;
+  --page-bg: #f5f7f6;
   --surface: #ffffff;
-  --surface-subtle: #f8fafc;
-  --surface-muted: #eef2f7;
-  --ink: #111b33;
+  --surface-subtle: #f8fbfa;
+  --surface-muted: #eef3f1;
+  --ink: #10201b;
   --text-primary: var(--ink);
-  --text-secondary: #64748b;
-  --text-muted: #94a3b8;
-  --rail-text: #cbd5e1;
-  --border: #dbe3ef;
-  --border-soft: #e6ebf5;
-  --accent: #a8c66c;
-  --accent-strong: #6da7a2;
-  --accent-ink: #365314;
+  --text-secondary: #5f7069;
+  --text-muted: #90a19a;
+  --rail-text: #c8d3cf;
+  --border: #d8e2de;
+  --border-soft: #e7eeeb;
+  --accent: #1f6a5b;
+  --accent-strong: #2d8aa4;
+  --accent-ink: #0f3d33;
   --danger: #991b1b;
   --danger-bg: #fee2e2;
   --info: #1d4ed8;
   --info-bg: #dbeafe;
-  --shadow-soft: 0 18px 40px rgba(148, 163, 184, 0.14);
+  --shadow-soft: 0 18px 42px rgba(15, 23, 42, 0.08);
   --radius-sm: 4px;
   --radius-md: 8px;
   --radius-lg: 24px;
@@ -33,7 +33,7 @@
   --accent-contrast: var(--accent-ink);
   --accent-alt: var(--accent-strong);
   --success: #7fd7a8;
-  --border-strong: #c7cdc7;
+  --border-strong: #c7d3ce;
 }
 
 * {
@@ -53,6 +53,8 @@ body {
   font-size: 14px;
   line-height: 1.5;
   letter-spacing: 0;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
   overflow: auto;
 }
 
