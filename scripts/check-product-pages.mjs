@@ -29,6 +29,7 @@ function readDashboardHtml() {
   return readFirstAvailable([
     '.next/server/app/page.html',
     '.next/server/app/index.html',
+    '.next/server/app/page.js',
   ]);
 }
 
