@@ -83,7 +83,7 @@ export default function DashboardPage() {
   return (
     <ProductShell>
       <div className="grid gap-4 lg:gap-5">
-        <section className="overflow-hidden rounded-lg border border-border bg-white/88 shadow-soft">
+        <section className="overflow-hidden rounded-[16px] border border-border bg-white/88 shadow-soft">
           <div className="grid gap-8 px-5 py-6 sm:px-6 sm:py-7 xl:grid-cols-[minmax(0,1.05fr)_minmax(320px,0.95fr)] xl:items-stretch">
             <div className="flex min-w-0 flex-col justify-between gap-8">
               <div className="space-y-5">
@@ -104,13 +104,13 @@ export default function DashboardPage() {
                 <div className="flex flex-wrap gap-3">
                   <Link
                     href="/workspace"
-                    className="inline-flex min-h-11 items-center justify-center rounded-lg bg-ink px-5 text-sm font-semibold text-white transition hover:bg-slate-800"
+                    className="inline-flex min-h-11 items-center justify-center rounded-[16px] bg-ink px-5 text-sm font-semibold text-white transition hover:opacity-90"
                   >
                     开始创建
                   </Link>
                   <Link
                     href="/tasks"
-                    className="inline-flex min-h-11 items-center justify-center rounded-lg border border-border bg-white px-5 text-sm font-semibold text-ink transition hover:bg-slate-50"
+                    className="inline-flex min-h-11 items-center justify-center rounded-[16px] border border-border bg-white px-5 text-sm font-semibold text-ink transition hover:bg-[color:var(--surface-subtle)]"
                   >
                     查看样片
                   </Link>
@@ -121,7 +121,7 @@ export default function DashboardPage() {
                 {WORKFLOW_STEPS.map((step, index) => (
                   <article
                     key={step.title}
-                    className="grid min-h-40 gap-3 rounded-lg border border-border bg-slate-50/80 p-4"
+                    className="grid min-h-40 gap-3 rounded-[16px] border border-border bg-[color:var(--surface-muted)] p-4"
                   >
                     <div className="flex items-center justify-between gap-3">
                       <span className="text-[11px] font-semibold uppercase tracking-[0.02em] text-secondary">
@@ -140,7 +140,7 @@ export default function DashboardPage() {
               </div>
             </div>
 
-            <div className="grid gap-3 rounded-lg border border-border bg-[linear-gradient(180deg,#f7f8f8_0%,#eef2f1_100%)] p-4 sm:p-5">
+            <div className="grid gap-3 rounded-[16px] border border-border bg-[linear-gradient(180deg,#f7f8f8_0%,#eef2f1_100%)] p-4 sm:p-5">
               <div className="flex items-center justify-between gap-3">
                 <div>
                   <p className="text-[11px] font-semibold uppercase tracking-[0.02em] text-secondary">Preview</p>
@@ -151,9 +151,9 @@ export default function DashboardPage() {
                 </span>
               </div>
 
-              <div className="relative overflow-hidden rounded-lg border border-slate-200 bg-[#dfe7e4] p-4">
-                <div className="aspect-video rounded-lg bg-[radial-gradient(circle_at_top_left,_rgba(255,255,255,0.85),_rgba(53,94,59,0.08)_35%,_rgba(28,31,35,0.9)_100%)] p-4">
-                  <div className="flex h-full flex-col justify-between rounded-lg border border-white/20 bg-[linear-gradient(135deg,rgba(12,18,21,0.82),rgba(53,94,59,0.42))] p-4 text-white">
+              <div className="relative overflow-hidden rounded-[16px] border border-border bg-[#dfe7e4] p-4">
+                <div className="aspect-video rounded-[16px] bg-[radial-gradient(circle_at_top_left,_rgba(255,255,255,0.85),_rgba(53,94,59,0.08)_35%,_rgba(28,31,35,0.9)_100%)] p-4">
+                  <div className="flex h-full flex-col justify-between rounded-[16px] border border-white/20 bg-[linear-gradient(135deg,rgba(12,18,21,0.82),rgba(53,94,59,0.42))] p-4 text-white">
                     <div className="flex items-start justify-between gap-3">
                       <div>
                         <p className="text-[11px] font-semibold uppercase tracking-[0.02em] text-white/70">Hero sequence</p>
@@ -177,13 +177,13 @@ export default function DashboardPage() {
                 {['产品卖点拆解', '真实素材候选', '成片节奏卡'].map((label, index) => (
                   <div
                     key={label}
-                    className="grid min-h-24 gap-2 rounded-lg border border-border bg-white/92 p-3"
+                    className="grid min-h-24 gap-2 rounded-[16px] border border-border bg-white/92 p-3"
                   >
                     <div className="flex items-center justify-between gap-2">
                       <span className="text-[11px] font-semibold uppercase tracking-[0.02em] text-secondary">
                         Frame 0{index + 1}
                       </span>
-                      <span className="h-2.5 w-2.5 rounded-full bg-emerald-500" aria-hidden="true" />
+                      <span className="h-2.5 w-2.5 rounded-full bg-[color:var(--accent)]" aria-hidden="true" />
                     </div>
                     <p className="text-sm font-medium text-ink">{label}</p>
                     <p className="text-xs leading-5 text-secondary">让每一段画面都能对上产品信息与输出目标。</p>
@@ -192,19 +192,19 @@ export default function DashboardPage() {
               </div>
 
               <div className="grid gap-3 sm:grid-cols-3">
-                <div className="rounded-lg border border-border bg-white/92 p-4">
+                <div className="rounded-[16px] border border-border bg-white/92 p-4">
                   <p className="text-[11px] font-semibold uppercase tracking-[0.02em] text-secondary">素材搜索</p>
                   <strong className="mt-2 block text-2xl font-semibold text-ink">
                     {formatCount(dashboard.activeTasks)}
                   </strong>
                 </div>
-                <div className="rounded-lg border border-border bg-white/92 p-4">
+                <div className="rounded-[16px] border border-border bg-white/92 p-4">
                   <p className="text-[11px] font-semibold uppercase tracking-[0.02em] text-secondary">脚本镜头</p>
                   <strong className="mt-2 block text-2xl font-semibold text-ink">
                     {formatCount(dashboard.completedTasks)}
                   </strong>
                 </div>
-                <div className="rounded-lg border border-border bg-white/92 p-4">
+                <div className="rounded-[16px] border border-border bg-white/92 p-4">
                   <p className="text-[11px] font-semibold uppercase tracking-[0.02em] text-secondary">成片时长</p>
                   <strong className="mt-2 block text-2xl font-semibold text-ink">0:31</strong>
                 </div>
@@ -217,7 +217,7 @@ export default function DashboardPage() {
           </div>
         </section>
 
-        <section className="grid gap-5 rounded-lg border border-border bg-white/88 p-5 shadow-soft sm:p-6 lg:grid-cols-[0.82fr_1.18fr]">
+        <section className="grid gap-5 rounded-[16px] border border-border bg-white/88 p-5 shadow-soft sm:p-6 lg:grid-cols-[0.82fr_1.18fr]">
           <div className="space-y-3">
             <p className="text-[11px] font-semibold uppercase tracking-[0.02em] text-secondary">How it works</p>
             <h2 className="text-2xl font-semibold leading-tight text-ink">
@@ -231,7 +231,7 @@ export default function DashboardPage() {
 
           <div className="grid gap-3 md:grid-cols-3">
             {WORKFLOW_STEPS.map((step, index) => (
-              <article key={step.title} className="grid gap-3 rounded-lg border border-border bg-slate-50/70 p-4">
+              <article key={step.title} className="grid gap-3 rounded-[16px] border border-border bg-[color:var(--surface-muted)] p-4">
                 <span className="text-[11px] font-semibold uppercase tracking-[0.02em] text-secondary">
                   Stage {index + 1}
                 </span>
@@ -244,7 +244,7 @@ export default function DashboardPage() {
           </div>
         </section>
 
-        <section className="grid gap-5 rounded-lg border border-border bg-surface p-5 shadow-soft sm:p-6 lg:grid-cols-[0.8fr_1.2fr]">
+        <section className="grid gap-5 rounded-[16px] border border-border bg-surface p-5 shadow-soft sm:p-6 lg:grid-cols-[0.8fr_1.2fr]">
           <div className="space-y-3">
             <p className="text-[11px] font-semibold uppercase tracking-[0.02em] text-secondary">Input / Output</p>
             <h2 className="text-2xl font-semibold leading-tight text-ink">从零散产品信息到可交付资产。</h2>
@@ -255,12 +255,12 @@ export default function DashboardPage() {
 
           <div className="grid gap-3 sm:grid-cols-2">
             {INPUT_OUTPUT_ITEMS.map((item) => (
-              <article key={item.label} className="grid min-h-44 gap-4 rounded-lg border border-border bg-white p-4">
+              <article key={item.label} className="grid min-h-44 gap-4 rounded-[16px] border border-border bg-white p-4">
                 <div className="flex items-center justify-between gap-3">
                   <span className="text-[11px] font-semibold uppercase tracking-[0.02em] text-secondary">
                     {item.label}
                   </span>
-                  <span className="rounded-full bg-slate-50 px-3 py-1 text-xs font-medium text-secondary ring-1 ring-border">
+                  <span className="rounded-full bg-[color:var(--surface-muted)] px-3 py-1 text-xs font-medium text-secondary ring-1 ring-border">
                     Workspace
                   </span>
                 </div>
@@ -273,7 +273,7 @@ export default function DashboardPage() {
           </div>
         </section>
 
-        <section className="grid gap-5 rounded-lg border border-border bg-white/88 p-5 shadow-soft sm:p-6 lg:grid-cols-[0.78fr_1.22fr]">
+        <section className="grid gap-5 rounded-[16px] border border-border bg-white/88 p-5 shadow-soft sm:p-6 lg:grid-cols-[0.78fr_1.22fr]">
           <div className="space-y-3">
             <p className="text-[11px] font-semibold uppercase tracking-[0.02em] text-secondary">Example results</p>
             <h2 className="text-2xl font-semibold leading-tight text-ink">用当前任务记录说明 Agent 输出形态。</h2>
@@ -283,22 +283,22 @@ export default function DashboardPage() {
           </div>
 
           <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-            <article className="rounded-lg border border-border bg-slate-50/70 p-4">
+            <article className="rounded-[16px] border border-border bg-[color:var(--surface-muted)] p-4">
               <p className="text-[11px] font-semibold uppercase tracking-[0.02em] text-secondary">Sessions</p>
               <strong className="mt-2 block text-2xl font-semibold text-ink">{formatCount(dashboard.totalSessions)}</strong>
               <p className="mt-2 text-sm leading-6 text-secondary">已进入 Agent 流程的产品创作会话。</p>
             </article>
-            <article className="rounded-lg border border-border bg-slate-50/70 p-4">
+            <article className="rounded-[16px] border border-border bg-[color:var(--surface-muted)] p-4">
               <p className="text-[11px] font-semibold uppercase tracking-[0.02em] text-secondary">In progress</p>
               <strong className="mt-2 block text-2xl font-semibold text-ink">{formatCount(dashboard.activeTasks)}</strong>
               <p className="mt-2 text-sm leading-6 text-secondary">正在整理素材、脚本或结果的任务。</p>
             </article>
-            <article className="rounded-lg border border-border bg-slate-50/70 p-4">
+            <article className="rounded-[16px] border border-border bg-[color:var(--surface-muted)] p-4">
               <p className="text-[11px] font-semibold uppercase tracking-[0.02em] text-secondary">Ready</p>
               <strong className="mt-2 block text-2xl font-semibold text-ink">{formatCount(dashboard.completedTasks)}</strong>
               <p className="mt-2 text-sm leading-6 text-secondary">已经产出可评审结果的任务。</p>
             </article>
-            <article className="rounded-lg border border-border bg-slate-50/70 p-4">
+            <article className="rounded-[16px] border border-border bg-[color:var(--surface-muted)] p-4">
               <p className="text-[11px] font-semibold uppercase tracking-[0.02em] text-secondary">Needs attention</p>
               <strong className="mt-2 block text-2xl font-semibold text-ink">{formatCount(dashboard.failedTasks)}</strong>
               <p className="mt-2 text-sm leading-6 text-secondary">需要重新检查输入或素材链路的任务。</p>
@@ -306,7 +306,7 @@ export default function DashboardPage() {
           </div>
         </section>
 
-        <section className="grid gap-4 rounded-lg border border-border bg-ink p-5 text-white shadow-soft sm:p-6 lg:grid-cols-[1fr_auto] lg:items-center">
+        <section className="grid gap-4 rounded-[16px] border border-border bg-ink p-5 text-white shadow-soft sm:p-6 lg:grid-cols-[1fr_auto] lg:items-center">
           <div className="space-y-2">
             <p className="text-[11px] font-semibold uppercase tracking-[0.02em] text-white/65">Final CTA</p>
             <h2 className="text-2xl font-semibold leading-tight">把下一条产品 brief 放进工作区。</h2>
@@ -316,14 +316,14 @@ export default function DashboardPage() {
           </div>
           <Link
             href="/workspace"
-            className="inline-flex min-h-11 items-center justify-center rounded-lg bg-white px-5 text-sm font-semibold text-ink transition hover:bg-slate-100"
+            className="inline-flex min-h-11 items-center justify-center rounded-[16px] bg-white px-5 text-sm font-semibold text-ink transition hover:bg-[color:var(--surface-muted)]"
           >
             开始创建
           </Link>
         </section>
 
         {error ? (
-          <p className="rounded-lg border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700 shadow-soft">
+          <p className="rounded-[16px] border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700 shadow-soft">
             {error}
           </p>
         ) : null}
