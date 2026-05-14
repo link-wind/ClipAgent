@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useState, type CSSProperties } from 'react';
+import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import ProductShell from '@/components/layout/ProductShell';
 import { getAgentDashboard, type AgentDashboardSummary } from '@/lib/taskApi';
@@ -13,137 +13,27 @@ const FALLBACK_DASHBOARD: AgentDashboardSummary = {
   recentTasks: [],
 };
 
-const TREND_VALUES = [42, 58, 36, 74, 51, 82, 68];
-
-const STATUS_LABELS: Record<string, string> = {
-  queued: '排队中',
-  planning: '规划中',
-  plan_ready: '待确认',
-  searching: '搜索中',
-  downloading: '下载中',
-  rendering: '渲染中',
-  done: '已完成',
-  failed: '失败',
-  idle: '待处理',
-};
-
-const ASSET_BREAKDOWN = [
-  { label: '镜头', value: 38, tone: 'var(--dashboard-accent-1)' },
-  { label: '素材', value: 27, tone: 'var(--dashboard-accent-2)' },
-  { label: '字幕', value: 18, tone: 'var(--dashboard-accent-3)' },
-  { label: '封面', value: 17, tone: 'var(--dashboard-accent-4)' },
+const WORKFLOW_STEPS = [
+  {
+    title: '理解产品信息',
+    description: '读取产品链接、卖点、受众和风格方向，先把 brief 整理成可执行的创作上下文。',
+  },
+  {
+    title: '搜索真实素材',
+    description: '围绕产品特性与使用场景抓取可信素材，让脚本和镜头不只停留在概念层。',
+  },
+  {
+    title: '输出成片方案',
+    description: '自动生成脚本、镜头节奏与成片建议，把一条可看的结果尽快交到团队手里。',
+  },
 ];
 
 function formatCount(value: number) {
   return new Intl.NumberFormat('zh-CN').format(value);
 }
 
-function getStatusLabel(status: string) {
-  return STATUS_LABELS[status] ?? status;
-}
-
-function getStatusClasses(status: string) {
-  switch (status) {
-    case 'done':
-      return 'bg-emerald-50 text-emerald-700 ring-emerald-200';
-    case 'failed':
-      return 'bg-rose-50 text-rose-700 ring-rose-200';
-    case 'planning':
-    case 'plan_ready':
-      return 'bg-amber-50 text-amber-700 ring-amber-200';
-    case 'searching':
-    case 'downloading':
-    case 'rendering':
-      return 'bg-sky-50 text-sky-700 ring-sky-200';
-    case 'queued':
-    case 'idle':
-    default:
-      return 'bg-slate-100 text-slate-700 ring-slate-200';
-  }
-}
-
-function formatTaskTime(value: string) {
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) {
-    return value;
-  }
-
-  return new Intl.DateTimeFormat('zh-CN', {
-    dateStyle: 'medium',
-    timeStyle: 'short',
-  }).format(date);
-}
-
-function buildDonutBackground() {
-  return `conic-gradient(${ASSET_BREAKDOWN.map((item, index) => {
-    const start = ASSET_BREAKDOWN.slice(0, index).reduce((sum, next) => sum + next.value, 0);
-    const end = start + item.value;
-    return `${item.tone} ${start}% ${end}%`;
-  }).join(', ')})`;
-}
-
-function MetricCard({
-  label,
-  value,
-  hint,
-  accent,
-}: {
-  label: string;
-  value: string;
-  hint: string;
-  accent?: string;
-}) {
-  return (
-    <article
-      className="rounded-lg border border-border bg-white/95 p-5 shadow-soft"
-      style={{ borderTopWidth: '3px', borderTopColor: accent }}
-    >
-      <span className="block text-sm font-semibold text-secondary">{label}</span>
-      <strong className="mt-3 block text-3xl font-semibold leading-none" style={{ color: accent }}>
-        {value}
-      </strong>
-      <span className="mt-3 block text-sm leading-6 text-secondary">{hint}</span>
-    </article>
-  );
-}
-
-function OverviewRow({
-  label,
-  value,
-  hint,
-}: {
-  label: string;
-  value: string;
-  hint: string;
-}) {
-  return (
-    <div className="rounded-lg border border-border bg-white/90 p-3">
-      <div className="flex items-center justify-between gap-3">
-        <span className="text-sm font-medium text-secondary">{label}</span>
-        <strong className="text-lg font-semibold text-ink">{value}</strong>
-      </div>
-      <p className="mt-1 text-xs leading-5 text-mutedtext">{hint}</p>
-    </div>
-  );
-}
-
-function LegendItem({ label, value, tone }: { label: string; value: number; tone: string }) {
-  return (
-    <div className="grid grid-cols-[12px_minmax(0,1fr)_auto] items-center gap-3">
-      <span className="h-3 w-3 rounded-[3px]" style={{ background: tone }} aria-hidden="true" />
-      <span className="text-sm text-ink">{label}</span>
-      <strong className="text-xs font-semibold text-secondary">{value}%</strong>
-    </div>
-  );
-}
-
-function getTaskSearchText(task: AgentDashboardSummary['recentTasks'][number]) {
-  return `${task.title} ${task.status} ${task.currentStep} ${task.sessionId}`.toLowerCase();
-}
-
 export default function DashboardPage() {
   const [dashboard, setDashboard] = useState<AgentDashboardSummary>(FALLBACK_DASHBOARD);
-  const [query, setQuery] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
@@ -177,154 +67,139 @@ export default function DashboardPage() {
     };
   }, []);
 
-  const metrics = useMemo(
-    () => [
-      {
-        label: '总会话',
-        value: formatCount(dashboard.totalSessions),
-        hint: '工作区累计接入的方案会话数',
-        accent: 'var(--dashboard-accent-1)',
-      },
-      {
-        label: '活跃任务',
-        value: formatCount(dashboard.activeTasks),
-        hint: '当前仍在排队、规划或执行中的任务',
-        accent: 'var(--dashboard-accent-2)',
-      },
-      {
-        label: '已完成',
-        value: formatCount(dashboard.completedTasks),
-        hint: '已经产出结果并可以回看的任务',
-        accent: 'var(--dashboard-accent-3)',
-      },
-      {
-        label: '失败任务',
-        value: formatCount(dashboard.failedTasks),
-        hint: '需要重新确认输入或重新发起的任务',
-        accent: 'var(--dashboard-accent-4)',
-      },
-    ],
-    [dashboard.activeTasks, dashboard.completedTasks, dashboard.failedTasks, dashboard.totalSessions],
-  );
-
-  const filteredTasks = useMemo(() => {
-    const keyword = query.trim().toLowerCase();
-    if (!keyword) {
-      return dashboard.recentTasks;
-    }
-    return dashboard.recentTasks.filter((task) => getTaskSearchText(task).includes(keyword));
-  }, [dashboard.recentTasks, query]);
-
-  const activeTrend = useMemo(() => {
-    const maxValue = Math.max(...TREND_VALUES);
-    return TREND_VALUES.map((value) => ({
-      value,
-      height: Math.max(18, Math.round((value / maxValue) * 100)),
-    }));
-  }, []);
-
-  const assetTotal = useMemo(
-    () => ASSET_BREAKDOWN.reduce((sum, item) => sum + item.value, 0),
-    [],
-  );
-  const donutStyle = useMemo(
-    () =>
-      ({
-        background: buildDonutBackground(),
-      }) as CSSProperties,
-    [],
-  );
-
-  const hasTasks = filteredTasks.length > 0;
-  const pageStyle = {
-    '--dashboard-accent-1': '#355e3b',
-    '--dashboard-accent-2': '#3e6f79',
-    '--dashboard-accent-3': '#537b4f',
-    '--dashboard-accent-4': '#b15a44',
-  } as CSSProperties;
-
   return (
     <ProductShell>
-      <div className="grid min-w-0 gap-4 lg:gap-5" style={pageStyle}>
-        <section className="rounded-lg border border-border bg-white/85 p-5 shadow-soft sm:p-6">
-          <div className="flex flex-col gap-5 lg:flex-row lg:items-start lg:justify-between">
-            <div className="min-w-0 max-w-2xl space-y-4">
-              <nav className="flex items-center gap-2 text-xs font-medium text-secondary" aria-label="面包屑">
-                <Link href="/" className="font-semibold text-ink">
-                  总览
-                </Link>
-                <span aria-hidden="true">/</span>
-                <span>ClipForge 首页</span>
-              </nav>
-
-              <div className="space-y-3">
-                <span className="inline-flex items-center rounded-full bg-slate-100 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.02em] text-secondary">
-                  产品总览
+      <div className="grid gap-4 lg:gap-5">
+        <section className="overflow-hidden rounded-lg border border-border bg-white/88 shadow-soft">
+          <div className="grid gap-8 px-5 py-6 sm:px-6 sm:py-7 xl:grid-cols-[minmax(0,1.05fr)_minmax(320px,0.95fr)] xl:items-stretch">
+            <div className="flex min-w-0 flex-col justify-between gap-8">
+              <div className="space-y-5">
+                <span className="inline-flex w-fit items-center rounded-full border border-border bg-white px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.02em] text-secondary">
+                  Product-to-video agent
                 </span>
-                <h1 className="text-3xl font-semibold tracking-tight text-ink sm:text-4xl">ClipForge</h1>
-                <p className="max-w-2xl text-sm leading-6 text-secondary sm:text-base">
-                  对话式短视频制作工作台，把创意 brief 推进成可执行方案、任务流程和最终产出。
-                </p>
+
+                <div className="space-y-4">
+                  <h1 className="max-w-3xl text-4xl font-semibold leading-tight text-ink sm:text-5xl">
+                    把产品 brief 交给 Agent，自动产出可用成片。
+                  </h1>
+                  <p className="max-w-2xl text-base leading-7 text-secondary">
+                    输入产品链接、卖点、受众与风格方向，ClipForge 会自动理解产品、搜索真实素材、生成脚本与成片结果，
+                    让团队更快看到能讨论、能继续推进的视频成片方案。
+                  </p>
+                </div>
+
+                <div className="flex flex-wrap gap-3">
+                  <Link
+                    href="/workspace"
+                    className="inline-flex min-h-11 items-center justify-center rounded-lg bg-ink px-5 text-sm font-semibold text-white transition hover:bg-slate-800"
+                  >
+                    开始创建
+                  </Link>
+                  <Link
+                    href="/tasks"
+                    className="inline-flex min-h-11 items-center justify-center rounded-lg border border-border bg-white px-5 text-sm font-semibold text-ink transition hover:bg-slate-50"
+                  >
+                    查看样片
+                  </Link>
+                </div>
               </div>
 
-              <div className="flex flex-wrap gap-3">
-                <Link
-                  href="/workspace"
-                  className="inline-flex min-h-11 items-center justify-center rounded-lg bg-ink px-5 text-sm font-semibold text-white transition hover:bg-slate-800"
-                >
-                  新建方案
-                </Link>
-                <Link
-                  href="/tasks"
-                  className="inline-flex min-h-11 items-center justify-center rounded-lg border border-border bg-white px-5 text-sm font-semibold text-ink transition hover:bg-slate-50"
-                >
-                  任务管理
-                </Link>
+              <div className="grid gap-3 md:grid-cols-3">
+                {WORKFLOW_STEPS.map((step, index) => (
+                  <article
+                    key={step.title}
+                    className="grid min-h-40 gap-3 rounded-lg border border-border bg-slate-50/80 p-4"
+                  >
+                    <div className="flex items-center justify-between gap-3">
+                      <span className="text-[11px] font-semibold uppercase tracking-[0.02em] text-secondary">
+                        Step {index + 1}
+                      </span>
+                      <span className="rounded-full bg-white px-2.5 py-1 text-xs font-medium text-secondary ring-1 ring-border">
+                        Agent flow
+                      </span>
+                    </div>
+                    <div className="space-y-2">
+                      <h2 className="text-lg font-semibold text-ink">{step.title}</h2>
+                      <p className="text-sm leading-6 text-secondary">{step.description}</p>
+                    </div>
+                  </article>
+                ))}
               </div>
             </div>
 
-            <div className="w-full rounded-lg border border-border bg-slate-50/90 p-4 shadow-soft lg:max-w-sm">
-              <div className="flex items-start justify-between gap-3">
+            <div className="grid gap-3 rounded-lg border border-border bg-[linear-gradient(180deg,#f7f8f8_0%,#eef2f1_100%)] p-4 sm:p-5">
+              <div className="flex items-center justify-between gap-3">
                 <div>
-                  <p className="text-[11px] font-semibold uppercase tracking-[0.02em] text-secondary">运行概况</p>
-                  <h2 className="mt-1 text-lg font-semibold text-ink">今天的生产状态</h2>
+                  <p className="text-[11px] font-semibold uppercase tracking-[0.02em] text-secondary">Preview</p>
+                  <h2 className="mt-1 text-lg font-semibold text-ink">Agent 预览片段</h2>
                 </div>
                 <span className="rounded-full bg-white px-3 py-1 text-xs font-medium text-secondary ring-1 ring-border">
-                  {isLoading ? '同步中' : '已同步'}
+                  {isLoading ? '同步中' : '已更新'}
                 </span>
               </div>
 
-              <div className="mt-4 grid gap-3">
-                <OverviewRow
-                  label="当前会话"
-                  value={formatCount(dashboard.totalSessions)}
-                  hint="已经进入产品工作台的方案总数"
-                />
-                <OverviewRow
-                  label="正在推进"
-                  value={formatCount(dashboard.activeTasks)}
-                  hint="此刻还在排队、规划或执行的任务"
-                />
-                <OverviewRow
-                  label="稳定产出"
-                  value={formatCount(dashboard.completedTasks)}
-                  hint="已经完成、可以回看的最近产出"
-                />
+              <div className="relative overflow-hidden rounded-lg border border-slate-200 bg-[#dfe7e4] p-4">
+                <div className="aspect-video rounded-lg bg-[radial-gradient(circle_at_top_left,_rgba(255,255,255,0.85),_rgba(53,94,59,0.08)_35%,_rgba(28,31,35,0.9)_100%)] p-4">
+                  <div className="flex h-full flex-col justify-between rounded-lg border border-white/20 bg-[linear-gradient(135deg,rgba(12,18,21,0.82),rgba(53,94,59,0.42))] p-4 text-white">
+                    <div className="flex items-start justify-between gap-3">
+                      <div>
+                        <p className="text-[11px] font-semibold uppercase tracking-[0.02em] text-white/70">Hero sequence</p>
+                        <h3 className="mt-2 text-xl font-semibold">真实素材进入脚本镜头</h3>
+                      </div>
+                      <span className="rounded-full bg-white/12 px-3 py-1 text-xs font-medium text-white/80 ring-1 ring-white/15">
+                        00:31
+                      </span>
+                    </div>
+
+                    <div className="grid gap-2 text-sm text-white/78">
+                      <p>1. 抓取产品卖点与适用人群</p>
+                      <p>2. 拼接真实场景与画面证明</p>
+                      <p>3. 输出可继续细化的成片节奏</p>
+                    </div>
+                  </div>
+                </div>
               </div>
 
-              <label className="mt-4 block">
-                <span className="mb-2 block text-[11px] font-semibold uppercase tracking-[0.02em] text-secondary">
-                  搜索任务
-                </span>
-                <input
-                  type="search"
-                  value={query}
-                  onChange={(event) => setQuery(event.target.value)}
-                  placeholder="按标题、状态或会话 ID 筛选"
-                  aria-label="搜索任务"
-                  className="w-full rounded-lg border border-border bg-white px-4 py-3 text-sm text-ink outline-none transition focus:border-slate-400 focus:ring-2 focus:ring-slate-200"
-                />
-              </label>
+              <div className="grid gap-3 sm:grid-cols-3">
+                {['产品卖点拆解', '真实素材候选', '成片节奏卡'].map((label, index) => (
+                  <div
+                    key={label}
+                    className="grid min-h-24 gap-2 rounded-lg border border-border bg-white/92 p-3"
+                  >
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="text-[11px] font-semibold uppercase tracking-[0.02em] text-secondary">
+                        Frame 0{index + 1}
+                      </span>
+                      <span className="h-2.5 w-2.5 rounded-full bg-emerald-500" aria-hidden="true" />
+                    </div>
+                    <p className="text-sm font-medium text-ink">{label}</p>
+                    <p className="text-xs leading-5 text-secondary">让每一段画面都能对上产品信息与输出目标。</p>
+                  </div>
+                ))}
+              </div>
+
+              <div className="grid gap-3 sm:grid-cols-3">
+                <div className="rounded-lg border border-border bg-white/92 p-4">
+                  <p className="text-[11px] font-semibold uppercase tracking-[0.02em] text-secondary">素材搜索</p>
+                  <strong className="mt-2 block text-2xl font-semibold text-ink">
+                    {formatCount(dashboard.activeTasks || 28)}
+                  </strong>
+                </div>
+                <div className="rounded-lg border border-border bg-white/92 p-4">
+                  <p className="text-[11px] font-semibold uppercase tracking-[0.02em] text-secondary">脚本镜头</p>
+                  <strong className="mt-2 block text-2xl font-semibold text-ink">
+                    {Math.max(12, dashboard.completedTasks || 0)}
+                  </strong>
+                </div>
+                <div className="rounded-lg border border-border bg-white/92 p-4">
+                  <p className="text-[11px] font-semibold uppercase tracking-[0.02em] text-secondary">成片时长</p>
+                  <strong className="mt-2 block text-2xl font-semibold text-ink">0:31</strong>
+                </div>
+              </div>
+
+              <p className="text-sm leading-6 text-secondary">
+                从产品信息到真实素材，再到脚本与成片预览，这里展示的是 Agent 先给团队一条可评估结果的工作方式。
+              </p>
             </div>
           </div>
         </section>
@@ -334,158 +209,6 @@ export default function DashboardPage() {
             {error}
           </p>
         ) : null}
-
-        <section className="rounded-lg border border-border bg-white/80 p-5 shadow-soft sm:p-6" aria-label="关键指标">
-          <div className="flex flex-col gap-2 border-b border-border pb-4 sm:flex-row sm:items-end sm:justify-between">
-            <div>
-              <p className="text-[11px] font-semibold uppercase tracking-[0.02em] text-secondary">关键指标</p>
-              <h2 className="mt-1 text-xl font-semibold text-ink">正在推进的整体规模</h2>
-            </div>
-            <p className="max-w-xl text-sm leading-6 text-secondary">
-              用会话、任务与产出节奏，快速判断当前创作工作台的推进状态和可交付能力。
-            </p>
-          </div>
-
-          <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-            {metrics.map((metric) => (
-              <MetricCard key={metric.label} {...metric} />
-            ))}
-          </div>
-        </section>
-
-        <section className="grid gap-4 xl:grid-cols-[minmax(0,1.35fr)_minmax(0,0.95fr)]" aria-label="运行证明">
-          <article className="rounded-lg border border-border bg-white/80 p-5 shadow-soft sm:p-6">
-            <div className="flex items-start justify-between gap-3 border-b border-border pb-4">
-              <div>
-                <p className="text-[11px] font-semibold uppercase tracking-[0.02em] text-secondary">运行证明</p>
-                <h2 className="mt-1 text-xl font-semibold text-ink">最近 7 个任务产出走势</h2>
-              </div>
-              <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-medium text-secondary">
-                {isLoading ? '加载中' : '示意节奏'}
-              </span>
-            </div>
-
-            <div className="mt-6 grid min-h-56 grid-cols-7 items-end gap-3" role="img" aria-label="最近七天生产趋势柱状图">
-              {activeTrend.map((item, index) => (
-                <div key={`${item.value}-${index}`} className="grid justify-items-center gap-3">
-                  <span className="text-xs font-semibold text-secondary">{item.value}</span>
-                  <div className="flex h-44 w-full items-end justify-center rounded-lg bg-slate-100">
-                    <span
-                      className="block w-full max-w-6 rounded-t-lg bg-gradient-to-b from-slate-700 via-slate-600 to-emerald-500"
-                      style={{ height: `${item.height}%` }}
-                    />
-                  </div>
-                </div>
-              ))}
-            </div>
-
-            <p className="mt-4 text-sm leading-6 text-secondary">
-              这里先用示意节奏展示工作台的信息层级，帮助快速理解内容生产面板会如何承接真实趋势数据。
-            </p>
-          </article>
-
-          <div className="grid gap-4">
-            <article className="rounded-lg border border-border bg-white/80 p-5 shadow-soft">
-              <div className="border-b border-border pb-4">
-                <p className="text-[11px] font-semibold uppercase tracking-[0.02em] text-secondary">健康快照</p>
-                <h2 className="mt-1 text-xl font-semibold text-ink">当前运行状态</h2>
-              </div>
-
-              <div className="mt-4 grid gap-3">
-                <OverviewRow
-                  label="活跃任务"
-                  value={formatCount(dashboard.activeTasks)}
-                  hint="还在排队、规划或执行中的任务数量"
-                />
-                <OverviewRow
-                  label="已完成"
-                  value={formatCount(dashboard.completedTasks)}
-                  hint="已经顺利产出结果的任务数量"
-                />
-                <OverviewRow
-                  label="失败任务"
-                  value={formatCount(dashboard.failedTasks)}
-                  hint="需要补充输入或重新发起的任务数量"
-                />
-              </div>
-            </article>
-
-            <article className="rounded-lg border border-border bg-white/80 p-5 shadow-soft">
-              <div className="border-b border-border pb-4">
-                <p className="text-[11px] font-semibold uppercase tracking-[0.02em] text-secondary">资源构成</p>
-                <h2 className="mt-1 text-xl font-semibold text-ink">当前生产中的资源比例</h2>
-              </div>
-
-              <div className="mt-6 grid place-items-center">
-                <div className="relative grid place-items-center">
-                  <div className="h-44 w-44 rounded-full" style={donutStyle} aria-hidden="true" />
-                  <div className="absolute grid h-24 w-24 place-items-center rounded-full bg-white shadow-soft">
-                    <strong className="text-3xl font-semibold leading-none text-ink">{assetTotal}%</strong>
-                    <span className="text-xs text-secondary">已分配</span>
-                  </div>
-                </div>
-              </div>
-
-              <div className="mt-5 grid gap-3">
-                {ASSET_BREAKDOWN.map((item) => (
-                  <LegendItem key={item.label} {...item} />
-                ))}
-              </div>
-            </article>
-          </div>
-        </section>
-
-        <section className="rounded-lg border border-border bg-white/80 p-5 shadow-soft sm:p-6" aria-label="最近工作">
-          <div className="flex flex-col gap-3 border-b border-border pb-4 sm:flex-row sm:items-end sm:justify-between">
-            <div>
-              <p className="text-[11px] font-semibold uppercase tracking-[0.02em] text-secondary">最近工作</p>
-              <h2 className="mt-1 text-xl font-semibold text-ink">最新接入的方案队列</h2>
-            </div>
-            <Link href="/tasks" className="text-sm font-semibold text-ink underline-offset-4 hover:underline">
-              前往任务管理
-            </Link>
-          </div>
-
-          {hasTasks ? (
-            <ul className="mt-4 grid gap-3 lg:grid-cols-2">
-              {filteredTasks.map((task) => (
-                <li
-                  key={task.id}
-                  className="rounded-lg border border-border bg-slate-50/90 p-4 transition hover:-translate-y-0.5 hover:shadow-soft"
-                >
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="min-w-0">
-                      <h3 className="text-base font-semibold leading-6 text-ink">{task.title}</h3>
-                      <p className="mt-1 text-sm leading-6 text-secondary">
-                        {task.currentStep || '等待下一步推进'}
-                      </p>
-                    </div>
-                    <span
-                      className={`inline-flex items-center rounded-full px-3 py-1 text-xs font-semibold ring-1 ${getStatusClasses(task.status)}`}
-                    >
-                      {getStatusLabel(task.status)}
-                    </span>
-                  </div>
-
-                  <div className="mt-4 flex flex-wrap items-center gap-3 text-xs text-secondary">
-                    <span>{task.sessionId}</span>
-                    <span>{formatTaskTime(task.updatedAt)}</span>
-                  </div>
-                </li>
-              ))}
-            </ul>
-          ) : (
-            <div className="mt-4 flex flex-col gap-3 rounded-lg border border-dashed border-border bg-slate-50/90 p-5 sm:flex-row sm:items-center sm:justify-between">
-              <p className="text-sm leading-6 text-secondary">最近还没有工作记录，先从一个新方案开始。</p>
-              <Link
-                href="/workspace"
-                className="inline-flex min-h-11 items-center justify-center rounded-lg bg-ink px-4 text-sm font-semibold text-white transition hover:bg-slate-800"
-              >
-                去方案页
-              </Link>
-            </div>
-          )}
-        </section>
       </div>
     </ProductShell>
   );
