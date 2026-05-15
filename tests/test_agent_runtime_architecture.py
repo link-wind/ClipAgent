@@ -68,3 +68,21 @@ class AgentRuntimeArchitectureTests(unittest.TestCase):
         self.assertTrue(hasattr(render_service, "render_video"))
         self.assertTrue(hasattr(celery_app, "celery_app"))
         self.assertTrue(hasattr(agent_job, "run_agent_job"))
+
+    def test_agent_runtime_accepts_existing_services(self) -> None:
+        from backend.runtime.agent_runtime import AgentRuntime
+        from backend.runtime.context_engine import ContextEngine
+        from backend.runtime.skill_engine import SkillEngine
+        from backend.runtime.tool_gateway import ToolGateway
+        from backend.runtime.trace_recorder import TraceRecorder
+
+        runtime = AgentRuntime(
+            session_service=object(),
+            execution_service=object(),
+            context_engine=ContextEngine(),
+            skill_engine=SkillEngine(),
+            tool_gateway=ToolGateway(),
+            trace_recorder=TraceRecorder(),
+        )
+
+        self.assertIsNotNone(runtime)
