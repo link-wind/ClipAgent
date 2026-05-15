@@ -2,13 +2,11 @@ import openai
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
+from backend.app.agent.session_use_cases import AgentReadService, AgentSessionService
+from backend.app.execution.job_use_cases import AgentExecutionService, AgentTaskReadService
 from backend.db import SessionLocal
 from backend.models.agent import AgentDashboardSummary, AgentEvent, AgentSession, AgentTaskDetail, AgentTaskSummary
-from backend.services.agent_execution_service import AgentExecutionService
-from backend.services.agent_read_service import AgentReadService
 from backend.services.agent_service import agent_service
-from backend.services.agent_session_service import AgentSessionService
-from backend.services.agent_task_read_service import AgentTaskReadService
 
 
 router = APIRouter()

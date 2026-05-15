@@ -86,3 +86,17 @@ class AgentRuntimeArchitectureTests(unittest.TestCase):
         )
 
         self.assertIsNotNone(runtime)
+
+    def test_agent_api_imports_use_application_boundary(self) -> None:
+        source = (ROOT / "backend" / "api" / "agent.py").read_text(encoding="utf-8")
+
+        self.assertIn(
+            "from backend.app.agent.session_use_cases import AgentReadService, AgentSessionService",
+            source,
+        )
+        self.assertIn(
+            "from backend.app.execution.job_use_cases import AgentExecutionService, AgentTaskReadService",
+            source,
+        )
+        self.assertNotIn("from backend.services.agent_execution_service import", source)
+        self.assertNotIn("from backend.services.agent_session_service import", source)
