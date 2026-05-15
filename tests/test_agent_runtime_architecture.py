@@ -100,3 +100,13 @@ class AgentRuntimeArchitectureTests(unittest.TestCase):
         )
         self.assertNotIn("from backend.services.agent_execution_service import", source)
         self.assertNotIn("from backend.services.agent_session_service import", source)
+
+    def test_readme_documents_agent_runtime_architecture(self) -> None:
+        readme = (ROOT / "README.md").read_text(encoding="utf-8")
+
+        self.assertIn("Agent Runtime 架构", readme)
+        self.assertIn("Context Engine", readme)
+        self.assertIn("Skill Engine", readme)
+        self.assertIn("Tool Gateway", readme)
+        self.assertIn("RAG", readme)
+        self.assertIn("MCP", readme)

@@ -12,6 +12,12 @@
 - yt-dlp
 - FFmpeg / ffmpeg-python
 
+## Agent Runtime 架构
+
+目标架构按清晰边界分层：API route 只负责 HTTP request/response translation，不承载业务编排；`backend/app` 是 session、planning、execution 等应用用例边界；`backend/runtime` 是 Agent orchestration layer，包含 `Context Engine`、`Skill Engine`、`Tool Gateway` 和 Trace Recorder；`backend/domain` 放稳定业务契约；`backend/infrastructure` 放数据库、LLM、media、后续 vector store 和 MCP client 等适配器；`backend/workers` 放 Celery app 和 task entrypoints。
+
+本阶段只锁定兼容模块和边界，确保现有功能可以逐步迁入目标结构。RAG、Skill registry、MCP server/client 是下一阶段接入点，不在本阶段实现。
+
 ## Docker 一键部署
 
 先复制环境变量模板：
