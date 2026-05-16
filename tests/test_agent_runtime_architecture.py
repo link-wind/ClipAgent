@@ -61,13 +61,37 @@ class AgentRuntimeArchitectureTests(unittest.TestCase):
     def test_infrastructure_and_worker_boundaries_reexport_existing_adapters(self) -> None:
         runtime_config = importlib.import_module("backend.infrastructure.config.runtime_config_service")
         render_service = importlib.import_module("backend.infrastructure.media.render_service")
+        asset_providers = importlib.import_module("backend.infrastructure.media.asset_providers")
         celery_app = importlib.import_module("backend.workers.celery_app")
         agent_job = importlib.import_module("backend.workers.tasks.agent_job")
 
         self.assertTrue(hasattr(runtime_config, "runtime_config_service"))
+        self.assertTrue(hasattr(runtime_config, "DEFAULT_YTDLP_FORMAT"))
         self.assertTrue(hasattr(render_service, "render_video"))
+        self.assertTrue(hasattr(render_service, "RenderClip"))
+        self.assertTrue(hasattr(render_service, "RenderProgressCallback"))
+        self.assertTrue(hasattr(asset_providers, "ProviderDiagnostic"))
+        self.assertTrue(hasattr(asset_providers, "ProviderResult"))
         self.assertTrue(hasattr(celery_app, "celery_app"))
         self.assertTrue(hasattr(agent_job, "run_agent_job"))
+
+    def test_asset_provider_infrastructure_submodules_reexport_existing_adapters(self) -> None:
+        config = importlib.import_module("backend.infrastructure.media.asset_providers.config")
+        fixture = importlib.import_module("backend.infrastructure.media.asset_providers.fixture")
+        metadata = importlib.import_module("backend.infrastructure.media.asset_providers.metadata")
+        pexels = importlib.import_module("backend.infrastructure.media.asset_providers.pexels")
+        youtube = importlib.import_module("backend.infrastructure.media.asset_providers.youtube")
+
+        self.assertTrue(hasattr(config, "get_asset_provider_order"))
+        self.assertTrue(hasattr(config, "YoutubeProviderConfig"))
+        self.assertTrue(hasattr(fixture, "search_fixture_candidates"))
+        self.assertTrue(hasattr(fixture, "download_fixture_candidate"))
+        self.assertTrue(hasattr(metadata, "remember_clip_metadata"))
+        self.assertTrue(hasattr(metadata, "pop_clip_metadata"))
+        self.assertTrue(hasattr(pexels, "search_pexels_candidates"))
+        self.assertTrue(hasattr(pexels, "download_pexels_candidate"))
+        self.assertTrue(hasattr(youtube, "build_youtube_search_options"))
+        self.assertTrue(hasattr(youtube, "search_youtube_candidates"))
 
     def test_agent_runtime_accepts_existing_services(self) -> None:
         from backend.runtime.agent_runtime import AgentRuntime

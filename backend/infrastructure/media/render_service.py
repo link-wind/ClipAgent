@@ -1,5 +1,7 @@
 from backend.services.render_service import (
     OUTPUT_FPS,
+    RenderClip,
+    RenderProgressCallback,
     VERTICAL_HEIGHT,
     VERTICAL_WIDTH,
     build_render_commands,
@@ -12,6 +14,8 @@ from backend.services.render_service import (
 
 __all__ = [
     "OUTPUT_FPS",
+    "RenderClip",
+    "RenderProgressCallback",
     "VERTICAL_HEIGHT",
     "VERTICAL_WIDTH",
     "build_render_commands",
