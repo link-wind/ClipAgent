@@ -670,15 +670,15 @@ class AgentApiTests(unittest.TestCase):
             session_record.status = "done"
             session_record.active_operation_type = "none"
             session_record.active_operation_id = None
-            AgentTraceEventRepository(db).create(
+            trace = AgentTraceEventRepository(db).create(
                 id="trace-1",
                 session_id=session.id,
                 event_type="step_succeeded",
                 message="规划完成",
                 payload_json={"step": "finalize_plan"},
-                sequence=1,
                 actor_role="planner",
             )
+            trace_sequence = trace.sequence
             db.commit()
 
         client = _make_test_client(app)
@@ -687,7 +687,7 @@ class AgentApiTests(unittest.TestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.headers["content-type"].split(";")[0], "text/event-stream")
-        self.assertIn("id: 1\n", body)
+        self.assertIn(f"id: {trace_sequence}\n", body)
         self.assertIn("event: step_succeeded\n", body)
         self.assertIn('"message":"规划完成"', body)
         self.assertIn("event: stream_closed\n", body)
@@ -702,28 +702,31 @@ class AgentApiTests(unittest.TestCase):
             session_record.active_operation_type = "none"
             session_record.active_operation_id = None
             trace_repo = AgentTraceEventRepository(db)
-            trace_repo.create(
+            trace_first = trace_repo.create(
                 id="trace-1",
                 session_id=session.id,
                 event_type="step_started",
                 message="开始",
-                sequence=1,
             )
-            trace_repo.create(
+            trace_second = trace_repo.create(
                 id="trace-2",
                 session_id=session.id,
                 event_type="step_succeeded",
                 message="完成",
-                sequence=2,
             )
+            first_sequence = trace_first.sequence
+            second_sequence = trace_second.sequence
             db.commit()
 
         client = _make_test_client(app)
-        with client.stream("GET", f"/api/agent/sessions/{session.id}/stream?afterSequence=1") as response:
+        with client.stream(
+            "GET",
+            f"/api/agent/sessions/{session.id}/stream?afterSequence={first_sequence}",
+        ) as response:
             body = "".join(response.iter_text())
 
-        self.assertNotIn("id: 1\n", body)
-        self.assertIn("id: 2\n", body)
+        self.assertNotIn(f"id: {first_sequence}\n", body)
+        self.assertIn(f"id: {second_sequence}\n", body)
         self.assertIn('"message":"完成"', body)
 
     def test_session_stream_prefers_last_event_id_header(self):
@@ -736,32 +739,32 @@ class AgentApiTests(unittest.TestCase):
             session_record.active_operation_type = "none"
             session_record.active_operation_id = None
             trace_repo = AgentTraceEventRepository(db)
-            trace_repo.create(
+            trace_first = trace_repo.create(
                 id="trace-1",
                 session_id=session.id,
                 event_type="step_started",
                 message="开始",
-                sequence=1,
             )
-            trace_repo.create(
+            trace_second = trace_repo.create(
                 id="trace-2",
                 session_id=session.id,
                 event_type="step_succeeded",
                 message="完成",
-                sequence=2,
             )
+            first_sequence = trace_first.sequence
+            second_sequence = trace_second.sequence
             db.commit()
 
         client = _make_test_client(app)
         with client.stream(
             "GET",
             f"/api/agent/sessions/{session.id}/stream?afterSequence=0",
-            headers={"Last-Event-ID": "1"},
+            headers={"Last-Event-ID": str(first_sequence)},
         ) as response:
             body = "".join(response.iter_text())
 
-        self.assertNotIn("id: 1\n", body)
-        self.assertIn("id: 2\n", body)
+        self.assertNotIn(f"id: {first_sequence}\n", body)
+        self.assertIn(f"id: {second_sequence}\n", body)
 
     def test_add_message_to_missing_session_returns_404(self):
         from backend.main import app

@@ -382,3 +382,87 @@ class AgentArtifactRecord(Base):
     duration: Mapped[float | None] = mapped_column(Float, nullable=True)
     metadata_json: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
+
+
+class KnowledgeSourceRecord(Base):
+    __tablename__ = "knowledge_sources"
+    __table_args__ = (
+        Index("idx_knowledge_sources_source_type_created_at", "source_type", "created_at"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_new_uuid)
+    source_type: Mapped[str] = mapped_column(String(64), nullable=False)
+    title: Mapped[str] = mapped_column(String(255), nullable=False)
+    uri: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    metadata_json: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
+
+
+class KnowledgeDocumentRecord(Base):
+    __tablename__ = "knowledge_documents"
+    __table_args__ = (
+        Index("idx_knowledge_documents_source_id_created_at", "source_id", "created_at"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_new_uuid)
+    source_id: Mapped[str] = mapped_column(
+        String(36),
+        ForeignKey("knowledge_sources.id"),
+        nullable=False,
+    )
+    title: Mapped[str] = mapped_column(String(255), nullable=False)
+    content: Mapped[str] = mapped_column(Text, nullable=False)
+    metadata_json: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
+
+
+class KnowledgeChunkRecord(Base):
+    __tablename__ = "knowledge_chunks"
+    __table_args__ = (
+        Index("idx_knowledge_chunks_document_id_index", "document_id", "chunk_index"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_new_uuid)
+    document_id: Mapped[str] = mapped_column(
+        String(36),
+        ForeignKey("knowledge_documents.id"),
+        nullable=False,
+    )
+    chunk_index: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    content: Mapped[str] = mapped_column(Text, nullable=False)
+    token_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    embedding_ref: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    metadata_json: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
+
+
+class AgentContextUsageRecord(Base):
+    __tablename__ = "agent_context_usages"
+    __table_args__ = (
+        Index("idx_agent_context_usages_session_id_created_at", "session_id", "created_at"),
+        Index("idx_agent_context_usages_run_id_created_at", "run_id", "created_at"),
+        Index("idx_agent_context_usages_chunk_id_created_at", "chunk_id", "created_at"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_new_uuid)
+    session_id: Mapped[str] = mapped_column(
+        String(36),
+        ForeignKey("agent_sessions.id"),
+        nullable=False,
+    )
+    run_id: Mapped[str | None] = mapped_column(
+        String(36),
+        ForeignKey("agent_runs.id"),
+        nullable=True,
+    )
+    source: Mapped[str] = mapped_column(String(64), default="knowledge", nullable=False)
+    query_text: Mapped[str] = mapped_column(Text, nullable=False)
+    chunk_id: Mapped[str] = mapped_column(
+        String(36),
+        ForeignKey("knowledge_chunks.id"),
+        nullable=False,
+    )
+    score: Mapped[float] = mapped_column(Float, default=0.0, nullable=False)
+    usage_type: Mapped[str] = mapped_column(String(64), default="planning_context", nullable=False)
+    metadata_json: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)

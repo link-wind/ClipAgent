@@ -2,6 +2,8 @@ from datetime import datetime, timezone
 
 from backend.config import get_settings
 from backend.db.repositories import AgentObservationRepository, AgentPlanRepository
+from backend.runtime.context_engine import ContextBundle, ContextEngine, ContextRequest
+from backend.runtime.trace_recorder import TraceRecorder
 from backend.services.planner_graph import (
     run_execution_feedback_replan,
     run_grounding_replan,
@@ -10,9 +12,37 @@ from backend.services.planner_graph import (
 )
 
 
+def format_context_for_planner(message: str, context: ContextBundle) -> str:
+    if not context.documents:
+        return ""
+
+    lines = ["Known context:"]
+    for document in context.documents[:3]:
+        content = str(document.get("content", "")).strip()
+        if content:
+            lines.append(f"- {content}")
+    return "\n".join(lines).strip()
+
+
 class PlannerOrchestrator:
-    def persist_initial_plan(self, db, session_record, message_record):
-        state = run_initial_planning(session_record.id, message_record.content)
+    def persist_initial_plan(self, db, session_record, message_record, run_id: str | None = None):
+        context = ContextEngine(
+            db_session=db,
+            trace_recorder=TraceRecorder(db),
+        ).build_context(
+            ContextRequest(
+                session_id=session_record.id,
+                message=message_record.content,
+                scope="planning",
+                run_id=run_id,
+            )
+        )
+        planner_context = format_context_for_planner(message_record.content, context)
+        state = run_initial_planning(
+            session_record.id,
+            message_record.content,
+            context_text=planner_context,
+        )
         observation_repo = AgentObservationRepository(db)
         plan_repo = AgentPlanRepository(db)
         settings = get_settings()

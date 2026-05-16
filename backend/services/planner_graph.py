@@ -1,3 +1,4 @@
+import inspect
 from typing import TypedDict
 
 from langgraph.graph import END, START, StateGraph
@@ -16,6 +17,7 @@ from backend.services.planner_runtime import get_planner_runtime
 class PlanningState(TypedDict, total=False):
     sessionId: str
     brief: str
+    contextText: str
     status: str
     triggerType: str
     agentPlan: dict
@@ -29,13 +31,29 @@ class PlanningState(TypedDict, total=False):
 
 def _build_plan_node(state: PlanningState) -> PlanningState:
     runtime = get_planner_runtime()
-    agent_plan, execution_plan = runtime.build_plan_from_brief(state["brief"])
+    agent_plan, execution_plan = _build_plan_from_brief(
+        runtime,
+        state["brief"],
+        state.get("contextText"),
+    )
     return {
         **state,
         "status": "planning_complete",
         "agentPlan": agent_plan.model_dump(mode="json"),
         "executionPlan": execution_plan.model_dump(mode="json"),
     }
+
+
+def _build_plan_from_brief(runtime, brief: str, context_text: str | None):
+    signature = inspect.signature(runtime.build_plan_from_brief)
+    parameters = signature.parameters
+    accepts_context = (
+        "context_text" in parameters
+        or any(parameter.kind == inspect.Parameter.VAR_KEYWORD for parameter in parameters.values())
+    )
+    if accepts_context:
+        return runtime.build_plan_from_brief(brief, context_text=context_text)
+    return runtime.build_plan_from_brief(brief)
 
 
 def _replan_after_grounding_node(state: PlanningState) -> PlanningState:
@@ -130,9 +148,9 @@ def build_execution_feedback_replan_graph():
     return graph.compile()
 
 
-def run_initial_planning(session_id: str, brief: str) -> PlanningState:
+def run_initial_planning(session_id: str, brief: str, context_text: str | None = None) -> PlanningState:
     graph = build_planning_graph()
-    return graph.invoke({"sessionId": session_id, "brief": brief})
+    return graph.invoke({"sessionId": session_id, "brief": brief, "contextText": context_text or ""})
 
 
 def run_grounding_replan(

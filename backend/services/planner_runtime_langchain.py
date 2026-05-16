@@ -139,12 +139,17 @@ class LangChainPlannerRuntime:
             raise ValueError("Model fallback response must be text JSON")
         return schema.model_validate_json(content)
 
-    def _invoke_compact_initial_plan(self, brief: str) -> InitialPlanningResult:
+    def _invoke_compact_initial_plan(
+        self,
+        brief: str,
+        context_text: str | None = None,
+    ) -> InitialPlanningResult:
         response = self.llm.invoke(
-            [
-                SystemMessage(content=COMPACT_INITIAL_PLAN_SYSTEM_PROMPT),
-                HumanMessage(content=brief),
-            ]
+            self._initial_plan_messages(
+                system_prompt=COMPACT_INITIAL_PLAN_SYSTEM_PROMPT,
+                brief=brief,
+                context_text=context_text,
+            )
         )
         content = getattr(response, "content", response)
         if isinstance(content, list):
@@ -206,11 +211,15 @@ class LangChainPlannerRuntime:
             return status_code >= 500
         return False
 
-    def build_plan_from_brief(self, brief: str) -> tuple[AgentPlan, ExecutionPlan]:
+    def build_plan_from_brief(
+        self,
+        brief: str,
+        context_text: str | None = None,
+    ) -> tuple[AgentPlan, ExecutionPlan]:
         goal = brief.strip() or "生成产品介绍视频"
         if self.prefer_compact_initial_plan:
             try:
-                result = self._invoke_compact_initial_plan(goal)
+                result = self._invoke_compact_initial_plan(goal, context_text=context_text)
             except Exception as exc:
                 if self._should_fallback_to_deterministic_initial_plan(exc):
                     return self.deterministic_delegate.build_plan_from_brief(goal)
@@ -219,10 +228,11 @@ class LangChainPlannerRuntime:
             self._validate_result(normalized)
             return normalized.agentPlan, normalized.executionPlan
 
-        messages = [
-            SystemMessage(content=INITIAL_PLANNER_SYSTEM_PROMPT),
-            HumanMessage(content=goal),
-        ]
+        messages = self._initial_plan_messages(
+            system_prompt=INITIAL_PLANNER_SYSTEM_PROMPT,
+            brief=goal,
+            context_text=context_text,
+        )
         try:
             result = self._planner_runnable().invoke(messages)
         except Exception as exc:
@@ -230,7 +240,7 @@ class LangChainPlannerRuntime:
                 result = self._invoke_plain_json(messages, InitialPlanningResult)
             elif self._should_fallback_to_compact_initial_plan(exc):
                 try:
-                    result = self._invoke_compact_initial_plan(goal)
+                    result = self._invoke_compact_initial_plan(goal, context_text=context_text)
                 except Exception as compact_exc:
                     if self._should_fallback_to_deterministic_initial_plan(compact_exc):
                         return self.deterministic_delegate.build_plan_from_brief(goal)
@@ -242,6 +252,28 @@ class LangChainPlannerRuntime:
         normalized = self._normalize_result(result)
         self._validate_result(normalized)
         return normalized.agentPlan, normalized.executionPlan
+
+    def _initial_plan_messages(
+        self,
+        *,
+        system_prompt: str,
+        brief: str,
+        context_text: str | None = None,
+    ):
+        messages = [SystemMessage(content=system_prompt)]
+        normalized_context = (context_text or "").strip()
+        if normalized_context:
+            messages.append(
+                SystemMessage(
+                    content=(
+                        "Use the following retrieved context as background guidance. "
+                        "Do not copy it into the user goal unless the user explicitly asked for it.\n\n"
+                        f"{normalized_context}"
+                    )
+                )
+            )
+        messages.append(HumanMessage(content=brief))
+        return messages
 
     def _normalize_result(self, result: InitialPlanningResult) -> InitialPlanningResult:
         normalized_agent = result.agentPlan.model_copy(

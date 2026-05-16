@@ -131,7 +131,11 @@ def _match_brief_scene_specs(brief: str) -> list[tuple[str, list[str], int]]:
 
 
 class DeterministicPlannerRuntime:
-    def build_plan_from_brief(self, brief: str) -> tuple[AgentPlan, ExecutionPlan]:
+    def build_plan_from_brief(
+        self,
+        brief: str,
+        context_text: str | None = None,
+    ) -> tuple[AgentPlan, ExecutionPlan]:
         title = "智能剪辑短片"
         goal = brief.strip() or "生成产品介绍视频"
         scene_specs = _match_brief_scene_specs(brief)

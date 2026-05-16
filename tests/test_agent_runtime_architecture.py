@@ -134,3 +134,18 @@ class AgentRuntimeArchitectureTests(unittest.TestCase):
         self.assertIn("Tool Gateway", readme)
         self.assertIn("RAG", readme)
         self.assertIn("MCP", readme)
+
+    def test_rag_foundation_boundaries_import(self) -> None:
+        knowledge_contracts = importlib.import_module("backend.domain.knowledge.contracts")
+        retrieval_service = importlib.import_module("backend.app.knowledge.retrieval_service")
+        ingestion_service = importlib.import_module("backend.app.knowledge.ingestion_service")
+        context_usage_service = importlib.import_module("backend.app.knowledge.context_usage_service")
+        lightweight_index = importlib.import_module("backend.infrastructure.vector.lightweight_index")
+
+        self.assertTrue(hasattr(knowledge_contracts, "KnowledgeChunk"))
+        self.assertTrue(hasattr(knowledge_contracts, "RetrievalResult"))
+        self.assertTrue(hasattr(knowledge_contracts, "ContextUsage"))
+        self.assertTrue(hasattr(retrieval_service, "KnowledgeRetrievalService"))
+        self.assertTrue(hasattr(ingestion_service, "KnowledgeIngestionService"))
+        self.assertTrue(hasattr(context_usage_service, "ContextUsageService"))
+        self.assertTrue(hasattr(lightweight_index, "LightweightVectorIndex"))

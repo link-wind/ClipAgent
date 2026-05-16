@@ -231,6 +231,7 @@ class AgentSessionService:
                             db=db,
                             session_record=session_record,
                             message_record=latest_user_message,
+                            run_id=run_record.id,
                         )
                         session_repo.set_current_plan(session_id, initial_plan.id)
                         next_plan = planner_orchestrator.persist_grounding_replan(
