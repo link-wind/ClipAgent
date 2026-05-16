@@ -1,3 +1,6 @@
+import json
+
+import openai
 from langchain_core.messages import HumanMessage, SystemMessage
 from langchain_openai import ChatOpenAI
 
@@ -24,6 +27,35 @@ ExecutionPlan searchQuery values must be short English retrieval phrases.
 Each agent scene keywords field must be non-empty and concise.
 """.strip()
 
+COMPACT_INITIAL_PLAN_SYSTEM_PROMPT = """
+You are a planning runtime for product intro videos.
+Return only valid JSON with this exact shape:
+{
+  "title": string,
+  "goal": string,
+  "summary": string,
+  "style": string,
+  "targetDuration": number,
+  "scenes": [
+    {
+      "id": number,
+      "purpose": string,
+      "description": string,
+      "keywords": [string],
+      "searchQuery": string,
+      "duration": number
+    }
+  ]
+}
+Requirements:
+- Provide 2 to 4 scenes.
+- Scene ids must start at 1 and remain consecutive.
+- keywords must be concise and non-empty.
+- searchQuery must be short English retrieval phrases.
+- targetDuration must be greater than or equal to the sum of scene durations.
+- Return JSON only, with no markdown fences.
+""".strip()
+
 REVISION_PLANNER_SYSTEM_PROMPT = """
 You are revising an existing product intro plan based on new user feedback.
 Return a RevisionPlanningResult only.
@@ -44,6 +76,16 @@ class _RevisionFallbackError(Exception):
     """Signals revision outputs that should fall back to the deterministic delegate."""
 
 
+class CompactInitialPlanResult:
+    def __init__(self, payload: dict):
+        self.title = str(payload["title"])
+        self.goal = str(payload["goal"])
+        self.summary = str(payload["summary"])
+        self.style = str(payload["style"])
+        self.targetDuration = payload["targetDuration"]
+        self.scenes = payload["scenes"]
+
+
 class LangChainPlannerRuntime:
     def __init__(
         self,
@@ -51,6 +93,7 @@ class LangChainPlannerRuntime:
         *,
         llm=None,
         deterministic_delegate: DeterministicPlannerRuntime | None = None,
+        prefer_compact_initial_plan: bool | None = None,
     ):
         self.model_name = model_name
         self.llm = llm or ChatOpenAI(
@@ -58,8 +101,15 @@ class LangChainPlannerRuntime:
             temperature=0,
             api_key=str(runtime_config_service.get_effective_value("OPENAI_API_KEY") or ""),
             base_url=str(runtime_config_service.get_effective_value("OPENAI_BASE_URL") or "https://api.openai.com/v1"),
+            timeout=25,
+            max_retries=0,
         )
         self.deterministic_delegate = deterministic_delegate or DeterministicPlannerRuntime()
+        self.prefer_compact_initial_plan = (
+            prefer_compact_initial_plan
+            if prefer_compact_initial_plan is not None
+            else model_name == "gpt-5" or model_name.startswith("gpt-5-")
+        )
 
     def _planner_runnable(self):
         return self.llm.with_structured_output(InitialPlanningResult)
@@ -67,14 +117,128 @@ class LangChainPlannerRuntime:
     def _revision_runnable(self):
         return self.llm.with_structured_output(RevisionPlanningResult)
 
-    def build_plan_from_brief(self, brief: str) -> tuple[AgentPlan, ExecutionPlan]:
-        goal = brief.strip() or "生成产品介绍视频"
-        result = self._planner_runnable().invoke(
+    def _invoke_plain_json(self, messages, schema):
+        schema_json = json.dumps(schema.model_json_schema(), ensure_ascii=False, indent=2)
+        fallback_messages = [
+            *messages,
+            HumanMessage(
+                content=(
+                    "Return only valid JSON that matches this schema exactly.\n"
+                    f"{schema_json}"
+                )
+            ),
+        ]
+        response = self.llm.invoke(fallback_messages)
+        content = getattr(response, "content", response)
+        if isinstance(content, list):
+            content = "".join(
+                part.get("text", "") if isinstance(part, dict) else str(part)
+                for part in content
+            )
+        if not isinstance(content, str):
+            raise ValueError("Model fallback response must be text JSON")
+        return schema.model_validate_json(content)
+
+    def _invoke_compact_initial_plan(self, brief: str) -> InitialPlanningResult:
+        response = self.llm.invoke(
             [
-                SystemMessage(content=INITIAL_PLANNER_SYSTEM_PROMPT),
-                HumanMessage(content=goal),
+                SystemMessage(content=COMPACT_INITIAL_PLAN_SYSTEM_PROMPT),
+                HumanMessage(content=brief),
             ]
         )
+        content = getattr(response, "content", response)
+        if isinstance(content, list):
+            content = "".join(
+                part.get("text", "") if isinstance(part, dict) else str(part)
+                for part in content
+            )
+        if not isinstance(content, str):
+            raise ValueError("Compact initial plan response must be JSON text")
+
+        payload = json.loads(content)
+        compact = CompactInitialPlanResult(payload)
+        return InitialPlanningResult(
+            agentPlan={
+                "title": compact.title,
+                "goal": compact.goal,
+                "summary": compact.summary,
+                "scenes": [
+                    {
+                        "id": scene["id"],
+                        "purpose": scene["purpose"],
+                        "description": scene["description"],
+                        "keywords": scene["keywords"],
+                        "duration": scene["duration"],
+                    }
+                    for scene in compact.scenes
+                ],
+            },
+            executionPlan={
+                "title": compact.title,
+                "targetDuration": compact.targetDuration,
+                "style": compact.style,
+                "scenes": [
+                    {
+                        "id": scene["id"],
+                        "description": scene["description"],
+                        "keywords": scene["keywords"],
+                        "searchQuery": scene["searchQuery"],
+                        "duration": scene["duration"],
+                    }
+                    for scene in compact.scenes
+                ],
+            },
+        )
+
+    def _should_fallback_to_plain_json(self, exc: Exception) -> bool:
+        if isinstance(exc, openai.PermissionDeniedError):
+            return "blocked" in str(exc).lower()
+        return False
+
+    def _should_fallback_to_compact_initial_plan(self, exc: Exception) -> bool:
+        return isinstance(exc, openai.APITimeoutError)
+
+    def _should_fallback_to_deterministic_initial_plan(self, exc: Exception) -> bool:
+        if isinstance(exc, (openai.APITimeoutError, openai.APIConnectionError, openai.RateLimitError)):
+            return True
+        if isinstance(exc, openai.APIStatusError):
+            status_code = getattr(exc, "status_code", None) or 0
+            return status_code >= 500
+        return False
+
+    def build_plan_from_brief(self, brief: str) -> tuple[AgentPlan, ExecutionPlan]:
+        goal = brief.strip() or "生成产品介绍视频"
+        if self.prefer_compact_initial_plan:
+            try:
+                result = self._invoke_compact_initial_plan(goal)
+            except Exception as exc:
+                if self._should_fallback_to_deterministic_initial_plan(exc):
+                    return self.deterministic_delegate.build_plan_from_brief(goal)
+                raise
+            normalized = self._normalize_result(result)
+            self._validate_result(normalized)
+            return normalized.agentPlan, normalized.executionPlan
+
+        messages = [
+            SystemMessage(content=INITIAL_PLANNER_SYSTEM_PROMPT),
+            HumanMessage(content=goal),
+        ]
+        try:
+            result = self._planner_runnable().invoke(messages)
+        except Exception as exc:
+            if self._should_fallback_to_plain_json(exc):
+                result = self._invoke_plain_json(messages, InitialPlanningResult)
+            elif self._should_fallback_to_compact_initial_plan(exc):
+                try:
+                    result = self._invoke_compact_initial_plan(goal)
+                except Exception as compact_exc:
+                    if self._should_fallback_to_deterministic_initial_plan(compact_exc):
+                        return self.deterministic_delegate.build_plan_from_brief(goal)
+                    raise
+            elif self._should_fallback_to_deterministic_initial_plan(exc):
+                return self.deterministic_delegate.build_plan_from_brief(goal)
+            else:
+                raise
         normalized = self._normalize_result(result)
         self._validate_result(normalized)
         return normalized.agentPlan, normalized.executionPlan

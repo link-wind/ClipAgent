@@ -1,5 +1,6 @@
 import openai
 from fastapi import APIRouter, HTTPException
+from fastapi.concurrency import run_in_threadpool
 from pydantic import BaseModel
 
 from backend.app.agent.session_use_cases import AgentReadService, AgentSessionService
@@ -50,7 +51,7 @@ class GroundingConfirmRequest(BaseModel):
 @router.post("/sessions", response_model=AgentSession)
 async def create_session(request: SessionCreateRequest):
     try:
-        session = session_service.create_session(request.message)
+        session = await run_in_threadpool(session_service.create_session, request.message)
         return agent_service.sync_session(session)
     except HTTPException:
         raise
@@ -61,7 +62,7 @@ async def create_session(request: SessionCreateRequest):
 @router.get("/sessions/{session_id}", response_model=AgentSession)
 async def get_session(session_id: str):
     try:
-        session = session_service.get_session(session_id)
+        session = await run_in_threadpool(session_service.get_session, session_id)
         return agent_service.sync_session(session)
     except KeyError:
         raise HTTPException(status_code=404, detail="Session not found")
@@ -70,7 +71,7 @@ async def get_session(session_id: str):
 @router.post("/sessions/{session_id}/messages", response_model=AgentSession)
 async def add_message(session_id: str, request: MessageRequest):
     try:
-        session = session_service.add_user_message(session_id, request.message)
+        session = await run_in_threadpool(session_service.add_user_message, session_id, request.message)
         return agent_service.sync_session(session)
     except KeyError:
         raise HTTPException(status_code=404, detail="Session not found")
@@ -83,7 +84,11 @@ async def add_message(session_id: str, request: MessageRequest):
 @router.post("/sessions/{session_id}/grounding/confirm", response_model=AgentSession)
 async def confirm_grounding_candidates(session_id: str, request: GroundingConfirmRequest):
     try:
-        session = session_service.confirm_grounding_candidates(session_id, request.candidateIds)
+        session = await run_in_threadpool(
+            session_service.confirm_grounding_candidates,
+            session_id,
+            request.candidateIds,
+        )
         return agent_service.sync_session(session)
     except KeyError:
         raise HTTPException(status_code=404, detail="Session not found")
@@ -96,7 +101,7 @@ async def confirm_grounding_candidates(session_id: str, request: GroundingConfir
 @router.post("/sessions/{session_id}/confirm", response_model=AgentSession)
 async def confirm_session(session_id: str):
     try:
-        session = execution_service.confirm_session(session_id)
+        session = await run_in_threadpool(execution_service.confirm_session, session_id)
         return agent_service.sync_session(session)
     except KeyError:
         raise HTTPException(status_code=404, detail="Session not found")
@@ -107,24 +112,24 @@ async def confirm_session(session_id: str):
 @router.get("/sessions/{session_id}/events", response_model=list[AgentEvent])
 async def get_session_events(session_id: str):
     try:
-        return read_service.read_events(session_id)
+        return await run_in_threadpool(read_service.read_events, session_id)
     except KeyError:
         raise HTTPException(status_code=404, detail="Session not found")
 
 
 @router.get("/dashboard", response_model=AgentDashboardSummary)
 async def get_dashboard():
-    return task_read_service.read_dashboard()
+    return await run_in_threadpool(task_read_service.read_dashboard)
 
 
 @router.get("/tasks", response_model=list[AgentTaskSummary])
 async def list_tasks():
-    return task_read_service.list_tasks()
+    return await run_in_threadpool(task_read_service.list_tasks)
 
 
 @router.get("/tasks/{job_id}", response_model=AgentTaskDetail)
 async def get_task(job_id: str):
     try:
-        return task_read_service.read_task(job_id)
+        return await run_in_threadpool(task_read_service.read_task, job_id)
     except KeyError:
         raise HTTPException(status_code=404, detail="Task not found")

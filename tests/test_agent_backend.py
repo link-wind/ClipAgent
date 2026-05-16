@@ -354,6 +354,26 @@ class AgentApiTests(unittest.TestCase):
             {"detail": "OpenAI 兼容服务暂时不可用，请稍后重试。"},
         )
 
+    def test_create_session_api_surfaces_upstream_timeout(self):
+        from backend.main import app
+
+        with patch.object(
+            agent_api_module.session_service,
+            "create_session",
+            side_effect=openai.APITimeoutError(request=httpx.Request("POST", "https://example.com/v1/responses")),
+        ):
+            client = _make_test_client(app, raise_server_exceptions=False)
+            response = client.post(
+                "/api/agent/sessions",
+                json={"message": "给 Notion AI 做一个 30 秒产品亮点视频"},
+            )
+
+        self.assertEqual(response.status_code, 504)
+        self.assertEqual(
+            response.json(),
+            {"detail": "OpenAI 兼容服务响应超时，请稍后重试。"},
+        )
+
     def test_add_message_api_surfaces_upstream_service_unavailable(self):
         from backend.main import app
 
@@ -2300,6 +2320,8 @@ class FrontendClientContractTests(unittest.TestCase):
         self.assertIn("relative", workspace_source)
         self.assertIn("absolute bottom-3 right-3", workspace_source)
         self.assertIn("canSend ? 'bg-accentstrong", workspace_source)
+        self.assertIn("displayedExecutionProgress", workspace_source)
+        self.assertIn("getExecutionStepTargetProgress", workspace_source)
         self.assertNotIn("方案沟通页面", workspace_source)
         self.assertNotIn("面包屑", workspace_source)
         self.assertNotIn("max-w-[980px]", workspace_source)
@@ -2308,7 +2330,7 @@ class FrontendClientContractTests(unittest.TestCase):
         self.assertNotIn("workspaceSteps.map(", workspace_source)
         self.assertNotIn("AI 分析步骤流", workspace_source)
 
-    def test_workspace_step_flow_uses_summary_progress_only(self):
+    def test_workspace_step_flow_uses_conversational_progress_cards(self):
         step_flow_source = (ROOT / "src" / "components" / "workspace" / "AiStepFlow.tsx").read_text(
             encoding="utf-8"
         )
@@ -2316,16 +2338,28 @@ class FrontendClientContractTests(unittest.TestCase):
         self.assertIn("clampProgress", step_flow_source)
         self.assertIn("totalProgress", step_flow_source)
         self.assertIn("currentStep", step_flow_source)
-        self.assertNotIn("buildConversationalStepCards", step_flow_source)
-        self.assertNotIn("ConversationalStepCard", step_flow_source)
-        self.assertNotIn("buildStepMessage", step_flow_source)
-        self.assertNotIn("cards.map", step_flow_source)
-        self.assertNotIn("<ol", step_flow_source)
-        self.assertNotIn("<li", step_flow_source)
-        self.assertNotIn("isPlaceholder", step_flow_source)
-        self.assertNotIn("下一张卡片会在当前步骤完成后出现", step_flow_source)
+        self.assertIn("buildConversationalStepCards", step_flow_source)
+        self.assertIn("type ConversationalStepCard", step_flow_source)
+        self.assertIn("buildStepMessage", step_flow_source)
+        self.assertIn("cards.map", step_flow_source)
+        self.assertIn("<ol", step_flow_source)
+        self.assertIn("<li", step_flow_source)
+        self.assertIn("isPlaceholder", step_flow_source)
+        self.assertIn("下一张卡片会在当前步骤完成后出现", step_flow_source)
+        self.assertIn("步骤进度", step_flow_source)
+        self.assertIn("step?.status !== 'pending'", step_flow_source)
+        self.assertIn("revealedCount", step_flow_source)
+        self.assertIn("cards.slice(0, revealedCount)", step_flow_source)
+        self.assertIn("displayedTotalProgress", step_flow_source)
+        self.assertIn("displayedCards", step_flow_source)
+        self.assertIn("window.setInterval", step_flow_source)
+        self.assertIn("Math.min(99", step_flow_source)
+        self.assertIn("getDisplayedCardProgress", step_flow_source)
+        self.assertIn("hasUserMessage", step_flow_source)
+        self.assertIn("return 0;", step_flow_source)
+        self.assertIn("500)", step_flow_source)
 
-    def test_workspace_step_flow_css_supports_full_height_summary(self):
+    def test_workspace_step_flow_css_supports_card_level_progress(self):
         step_flow_css = (ROOT / "src" / "components" / "workspace" / "AiStepFlow.module.css").read_text(
             encoding="utf-8"
         )
@@ -2342,12 +2376,13 @@ class FrontendClientContractTests(unittest.TestCase):
         self.assertIn("color: var(--ink)", step_flow_css)
         self.assertIn("min-height: 100%", step_flow_css)
         self.assertIn("height: 100%", step_flow_css)
-        self.assertNotIn(".stepProgress", step_flow_css)
-        self.assertNotIn(".stepBody", step_flow_css)
-        self.assertNotIn(".stepMark", step_flow_css)
-        self.assertNotIn(".stepPlaceholder", step_flow_css)
-        self.assertNotIn("rgba(18, 18, 17", step_flow_css)
-        self.assertNotIn("rgba(29, 30, 28", step_flow_css)
+        self.assertIn(".stepProgress", step_flow_css)
+        self.assertIn(".stepProgressTrack", step_flow_css)
+        self.assertIn(".stepProgressBar", step_flow_css)
+        self.assertIn(".stepBody", step_flow_css)
+        self.assertIn(".stepMark", step_flow_css)
+        self.assertIn(".stepPlaceholder", step_flow_css)
+        self.assertIn("animation: stepEnter 500ms", step_flow_css)
 
     def test_task_manager_page_is_tailwind_based(self):
         task_source = (ROOT / "src" / "components" / "tasks" / "TaskManagerPage.tsx").read_text(

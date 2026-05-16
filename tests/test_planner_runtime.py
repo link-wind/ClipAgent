@@ -3,7 +3,11 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import Mock, patch
+
+import openai
+import httpx
 
 from backend.services.planner_models import InitialPlanningResult
 
@@ -20,14 +24,29 @@ class _FakeStructuredPlanner:
 
 
 class _FakeChatModel:
-    def __init__(self, result=None, error: Exception | None = None):
+    def __init__(
+        self,
+        result=None,
+        error: Exception | None = None,
+        invoke_result: str | None = None,
+        invoke_error: Exception | None = None,
+    ):
         self.result = result
         self.error = error
         self.schema = None
+        self.invoke_result = invoke_result
+        self.invoke_error = invoke_error
 
-    def with_structured_output(self, schema):
+    def with_structured_output(self, schema, **_kwargs):
         self.schema = schema
         return _FakeStructuredPlanner(result=self.result, error=self.error)
+
+    def invoke(self, _messages):
+        if self.invoke_error is not None:
+            raise self.invoke_error
+        if self.invoke_result is None:
+            raise RuntimeError("plain invoke was not configured")
+        return SimpleNamespace(content=self.invoke_result)
 
 
 class PlannerRuntimeTests(unittest.TestCase):
@@ -165,6 +184,211 @@ class PlannerRuntimeTests(unittest.TestCase):
 
         with self.assertRaisesRegex(RuntimeError, "LangChain planning failed"):
             runtime.build_plan_from_brief("给 Notion AI 做一个视频")
+
+    def test_langchain_runtime_falls_back_to_plain_json_when_structured_output_is_blocked(self):
+        from backend.services.planner_runtime_langchain import LangChainPlannerRuntime
+
+        blocked = openai.PermissionDeniedError(
+            message="Your request was blocked.",
+            response=httpx.Response(
+                403,
+                request=httpx.Request("POST", "https://example.com/v1/chat/completions"),
+                json={"error": {"message": "Your request was blocked.", "type": "forbidden"}},
+            ),
+            body={"error": {"message": "Your request was blocked.", "type": "forbidden"}},
+        )
+        fake_llm = _FakeChatModel(
+            error=blocked,
+            invoke_result="""
+            {
+              "agentPlan": {
+                "title": "足球高光短片",
+                "goal": "生成一条踢足球的20秒视频",
+                "summary": "以运动张力和射门高潮为主线。",
+                "scenes": [
+                  {
+                    "id": 1,
+                    "purpose": "建立比赛氛围",
+                    "description": "球员带球推进，观众席有动感反应",
+                    "keywords": ["soccer", "dribble", "stadium"],
+                    "duration": 8
+                  },
+                  {
+                    "id": 2,
+                    "purpose": "突出射门高光",
+                    "description": "禁区射门和进球庆祝",
+                    "keywords": ["goal", "kick", "celebration"],
+                    "duration": 8
+                  }
+                ]
+              },
+              "executionPlan": {
+                "title": "足球高光短片",
+                "targetDuration": 20,
+                "style": "运动高光",
+                "scenes": [
+                  {
+                    "id": 1,
+                    "description": "球员带球推进，观众席有动感反应",
+                    "keywords": ["soccer", "dribble", "stadium"],
+                    "searchQuery": "soccer dribble stadium",
+                    "duration": 8
+                  },
+                  {
+                    "id": 2,
+                    "description": "禁区射门和进球庆祝",
+                    "keywords": ["goal", "kick", "celebration"],
+                    "searchQuery": "goal kick celebration",
+                    "duration": 8
+                  }
+                ]
+              }
+            }
+            """,
+        )
+
+        runtime = LangChainPlannerRuntime(model_name="gpt-5.4", llm=fake_llm)
+        agent_plan, execution_plan = runtime.build_plan_from_brief("帮我剪一个踢足球的20秒视频")
+
+        self.assertEqual(agent_plan.title, "足球高光短片")
+        self.assertEqual(execution_plan.style, "运动高光")
+        self.assertEqual(execution_plan.scenes[0].searchQuery, "soccer dribble stadium")
+
+    def test_langchain_runtime_falls_back_to_compact_initial_plan_when_structured_output_times_out(self):
+        from backend.services.planner_runtime_langchain import LangChainPlannerRuntime
+
+        timed_out = openai.APITimeoutError(
+            request=httpx.Request("POST", "https://example.com/v1/chat/completions")
+        )
+        fake_llm = _FakeChatModel(
+            error=timed_out,
+            invoke_result="""
+            {
+              "title": "20秒踢足球短视频",
+              "goal": "剪辑一支节奏明快、突出足球动作与热血氛围的20秒短视频",
+              "summary": "通过带球、射门和庆祝三个片段，快速展现足球运动的张力。",
+              "style": "热血动感",
+              "targetDuration": 20,
+              "scenes": [
+                {
+                  "id": 1,
+                  "purpose": "开场建立运动氛围",
+                  "description": "展示球员带球推进。",
+                  "keywords": ["soccer", "dribble", "field"],
+                  "searchQuery": "soccer dribble field",
+                  "duration": 6
+                },
+                {
+                  "id": 2,
+                  "purpose": "突出核心动作",
+                  "description": "展示射门瞬间。",
+                  "keywords": ["soccer", "shot", "goal"],
+                  "searchQuery": "soccer shot goal",
+                  "duration": 7
+                },
+                {
+                  "id": 3,
+                  "purpose": "结尾强化情绪",
+                  "description": "展示进球庆祝。",
+                  "keywords": ["soccer", "celebration", "team"],
+                  "searchQuery": "soccer celebration team",
+                  "duration": 7
+                }
+              ]
+            }
+            """,
+        )
+
+        runtime = LangChainPlannerRuntime(model_name="gpt-5.4", llm=fake_llm)
+        agent_plan, execution_plan = runtime.build_plan_from_brief("帮我剪一个踢足球的20秒视频")
+
+        self.assertEqual(agent_plan.title, "20秒踢足球短视频")
+        self.assertEqual(agent_plan.scenes[1].purpose, "突出核心动作")
+        self.assertEqual(execution_plan.targetDuration, 20)
+        self.assertEqual(execution_plan.scenes[2].searchQuery, "soccer celebration team")
+
+    def test_langchain_runtime_falls_back_to_deterministic_initial_plan_when_compact_plan_still_fails(self):
+        from backend.services.planner_runtime_langchain import LangChainPlannerRuntime
+
+        timed_out = openai.APITimeoutError(
+            request=httpx.Request("POST", "https://example.com/v1/chat/completions")
+        )
+        deterministic_delegate = Mock()
+        deterministic_delegate.build_plan_from_brief.return_value = ("agent-fallback", "execution-fallback")
+        fake_llm = _FakeChatModel(
+            error=timed_out,
+            invoke_error=openai.APIStatusError(
+                message="upstream unavailable",
+                response=httpx.Response(
+                    503,
+                    request=httpx.Request("POST", "https://example.com/v1/chat/completions"),
+                    json={"error": {"message": "upstream unavailable", "type": "server_error"}},
+                ),
+                body={"error": {"message": "upstream unavailable", "type": "server_error"}},
+            ),
+        )
+
+        runtime = LangChainPlannerRuntime(
+            model_name="gpt-5.4",
+            llm=fake_llm,
+            deterministic_delegate=deterministic_delegate,
+        )
+        result = runtime.build_plan_from_brief("帮我剪一个踢足球的20秒视频")
+
+        self.assertEqual(result, ("agent-fallback", "execution-fallback"))
+        deterministic_delegate.build_plan_from_brief.assert_called_once_with("帮我剪一个踢足球的20秒视频")
+
+    def test_langchain_runtime_can_prefer_compact_initial_plan_without_trying_structured_output(self):
+        from backend.services.planner_runtime_langchain import LangChainPlannerRuntime
+
+        fake_llm = _FakeChatModel(
+            error=RuntimeError("structured output should be skipped"),
+            invoke_result="""
+            {
+              "title": "20秒踢足球短视频",
+              "goal": "剪辑一支节奏明快、突出足球动作的20秒短视频",
+              "summary": "通过带球、射门和庆祝三个片段形成完整节奏。",
+              "style": "热血动感",
+              "targetDuration": 20,
+              "scenes": [
+                {
+                  "id": 1,
+                  "purpose": "开场建立运动氛围",
+                  "description": "展示球员带球推进。",
+                  "keywords": ["soccer", "dribble", "field"],
+                  "searchQuery": "soccer dribble field",
+                  "duration": 6
+                },
+                {
+                  "id": 2,
+                  "purpose": "突出核心动作",
+                  "description": "展示射门瞬间。",
+                  "keywords": ["soccer", "shot", "goal"],
+                  "searchQuery": "soccer shot goal",
+                  "duration": 7
+                },
+                {
+                  "id": 3,
+                  "purpose": "结尾强化情绪",
+                  "description": "展示进球庆祝。",
+                  "keywords": ["soccer", "celebration", "team"],
+                  "searchQuery": "soccer celebration team",
+                  "duration": 7
+                }
+              ]
+            }
+            """,
+        )
+
+        runtime = LangChainPlannerRuntime(
+            model_name="gpt-5.4",
+            llm=fake_llm,
+            prefer_compact_initial_plan=True,
+        )
+        agent_plan, execution_plan = runtime.build_plan_from_brief("帮我剪一个踢足球的20秒视频")
+
+        self.assertEqual(agent_plan.title, "20秒踢足球短视频")
+        self.assertEqual(execution_plan.scenes[0].searchQuery, "soccer dribble field")
 
     def test_langchain_runtime_delegates_grounding_replan_to_deterministic_runtime(self):
         from backend.services.planner_runtime_langchain import LangChainPlannerRuntime
@@ -703,6 +927,36 @@ class PlannerRuntimeTests(unittest.TestCase):
         self.assertEqual(len(execution_plan.scenes), 2)
         self.assertEqual(execution_plan.scenes[0].searchQuery, "product interface")
         self.assertEqual(execution_plan.scenes[1].searchQuery, "feature workflow")
+
+    def test_deterministic_runtime_uses_brief_keywords_for_coffee_brief(self):
+        from backend.services.planner_runtime_deterministic import (
+            DeterministicPlannerRuntime,
+        )
+
+        runtime = DeterministicPlannerRuntime()
+        _agent_plan, execution_plan = runtime.build_plan_from_brief(
+            "给咖啡品牌做一个15秒竖屏短视频，突出 latte art、barista 手冲细节、温暖生活方式镜头。"
+        )
+
+        self.assertEqual(execution_plan.scenes[0].keywords, ["coffee", "latte", "art"])
+        self.assertEqual(execution_plan.scenes[0].searchQuery, "coffee latte art")
+        self.assertEqual(execution_plan.scenes[1].keywords, ["barista", "coffee", "lifestyle"])
+        self.assertEqual(execution_plan.scenes[1].searchQuery, "barista coffee lifestyle")
+
+    def test_deterministic_runtime_uses_brief_keywords_for_city_brief(self):
+        from backend.services.planner_runtime_deterministic import (
+            DeterministicPlannerRuntime,
+        )
+
+        runtime = DeterministicPlannerRuntime()
+        _agent_plan, execution_plan = runtime.build_plan_from_brief(
+            "做一个城市黄昏车流氛围短片，突出夜景和霓虹。"
+        )
+
+        self.assertEqual(execution_plan.scenes[0].keywords, ["城市", "黄昏", "车流"])
+        self.assertEqual(execution_plan.scenes[0].searchQuery, "城市 黄昏 车流")
+        self.assertEqual(execution_plan.scenes[1].keywords, ["夜景", "霓虹", "城市"])
+        self.assertEqual(execution_plan.scenes[1].searchQuery, "夜景 霓虹 城市")
 
     def test_deterministic_runtime_uses_default_goal_for_blank_brief(self):
         from backend.services.planner_runtime_deterministic import (

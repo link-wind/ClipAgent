@@ -7,6 +7,44 @@ from backend.services.planner_models import (
     UserRevisionFeedback,
 )
 
+_BRIEF_KEYWORD_RULES = (
+    (
+        ("咖啡", "latte", "barista", "拉花"),
+        [
+            ("开场展示咖啡与拉花细节", ["coffee", "latte", "art"], 6),
+            ("展示 barista 手作与生活方式氛围", ["barista", "coffee", "lifestyle"], 8),
+        ],
+    ),
+    (
+        ("城市", "车流", "黄昏", "夜景", "霓虹"),
+        [
+            ("开场建立城市黄昏与车流氛围", ["城市", "黄昏", "车流"], 6),
+            ("展示夜景霓虹与都市节奏", ["夜景", "霓虹", "城市"], 8),
+        ],
+    ),
+    (
+        ("海边", "日落", "海", "夕阳"),
+        [
+            ("开场展示海边日落全景", ["海边", "日落", "风景"], 6),
+            ("延续金色海面与慢节奏氛围", ["夕阳", "海面", "自然"], 8),
+        ],
+    ),
+    (
+        ("雪山", "山", "航拍"),
+        [
+            ("开场建立雪山与航拍视角", ["雪山", "航拍", "自然"], 6),
+            ("展示山脊层次与辽阔风景", ["山脊", "风景", "自然"], 8),
+        ],
+    ),
+    (
+        ("竹林", "冥想", "风"),
+        [
+            ("开场展示竹林与阳光穿透", ["竹林", "自然", "阳光"], 6),
+            ("延续风声与冥想氛围", ["微风", "竹林", "冥想"], 8),
+        ],
+    ),
+)
+
 _KNOWN_FAILURE_CATEGORIES = {
     "platform_blocked",
     "no_inventory",
@@ -81,29 +119,35 @@ def _rewrite_keywords_for_failed_scene(scene_keywords: list[str], rewrite_strate
     return [*core_keywords, "alternative"]
 
 
+def _match_brief_scene_specs(brief: str) -> list[tuple[str, list[str], int]]:
+    normalized = (brief or "").lower()
+    for triggers, scenes in _BRIEF_KEYWORD_RULES:
+        if any(trigger.lower() in normalized for trigger in triggers):
+            return scenes
+    return [
+        ("开场展示产品主题", ["product", "interface"], 6),
+        ("展示重点功能或体验", ["feature", "workflow"], 8),
+    ]
+
+
 class DeterministicPlannerRuntime:
     def build_plan_from_brief(self, brief: str) -> tuple[AgentPlan, ExecutionPlan]:
         title = "智能剪辑短片"
         goal = brief.strip() or "生成产品介绍视频"
+        scene_specs = _match_brief_scene_specs(brief)
         plan = AgentPlan(
             title=title,
             goal=goal,
             summary="根据用户 brief 生成的初版计划",
             scenes=[
                 {
-                    "id": 1,
-                    "purpose": "建立产品识别",
-                    "description": "开场展示产品主题",
-                    "keywords": ["product", "interface"],
-                    "duration": 6,
-                },
-                {
-                    "id": 2,
-                    "purpose": "突出核心卖点",
-                    "description": "展示重点功能或体验",
-                    "keywords": ["feature", "workflow"],
-                    "duration": 8,
-                },
+                    "id": index,
+                    "purpose": "建立主题识别" if index == 1 else "突出核心内容",
+                    "description": description,
+                    "keywords": keywords,
+                    "duration": duration,
+                }
+                for index, (description, keywords, duration) in enumerate(scene_specs, start=1)
             ],
         )
         execution = ExecutionPlan(
@@ -112,19 +156,13 @@ class DeterministicPlannerRuntime:
             style="快节奏社媒短片",
             scenes=[
                 {
-                    "id": 1,
-                    "description": "开场展示产品主题",
-                    "keywords": ["product", "interface"],
-                    "searchQuery": "product interface",
-                    "duration": 6,
-                },
-                {
-                    "id": 2,
-                    "description": "展示重点功能或体验",
-                    "keywords": ["feature", "workflow"],
-                    "searchQuery": "feature workflow",
-                    "duration": 8,
-                },
+                    "id": index,
+                    "description": description,
+                    "keywords": keywords,
+                    "searchQuery": " ".join(keywords),
+                    "duration": duration,
+                }
+                for index, (description, keywords, duration) in enumerate(scene_specs, start=1)
             ],
         )
         return plan, execution

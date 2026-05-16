@@ -117,6 +117,52 @@ function getStepStatusText(status: string) {
   return STEP_STATUS_LABELS[status] ?? status;
 }
 
+function clampDisplayProgress(value: number) {
+  return Math.max(0, Math.min(100, value));
+}
+
+function getProgressIncrement(currentProgress: number) {
+  if (currentProgress < 18) {
+    return 6;
+  }
+  if (currentProgress < 44) {
+    return 4;
+  }
+  if (currentProgress < 78) {
+    return 2;
+  }
+  return 1;
+}
+
+function getExecutionStepTargetProgress(step: AgentSession['steps'][number], index: number) {
+  if (step.status === 'succeeded') {
+    return 100;
+  }
+  if (step.status === 'failed') {
+    return Math.max(90, clampDisplayProgress(step.progress));
+  }
+  if (step.status === 'running') {
+    return Math.min(99, Math.max(18 + index * 4, clampDisplayProgress(step.progress)));
+  }
+  if (step.status === 'pending') {
+    return 0;
+  }
+  return clampDisplayProgress(step.progress);
+}
+
+function getProgressBarStyle(progress: number) {
+  const normalized = clampDisplayProgress(progress) / 100;
+  const opacity = 0.58 + normalized * 0.42;
+  const brightness = 0.88 + normalized * 0.24;
+  const saturate = 0.82 + normalized * 0.38;
+
+  return {
+    width: `${clampDisplayProgress(progress)}%`,
+    opacity,
+    filter: `brightness(${brightness}) saturate(${saturate})`,
+  };
+}
+
 function formatDiagnosticPhase(phase: string) {
   return (
     {
@@ -187,6 +233,7 @@ export default function BriefWorkspacePage() {
   const [restoredSessionId, setRestoredSessionId] = useState<string | null>(null);
   const [hasAppliedRestoreJump, setHasAppliedRestoreJump] = useState(false);
   const [showPlanUpdatedNotice, setShowPlanUpdatedNotice] = useState(false);
+  const [displayedExecutionProgress, setDisplayedExecutionProgress] = useState<Record<string, number>>({});
   const executionSectionRef = useRef<HTMLElement | null>(null);
   const resultSectionRef = useRef<HTMLElement | null>(null);
   const failureSectionRef = useRef<HTMLElement | null>(null);
@@ -469,6 +516,61 @@ export default function BriefWorkspacePage() {
     setHasAppliedRestoreJump(true);
   }, [hasAppliedRestoreJump, restoredSessionId, resultUrl, session?.id, showExecutionHandoff, showFailurePanel]);
 
+  useEffect(() => {
+    if (!executionSteps.length) {
+      setDisplayedExecutionProgress({});
+      return;
+    }
+
+    setDisplayedExecutionProgress((current) => {
+      const next = { ...current };
+
+      executionSteps.forEach((step) => {
+        if (typeof next[step.id] !== 'number') {
+          next[step.id] = 0;
+        }
+      });
+
+      Object.keys(next).forEach((key) => {
+        if (!executionSteps.some((step) => step.id === key)) {
+          delete next[key];
+        }
+      });
+
+      return next;
+    });
+  }, [executionSteps]);
+
+  useEffect(() => {
+    if (!executionSteps.length) {
+      return;
+    }
+
+    const intervalId = window.setInterval(() => {
+      setDisplayedExecutionProgress((current) => {
+        const next = { ...current };
+
+        executionSteps.forEach((step, index) => {
+          const currentProgress = next[step.id] ?? 0;
+          const targetProgress = getExecutionStepTargetProgress(step, index);
+
+          if (currentProgress >= targetProgress) {
+            next[step.id] = targetProgress;
+            return;
+          }
+
+          next[step.id] = clampDisplayProgress(
+            Math.min(targetProgress, currentProgress + getProgressIncrement(currentProgress))
+          );
+        });
+
+        return next;
+      });
+    }, 320);
+
+    return () => window.clearInterval(intervalId);
+  }, [executionSteps]);
+
   return (
     <ProductShell>
       <div className="min-h-full">
@@ -680,7 +782,7 @@ export default function BriefWorkspacePage() {
                   ) : null}
 
                   <div className="grid gap-3 sm:grid-cols-2">
-                    {executionSteps.map((step, index) => (
+                    {executionSteps.map((step) => (
                       <article key={step.id} className="grid gap-3 rounded-lg border border-[#e4e8e3] bg-white p-3">
                         <div className="flex items-start justify-between gap-3">
                           <strong className="[overflow-wrap:anywhere] text-sm text-ink">
@@ -690,8 +792,8 @@ export default function BriefWorkspacePage() {
                         </div>
                         <div className="h-2 overflow-hidden rounded-full bg-[#edf1ed]" aria-hidden="true">
                           <span
-                            className="block h-full rounded-full bg-gradient-to-r from-accentstrong to-accent"
-                            style={{ width: `${Math.max(0, Math.min(100, step.status === 'pending' ? 10 + index * 8 : step.progress))}%` }}
+                            className="block h-full rounded-full bg-gradient-to-r from-accentstrong to-accent transition-[width,opacity,filter] duration-300 ease-out"
+                            style={getProgressBarStyle(displayedExecutionProgress[step.id] ?? 0)}
                           />
                         </div>
                         <p className="[overflow-wrap:anywhere] text-sm leading-6 text-secondary">{step.summary || step.description}</p>
