@@ -147,8 +147,11 @@ class KnowledgeManagementPersistenceTests(unittest.TestCase):
         self.db = self.SessionLocal()
 
     def tearDown(self) -> None:
+        self.db.rollback()
         self.db.close()
-        Base.metadata.drop_all(bind=self.engine)
+        with self.engine.begin() as connection:
+            connection.exec_driver_sql("PRAGMA foreign_keys=OFF")
+            Base.metadata.drop_all(bind=connection)
         self.engine.dispose()
 
     def test_repository_persists_source_version_and_active_chunks_lifecycle(self):
@@ -375,6 +378,271 @@ class KnowledgeManagementChunkingTests(unittest.TestCase):
         self.assertEqual(chunks[0].chunk_type, "paragraph")
         self.assertTrue(any(chunk.chunk_type == "list_block" and chunk.title_path == "产品定位 / API" for chunk in chunks))
         self.assertTrue(any(chunk.chunk_type == "code_block" and chunk.title_path == "产品定位 / API" for chunk in chunks))
+
+
+class KnowledgeManagementPipelineTests(unittest.TestCase):
+    def setUp(self) -> None:
+        self.engine = create_engine("sqlite:///:memory:", connect_args={"check_same_thread": False})
+
+        @event.listens_for(self.engine, "connect")
+        def _enable_foreign_keys(dbapi_connection, _connection_record):
+            if isinstance(dbapi_connection, sqlite3.Connection):
+                cursor = dbapi_connection.cursor()
+                cursor.execute("PRAGMA foreign_keys=ON")
+                cursor.close()
+
+        Base.metadata.create_all(bind=self.engine)
+        self.SessionLocal = sessionmaker(bind=self.engine)
+        self.db = self.SessionLocal()
+
+    def tearDown(self) -> None:
+        self.db.rollback()
+        self.db.close()
+        with self.engine.begin() as connection:
+            connection.exec_driver_sql("PRAGMA foreign_keys=OFF")
+            Base.metadata.drop_all(bind=connection)
+        self.engine.dispose()
+
+    def test_upload_service_reuses_source_for_same_name_and_content(self) -> None:
+        from tempfile import TemporaryDirectory
+
+        from backend.app.knowledge.storage import LocalKnowledgeStorage
+        from backend.app.knowledge.upload_service import KnowledgeUploadService
+        from backend.db.repositories import KnowledgeRepository
+
+        calls: list[str] = []
+
+        def dispatch(version_id: str) -> None:
+            calls.append(version_id)
+
+        with TemporaryDirectory() as temp_dir:
+            service = KnowledgeUploadService(
+                self.db,
+                storage=LocalKnowledgeStorage(Path(temp_dir)),
+                dispatch_ingestion=dispatch,
+            )
+
+            first = service.upload(
+                project_key="project-alpha",
+                filename="brand-guidelines.md",
+                content=b"# Brand\n\nClipForge",
+            )
+            second = service.upload(
+                project_key="project-alpha",
+                filename="brand-guidelines.md",
+                content=b"# Brand\n\nClipForge",
+            )
+
+            repo = KnowledgeRepository(self.db)
+
+            self.assertEqual(first.id, second.id)
+            self.assertEqual(len(repo.list_versions(first.id)), 1)
+            self.assertEqual(calls, [first.processingVersion.id])
+
+    def test_ingestion_service_activates_version_and_writes_chunks_for_markdown(self) -> None:
+        from tempfile import TemporaryDirectory
+
+        from backend.app.knowledge.ingestion_service import KnowledgeIngestionService
+        from backend.app.knowledge.storage import LocalKnowledgeStorage
+        from backend.db.repositories import KnowledgeRepository
+
+        with TemporaryDirectory() as temp_dir:
+            storage = LocalKnowledgeStorage(Path(temp_dir))
+            repo = KnowledgeRepository(self.db)
+            source = repo.create_source(
+                project_key="project-alpha",
+                name="brand-guidelines.md",
+                content_type="text/markdown",
+                status="uploaded",
+            )
+            version = repo.create_version(
+                source_id=source.id,
+                version_number=1,
+                status="uploaded",
+                content_hash="hash-v1",
+                original_filename="brand-guidelines.md",
+                file_size=18,
+                parser_type="markdown",
+            )
+            saved = storage.save_upload(
+                project_key=source.project_key,
+                source_id=source.id,
+                version_number=version.version_number,
+                filename="brand-guidelines.md",
+                content=b"# Brand\n\nClipForge",
+            )
+            repo.set_processing_version(source.id, version.id)
+            repo.update_version_storage_path(version.id, saved.storage_path)
+
+            chunk_ids = KnowledgeIngestionService(self.db, storage=storage).ingest_version(version.id)
+
+            persisted_source = repo.get_source(source.id)
+            persisted_version = repo.get_version(version.id)
+            active_chunks = repo.list_active_chunks(source.id)
+
+            self.assertEqual(persisted_source.status, "ready")
+            self.assertEqual(persisted_source.active_version_id, version.id)
+            self.assertIsNone(persisted_source.processing_version_id)
+            self.assertEqual(persisted_version.status, "active")
+            self.assertEqual(chunk_ids, [chunk.id for chunk in active_chunks])
+            self.assertTrue(any(chunk.chunk_type == "paragraph" for chunk in active_chunks))
+
+    def test_ingestion_service_restores_previous_active_version_when_new_version_fails(self) -> None:
+        from tempfile import TemporaryDirectory
+
+        from backend.app.knowledge.ingestion_service import KnowledgeIngestionService
+        from backend.app.knowledge.storage import LocalKnowledgeStorage
+        from backend.db.repositories import KnowledgeRepository
+
+        with TemporaryDirectory() as temp_dir:
+            storage = LocalKnowledgeStorage(Path(temp_dir))
+            repo = KnowledgeRepository(self.db)
+            source = repo.create_source(
+                project_key="project-alpha",
+                name="brand-guidelines.md",
+                content_type="text/markdown",
+                status="uploaded",
+            )
+            version1 = repo.create_version(
+                source_id=source.id,
+                version_number=1,
+                status="uploaded",
+                content_hash="hash-v1",
+                original_filename="brand-guidelines.md",
+                file_size=18,
+                parser_type="markdown",
+            )
+            saved_v1 = storage.save_upload(
+                project_key=source.project_key,
+                source_id=source.id,
+                version_number=version1.version_number,
+                filename="brand-guidelines.md",
+                content=b"# Brand\n\nClipForge",
+            )
+            repo.set_processing_version(source.id, version1.id)
+            repo.update_version_storage_path(version1.id, saved_v1.storage_path)
+            KnowledgeIngestionService(self.db, storage=storage).ingest_version(version1.id)
+
+            version2 = repo.create_version(
+                source_id=source.id,
+                version_number=2,
+                status="uploaded",
+                content_hash="hash-v2",
+                original_filename="brand-guidelines.md",
+                file_size=8,
+                parser_type="markdown",
+            )
+            repo.set_processing_version(source.id, version2.id)
+            repo.update_version_storage_path(version2.id, "missing/brand-guidelines.md")
+
+            with self.assertRaises(FileNotFoundError):
+                KnowledgeIngestionService(self.db, storage=storage).ingest_version(version2.id)
+
+            persisted_source = repo.get_source(source.id)
+            persisted_version2 = repo.get_version(version2.id)
+
+            self.assertEqual(persisted_source.status, "ready")
+            self.assertEqual(persisted_source.active_version_id, version1.id)
+            self.assertIsNone(persisted_source.processing_version_id)
+            self.assertEqual(persisted_source.last_failed_version_id, version2.id)
+            self.assertEqual(persisted_version2.status, "failed")
+
+    def test_ingestion_service_skips_processing_when_source_is_deleting(self) -> None:
+        from tempfile import TemporaryDirectory
+
+        from backend.app.knowledge.ingestion_service import KnowledgeIngestionService
+        from backend.app.knowledge.storage import LocalKnowledgeStorage
+        from backend.db.repositories import KnowledgeRepository
+
+        with TemporaryDirectory() as temp_dir:
+            storage = LocalKnowledgeStorage(Path(temp_dir))
+            repo = KnowledgeRepository(self.db)
+            source = repo.create_source(
+                project_key="project-alpha",
+                name="brand-guidelines.md",
+                content_type="text/markdown",
+                status="pending",
+            )
+            version = repo.create_version(
+                source_id=source.id,
+                version_number=1,
+                status="uploaded",
+                content_hash="hash-v1",
+                original_filename="brand-guidelines.md",
+                file_size=18,
+                parser_type="markdown",
+            )
+            saved = storage.save_upload(
+                project_key=source.project_key,
+                source_id=source.id,
+                version_number=version.version_number,
+                filename="brand-guidelines.md",
+                content=b"# Brand\n\nClipForge",
+            )
+            repo.update_version_storage_path(version.id, saved.storage_path)
+            repo.mark_source_deleting(source.id)
+
+            chunk_ids = KnowledgeIngestionService(self.db, storage=storage).ingest_version(version.id)
+
+            persisted_source = repo.get_source(source.id)
+            active_chunks = repo.list_chunks()
+
+            self.assertEqual(chunk_ids, [])
+            self.assertEqual(persisted_source.status, "deleted")
+            self.assertFalse(storage.exists(saved.storage_path))
+            self.assertEqual(active_chunks, [])
+
+    def test_ingestion_service_stops_when_start_processing_reports_deleted(self) -> None:
+        from tempfile import TemporaryDirectory
+        from unittest.mock import patch
+
+        from backend.app.knowledge.ingestion_service import KnowledgeIngestionService
+        from backend.app.knowledge.storage import LocalKnowledgeStorage
+        from backend.db.repositories import KnowledgeRepository
+
+        with TemporaryDirectory() as temp_dir:
+            storage = LocalKnowledgeStorage(Path(temp_dir))
+            repo = KnowledgeRepository(self.db)
+            source = repo.create_source(
+                project_key="project-alpha",
+                name="brand-guidelines.md",
+                content_type="text/markdown",
+                status="pending",
+            )
+            version = repo.create_version(
+                source_id=source.id,
+                version_number=1,
+                status="uploaded",
+                content_hash="hash-v1",
+                original_filename="brand-guidelines.md",
+                file_size=18,
+                parser_type="markdown",
+            )
+            saved = storage.save_upload(
+                project_key=source.project_key,
+                source_id=source.id,
+                version_number=version.version_number,
+                filename="brand-guidelines.md",
+                content=b"# Brand\n\nClipForge",
+            )
+            repo.update_version_storage_path(version.id, saved.storage_path)
+
+            service = KnowledgeIngestionService(self.db, storage=storage)
+
+            with patch.object(
+                service,
+                "start_version_processing",
+                return_value={"sourceId": source.id, "sourceStatus": "deleted", "versionId": version.id},
+            ), patch.object(storage, "open", side_effect=AssertionError("storage should not be opened")):
+                chunk_ids = service.ingest_version(version.id)
+
+            self.assertEqual(chunk_ids, [])
+
+    def test_celery_app_includes_knowledge_task_module(self) -> None:
+        from backend.tasks.celery_app import celery_app
+
+        self.assertIn("backend.tasks.knowledge_tasks", celery_app.conf.include)
+        self.assertIn("backend.tasks.knowledge_tasks.ingest_knowledge_version", celery_app.tasks)
 
 
 class KnowledgeManagementConfigTests(unittest.TestCase):

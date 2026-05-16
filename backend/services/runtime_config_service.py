@@ -48,6 +48,28 @@ FIELD_DEFINITIONS: tuple[RuntimeField, ...] = (
     RuntimeField("CELERY_BROKER_URL", "Celery Broker URL", "infrastructure", "secret", True, None, ("CELERY_BROKER_URL",), "api_worker", "Celery broker 地址，通常需要重启 API 和 worker。"),
     RuntimeField("CELERY_RESULT_BACKEND", "Celery Result Backend", "infrastructure", "secret", True, None, ("CELERY_RESULT_BACKEND",), "api_worker", "Celery result backend 地址，通常需要重启 worker。"),
     RuntimeField("CLIPFORGE_CELERY_QUEUE", "Celery Queue", "infrastructure", "string", False, "clipforge-agent", ("CLIPFORGE_CELERY_QUEUE",), "api_worker", "API 入队和 worker 监听必须使用同一个队列名。"),
+    RuntimeField(
+        "CLIPFORGE_KNOWLEDGE_STORAGE_DIR",
+        "Knowledge Storage Dir",
+        "infrastructure",
+        "string",
+        False,
+        "backend/storage/knowledge",
+        ("CLIPFORGE_KNOWLEDGE_STORAGE_DIR",),
+        "api_worker",
+        "知识文件本地存储目录。",
+    ),
+    RuntimeField(
+        "CLIPFORGE_KNOWLEDGE_QUEUE",
+        "Knowledge Queue",
+        "infrastructure",
+        "string",
+        False,
+        "clipforge-knowledge",
+        ("CLIPFORGE_KNOWLEDGE_QUEUE",),
+        "api_worker",
+        "Knowledge ingestion worker 队列名。",
+    ),
 )
 
 VISIBLE_GROUPS = {

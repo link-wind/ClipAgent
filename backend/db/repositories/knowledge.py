@@ -1,4 +1,6 @@
+from dataclasses import dataclass
 from datetime import datetime
+from hashlib import sha256
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -11,16 +13,59 @@ from backend.db.models import (
 )
 
 
+@dataclass(frozen=True)
+class LegacyKnowledgeDocumentRecord:
+    id: str
+    source_id: str
+    title: str
+    content: str
+    metadata_json: dict
+
+
 class KnowledgeRepository:
     def __init__(self, db_session: Session):
         self.db = db_session
+        self._legacy_documents: dict[str, dict[str, str]] = {}
 
     def create_source(self, **values) -> KnowledgeSourceRecord:
-        record = KnowledgeSourceRecord(**values)
+        normalized = dict(values)
+        legacy_source_type = normalized.pop("source_type", None)
+        normalized.pop("uri", None)
+        normalized.pop("metadata_json", None)
+        if "name" not in normalized:
+            normalized["name"] = normalized.pop("title", None) or legacy_source_type or "knowledge-source"
+        normalized.setdefault("project_key", "default")
+        normalized.setdefault("content_type", legacy_source_type or "text/plain")
+        normalized.setdefault("status", "pending")
+        normalized.setdefault("active_version_id", None)
+        normalized.setdefault("processing_version_id", None)
+        normalized.setdefault("last_failed_version_id", None)
+        record = KnowledgeSourceRecord(**normalized)
         self.db.add(record)
         self.db.flush()
         self.db.refresh(record)
         return record
+
+    def get_source_by_project_and_name(
+        self,
+        project_key: str,
+        name: str,
+        *,
+        include_deleted: bool = True,
+    ) -> KnowledgeSourceRecord | None:
+        stmt = (
+            select(KnowledgeSourceRecord)
+            .where(KnowledgeSourceRecord.project_key == project_key)
+            .where(KnowledgeSourceRecord.name == name)
+            .order_by(KnowledgeSourceRecord.created_at.desc(), KnowledgeSourceRecord.id.desc())
+            .limit(1)
+        )
+        source = self.db.scalar(stmt)
+        if source is None:
+            return None
+        if not include_deleted and source.status == "deleted":
+            return None
+        return source
 
     def get_source(self, source_id: str) -> KnowledgeSourceRecord | None:
         return self.db.get(KnowledgeSourceRecord, source_id)
@@ -31,6 +76,30 @@ class KnowledgeRepository:
         self.db.flush()
         self.db.refresh(record)
         return record
+
+    def list_versions(self, source_id: str) -> list[KnowledgeVersionRecord]:
+        stmt = (
+            select(KnowledgeVersionRecord)
+            .where(KnowledgeVersionRecord.source_id == source_id)
+            .order_by(KnowledgeVersionRecord.version_number.asc(), KnowledgeVersionRecord.created_at.asc())
+        )
+        return list(self.db.scalars(stmt))
+
+    def get_version_by_content_hash(self, source_id: str, content_hash: str) -> KnowledgeVersionRecord | None:
+        stmt = (
+            select(KnowledgeVersionRecord)
+            .where(KnowledgeVersionRecord.source_id == source_id)
+            .where(KnowledgeVersionRecord.content_hash == content_hash)
+            .order_by(KnowledgeVersionRecord.version_number.asc(), KnowledgeVersionRecord.created_at.asc())
+            .limit(1)
+        )
+        return self.db.scalar(stmt)
+
+    def get_next_version_number(self, source_id: str) -> int:
+        versions = self.list_versions(source_id)
+        if not versions:
+            return 1
+        return max(version.version_number for version in versions) + 1
 
     def get_version(self, version_id: str) -> KnowledgeVersionRecord | None:
         return self.db.get(KnowledgeVersionRecord, version_id)
@@ -44,12 +113,18 @@ class KnowledgeRepository:
         self.db.refresh(record)
         return record
 
-    def set_processing_version(self, source_id: str, version_id: str) -> KnowledgeSourceRecord:
+    def set_processing_version(
+        self,
+        source_id: str,
+        version_id: str,
+        *,
+        status: str = "processing",
+    ) -> KnowledgeSourceRecord:
         record = self.get_source(source_id)
         if record is None:
             raise ValueError(f"knowledge source not found: {source_id}")
         record.processing_version_id = version_id
-        record.status = "processing"
+        record.status = status
         self.db.flush()
         self.db.refresh(record)
         return record
@@ -118,7 +193,53 @@ class KnowledgeRepository:
         self.db.refresh(record)
         return record
 
+    def create_document(self, **values) -> LegacyKnowledgeDocumentRecord:
+        source_id = values.get("source_id")
+        if not isinstance(source_id, str) or not source_id:
+            raise ValueError("knowledge document requires source_id")
+
+        source = self.get_source(source_id)
+        if source is None:
+            raise ValueError(f"knowledge source not found: {source_id}")
+
+        title = str(values.get("title") or source.name)
+        content = str(values.get("content") or "")
+        metadata_json = values.get("metadata_json") or {}
+
+        if source.active_version_id is None:
+            version = self.create_version(
+                source_id=source_id,
+                version_number=self.get_next_version_number(source_id),
+                status="uploaded",
+                content_hash=sha256(content.encode("utf-8")).hexdigest(),
+                original_filename=title,
+                file_size=len(content.encode("utf-8")),
+                parser_type="text",
+            )
+            self.activate_version(version.id)
+            source = self.get_source(source_id) or source
+
+        document_id = str(values.get("id") or f"legacy-doc-{source_id}-{len(self._legacy_documents) + 1}")
+        self._legacy_documents[document_id] = {
+            "source_id": source_id,
+            "version_id": source.active_version_id or "",
+        }
+        return LegacyKnowledgeDocumentRecord(
+            id=document_id,
+            source_id=source_id,
+            title=title,
+            content=content,
+            metadata_json=metadata_json,
+        )
+
     def create_chunk(self, **values) -> KnowledgeChunkRecord:
+        legacy_document_id = values.pop("document_id", None)
+        if legacy_document_id is not None:
+            legacy_document = self._legacy_documents.get(str(legacy_document_id))
+            if legacy_document is None:
+                raise ValueError(f"knowledge document not found: {legacy_document_id}")
+            values.setdefault("source_id", legacy_document["source_id"])
+            values.setdefault("version_id", legacy_document["version_id"])
         if values.get("metadata_json") is None:
             values["metadata_json"] = {}
         record = KnowledgeChunkRecord(**values)
@@ -151,6 +272,14 @@ class KnowledgeRepository:
             .order_by(KnowledgeChunkRecord.chunk_index.asc(), KnowledgeChunkRecord.id.asc())
         )
         return list(self.db.scalars(stmt))
+
+    def delete_chunks_for_version(self, version_id: str) -> int:
+        stmt = select(KnowledgeChunkRecord).where(KnowledgeChunkRecord.version_id == version_id)
+        records = list(self.db.scalars(stmt))
+        for record in records:
+            self.db.delete(record)
+        self.db.flush()
+        return len(records)
 
     def create_context_usage(self, **values) -> AgentContextUsageRecord:
         if values.get("metadata_json") is None:
