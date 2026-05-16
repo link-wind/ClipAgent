@@ -54,6 +54,21 @@ export interface AgentEvent {
   createdAt: string
 }
 
+export interface AgentTraceEvent {
+  id: string
+  sessionId: string
+  runId: string | null
+  stepId: string | null
+  jobId: string | null
+  eventType: string
+  level: string
+  message: string | null
+  payload: Record<string, unknown>
+  sequence: number
+  actorRole: string
+  createdAt: string
+}
+
 export interface AgentErrorInfo {
   message: string
   retryableStep?: string | null
@@ -245,4 +260,101 @@ export function getAgentSessionEvents(sessionId: string): Promise<AgentEvent[]> 
   const encodedSessionId = encodeURIComponent(sessionId)
 
   return requestJson<AgentEvent[]>(`/api/agent/sessions/${encodedSessionId}/events`)
+}
+
+export interface AgentTraceSubscriptionHandlers {
+  onEvent?: (event: AgentTraceEvent) => void
+  onHeartbeat?: (payload: Record<string, unknown>) => void
+  onClosed?: (payload: Record<string, unknown>) => void
+  onError?: (error: Event) => void
+}
+
+export interface AgentTraceSubscription {
+  close: () => void
+}
+
+const TRACE_EVENT_TYPES = [
+  'run_started',
+  'run_succeeded',
+  'run_failed',
+  'step_started',
+  'step_progress',
+  'step_succeeded',
+  'step_failed',
+  'job_queued',
+  'job_started',
+  'job_succeeded',
+  'job_failed',
+  'rag_retrieval_started',
+  'rag_retrieval_succeeded',
+  'skill_selected',
+  'skill_invoked',
+  'mcp_tool_call_started',
+  'mcp_tool_call_succeeded',
+  'mcp_tool_call_failed',
+]
+
+const TERMINAL_TRACE_EVENTS = new Set(['run_succeeded', 'run_failed', 'job_succeeded', 'job_failed'])
+
+export function isTerminalTraceEvent(eventType: string): boolean {
+  return TERMINAL_TRACE_EVENTS.has(eventType)
+}
+
+function parseSseJson<T>(event: MessageEvent<string>): T | null {
+  try {
+    return JSON.parse(event.data) as T
+  } catch {
+    return null
+  }
+}
+
+export function subscribeAgentSessionTrace(
+  sessionId: string,
+  handlers: AgentTraceSubscriptionHandlers,
+  afterSequence = 0
+): AgentTraceSubscription {
+  const encodedSessionId = encodeURIComponent(sessionId)
+  const source = new EventSource(
+    `/api/agent/sessions/${encodedSessionId}/stream?afterSequence=${Math.max(0, afterSequence)}`
+  )
+
+  const handleTraceEvent = (event: MessageEvent<string>) => {
+    const payload = parseSseJson<AgentTraceEvent>(event)
+    if (payload) {
+      handlers.onEvent?.(payload)
+    }
+  }
+
+  TRACE_EVENT_TYPES.forEach((eventType) => {
+    source.addEventListener(eventType, handleTraceEvent as EventListener)
+  })
+
+  source.addEventListener('heartbeat', (event) => {
+    const payload = parseSseJson<Record<string, unknown>>(event as MessageEvent<string>)
+    if (payload) {
+      handlers.onHeartbeat?.(payload)
+    }
+  })
+
+  source.addEventListener('stream_closed', (event) => {
+    const payload = parseSseJson<Record<string, unknown>>(event as MessageEvent<string>)
+    if (payload) {
+      handlers.onClosed?.(payload)
+    }
+    source.close()
+  })
+
+  source.addEventListener('stream_error', (event) => {
+    handlers.onError?.(event)
+    source.close()
+  })
+
+  source.onerror = (event) => {
+    handlers.onError?.(event)
+    source.close()
+  }
+
+  return {
+    close: () => source.close(),
+  }
 }

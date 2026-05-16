@@ -1,7 +1,7 @@
 'use client';
 
-import { useEffect } from 'react';
-import { getAgentSession, getAgentSessionEvents } from '@/lib/agentApi';
+import { useEffect, useRef } from 'react';
+import { getAgentSession, getAgentSessionEvents, isTerminalTraceEvent, subscribeAgentSessionTrace } from '@/lib/agentApi';
 import { useAgentStore } from '@/stores/useAgentStore';
 import AgentChat from './AgentChat';
 import PlanPanel from './PlanPanel';
@@ -28,11 +28,26 @@ export default function AgentWorkspace() {
   const session = useAgentStore((state) => state.session);
   const activeSessionId = useAgentStore((state) => state.activeSessionId);
   const setSession = useAgentStore((state) => state.setSession);
+  const appendTraceEvent = useAgentStore((state) => state.appendTraceEvent);
+  const lastTraceSequence = useAgentStore((state) => state.lastTraceSequence);
   const videoUrl = resolveSessionVideoUrl(session);
   const sceneCount = session?.plan?.scenes.length ?? 0;
   const targetDuration = session?.plan?.targetDuration ?? null;
   const sessionId = session?.id ?? null;
   const sessionStatus = session?.status ?? 'idle';
+  const lastTraceSequenceRef = useRef(lastTraceSequence);
+
+  useEffect(() => {
+    lastTraceSequenceRef.current = lastTraceSequence;
+  }, [lastTraceSequence]);
+
+  const refreshSessionSnapshot = async (targetSessionId: string) => {
+    const [nextSession, nextEvents] = await Promise.all([
+      getAgentSession(targetSessionId),
+      getAgentSessionEvents(targetSessionId),
+    ]);
+    setSession({ ...nextSession, events: nextEvents });
+  };
 
   useEffect(() => {
     if (!activeSessionId || session) {
@@ -60,6 +75,45 @@ export default function AgentWorkspace() {
       isActive = false;
     };
   }, [activeSessionId, session, setSession]);
+
+  useEffect(() => {
+    if (!sessionId) {
+      return;
+    }
+
+    let isActive = true;
+    const subscription = subscribeAgentSessionTrace(
+      sessionId,
+      {
+        onEvent: (event) => {
+          if (!isActive) {
+            return;
+          }
+
+          appendTraceEvent(event);
+          if (isTerminalTraceEvent(event.eventType)) {
+            void refreshSessionSnapshot(sessionId);
+          }
+        },
+        onClosed: () => {
+          if (isActive) {
+            void refreshSessionSnapshot(sessionId);
+          }
+        },
+        onError: () => {
+          if (isActive && RUNNING_STATUSES.has(sessionStatus)) {
+            void refreshSessionSnapshot(sessionId);
+          }
+        },
+      },
+      lastTraceSequenceRef.current
+    );
+
+    return () => {
+      isActive = false;
+      subscription.close();
+    };
+  }, [appendTraceEvent, sessionId, sessionStatus, setSession]);
 
   useEffect(() => {
     if (!sessionId || !RUNNING_STATUSES.has(sessionStatus)) {

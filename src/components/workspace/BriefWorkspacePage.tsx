@@ -11,7 +11,9 @@ import {
   createAgentSession,
   getAgentSession,
   getAgentSessionEvents,
+  isTerminalTraceEvent,
   sendAgentMessage,
+  subscribeAgentSessionTrace,
   type AgentSession,
 } from '@/lib/agentApi';
 import { useAgentStore } from '@/stores/useAgentStore';
@@ -225,6 +227,8 @@ export default function BriefWorkspacePage() {
   const setSession = useAgentStore((state) => state.setSession);
   const setActiveSessionId = useAgentStore((state) => state.setActiveSessionId);
   const setSubmitting = useAgentStore((state) => state.setSubmitting);
+  const appendTraceEvent = useAgentStore((state) => state.appendTraceEvent);
+  const lastTraceSequence = useAgentStore((state) => state.lastTraceSequence);
 
   const [message, setMessage] = useState('');
   const [errorText, setErrorText] = useState('');
@@ -238,6 +242,19 @@ export default function BriefWorkspacePage() {
   const resultSectionRef = useRef<HTMLElement | null>(null);
   const failureSectionRef = useRef<HTMLElement | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
+  const lastTraceSequenceRef = useRef(lastTraceSequence);
+
+  useEffect(() => {
+    lastTraceSequenceRef.current = lastTraceSequence;
+  }, [lastTraceSequence]);
+
+  const refreshSessionSnapshot = async (targetSessionId: string) => {
+    const [nextSession, nextEvents] = await Promise.all([
+      getAgentSession(targetSessionId),
+      getAgentSessionEvents(targetSessionId),
+    ]);
+    setSession({ ...nextSession, events: nextEvents });
+  };
 
   useEffect(() => {
     if (!activeSessionId || session) {
@@ -279,6 +296,48 @@ export default function BriefWorkspacePage() {
       setHasAppliedRestoreJump(false);
     }
   }, [restoredSessionId, session?.id]);
+
+  useEffect(() => {
+    const targetSessionId = session?.id;
+    const targetStatus = session?.status;
+
+    if (!targetSessionId || !targetStatus) {
+      return;
+    }
+
+    let isActive = true;
+    const subscription = subscribeAgentSessionTrace(
+      targetSessionId,
+      {
+        onEvent: (event) => {
+          if (!isActive) {
+            return;
+          }
+
+          appendTraceEvent(event);
+          if (isTerminalTraceEvent(event.eventType)) {
+            void refreshSessionSnapshot(targetSessionId);
+          }
+        },
+        onClosed: () => {
+          if (isActive) {
+            void refreshSessionSnapshot(targetSessionId);
+          }
+        },
+        onError: () => {
+          if (isActive && RUNNING_STATUSES.has(targetStatus)) {
+            void refreshSessionSnapshot(targetSessionId);
+          }
+        },
+      },
+      lastTraceSequenceRef.current
+    );
+
+    return () => {
+      isActive = false;
+      subscription.close();
+    };
+  }, [appendTraceEvent, session?.id, session?.status, setSession]);
 
   useEffect(() => {
     setSelectedDirection('');

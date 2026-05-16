@@ -5,6 +5,7 @@ import os
 import sys
 import tempfile
 import unittest
+from datetime import datetime
 from pathlib import Path
 from unittest.mock import AsyncMock, patch
 
@@ -20,6 +21,7 @@ import backend.api.agent as agent_api_module
 from backend.config import get_settings
 from backend.db.base import Base
 from backend.db.models import AgentPlanRecord, AgentSessionRecord
+from backend.db.repositories import AgentTraceEventRepository
 from backend.services.agent_execution_service import AgentExecutionService
 from backend.services.agent_read_service import AgentReadService
 from backend.services.agent_session_service import AgentSessionService
@@ -155,6 +157,45 @@ class AgentSessionTests(unittest.TestCase):
             service.add_user_message(session.id, "   ")
 
 
+class AgentStreamServiceTests(unittest.TestCase):
+    def test_format_sse_event_uses_sequence_as_id_and_event_type(self):
+        from backend.services.agent_stream_service import format_sse_event
+
+        payload = {
+            "id": "trace-1",
+            "sessionId": "session-1",
+            "runId": "run-1",
+            "stepId": "search_assets",
+            "jobId": "job-1",
+            "eventType": "step_succeeded",
+            "level": "info",
+            "message": "素材搜索完成",
+            "payload": {"count": 3},
+            "sequence": 12,
+            "actorRole": "executor",
+            "createdAt": datetime(2026, 5, 16, 12, 0, 0).isoformat(),
+        }
+
+        frame = format_sse_event("step_succeeded", payload, event_id=12)
+
+        self.assertTrue(frame.startswith("id: 12\n"))
+        self.assertIn("event: step_succeeded\n", frame)
+        self.assertIn('"sequence":12', frame)
+        self.assertTrue(frame.endswith("\n\n"))
+
+    def test_format_sse_event_splits_multiline_payload_safely(self):
+        from backend.services.agent_stream_service import format_sse_event
+
+        frame = format_sse_event(
+            "heartbeat",
+            {"sessionId": "session-1", "message": "line 1\nline 2"},
+        )
+
+        self.assertIn("event: heartbeat\n", frame)
+        self.assertIn("data: ", frame)
+        self.assertTrue(frame.endswith("\n\n"))
+
+
 class AgentApiTests(unittest.TestCase):
     def setUp(self):
         self.engine = create_engine(
@@ -181,6 +222,7 @@ class AgentApiTests(unittest.TestCase):
             patch.object(agent_api_module, "session_service", self.session_service),
             patch.object(agent_api_module, "read_service", self.read_service),
             patch.object(agent_api_module, "execution_service", self.execution_service),
+            patch.object(agent_api_module, "SessionLocal", self.session_factory),
         ]
         for patcher in self.patches:
             patcher.start()
@@ -610,6 +652,116 @@ class AgentApiTests(unittest.TestCase):
         response = client.get("/api/agent/sessions/missing")
 
         self.assertEqual(response.status_code, 404)
+
+    def test_session_stream_returns_404_for_missing_session(self):
+        from backend.main import app
+
+        client = _make_test_client(app)
+        response = client.get("/api/agent/sessions/missing/stream")
+
+        self.assertEqual(response.status_code, 404)
+
+    def test_session_stream_emits_existing_trace_events_and_closes_for_terminal_session(self):
+        from backend.main import app
+
+        session = self.session_service.create_session("做一个科技短片")
+        with self.session_factory() as db:
+            session_record = db.get(AgentSessionRecord, session.id)
+            session_record.status = "done"
+            session_record.active_operation_type = "none"
+            session_record.active_operation_id = None
+            AgentTraceEventRepository(db).create(
+                id="trace-1",
+                session_id=session.id,
+                event_type="step_succeeded",
+                message="规划完成",
+                payload_json={"step": "finalize_plan"},
+                sequence=1,
+                actor_role="planner",
+            )
+            db.commit()
+
+        client = _make_test_client(app)
+        with client.stream("GET", f"/api/agent/sessions/{session.id}/stream") as response:
+            body = "".join(response.iter_text())
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.headers["content-type"].split(";")[0], "text/event-stream")
+        self.assertIn("id: 1\n", body)
+        self.assertIn("event: step_succeeded\n", body)
+        self.assertIn('"message":"规划完成"', body)
+        self.assertIn("event: stream_closed\n", body)
+
+    def test_session_stream_respects_after_sequence(self):
+        from backend.main import app
+
+        session = self.session_service.create_session("做一个科技短片")
+        with self.session_factory() as db:
+            session_record = db.get(AgentSessionRecord, session.id)
+            session_record.status = "done"
+            session_record.active_operation_type = "none"
+            session_record.active_operation_id = None
+            trace_repo = AgentTraceEventRepository(db)
+            trace_repo.create(
+                id="trace-1",
+                session_id=session.id,
+                event_type="step_started",
+                message="开始",
+                sequence=1,
+            )
+            trace_repo.create(
+                id="trace-2",
+                session_id=session.id,
+                event_type="step_succeeded",
+                message="完成",
+                sequence=2,
+            )
+            db.commit()
+
+        client = _make_test_client(app)
+        with client.stream("GET", f"/api/agent/sessions/{session.id}/stream?afterSequence=1") as response:
+            body = "".join(response.iter_text())
+
+        self.assertNotIn("id: 1\n", body)
+        self.assertIn("id: 2\n", body)
+        self.assertIn('"message":"完成"', body)
+
+    def test_session_stream_prefers_last_event_id_header(self):
+        from backend.main import app
+
+        session = self.session_service.create_session("做一个科技短片")
+        with self.session_factory() as db:
+            session_record = db.get(AgentSessionRecord, session.id)
+            session_record.status = "done"
+            session_record.active_operation_type = "none"
+            session_record.active_operation_id = None
+            trace_repo = AgentTraceEventRepository(db)
+            trace_repo.create(
+                id="trace-1",
+                session_id=session.id,
+                event_type="step_started",
+                message="开始",
+                sequence=1,
+            )
+            trace_repo.create(
+                id="trace-2",
+                session_id=session.id,
+                event_type="step_succeeded",
+                message="完成",
+                sequence=2,
+            )
+            db.commit()
+
+        client = _make_test_client(app)
+        with client.stream(
+            "GET",
+            f"/api/agent/sessions/{session.id}/stream?afterSequence=0",
+            headers={"Last-Event-ID": "1"},
+        ) as response:
+            body = "".join(response.iter_text())
+
+        self.assertNotIn("id: 1\n", body)
+        self.assertIn("id: 2\n", body)
 
     def test_add_message_to_missing_session_returns_404(self):
         from backend.main import app

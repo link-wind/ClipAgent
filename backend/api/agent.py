@@ -1,6 +1,9 @@
+import asyncio
+
 import openai
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Header, HTTPException, Request
 from fastapi.concurrency import run_in_threadpool
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
 from backend.app.agent.session_use_cases import AgentReadService, AgentSessionService
@@ -18,6 +21,7 @@ from backend.models.agent import (
 )
 from backend.services.agent_service import agent_service
 from backend.services.agent_run_service import ActiveOperationConflict
+from backend.services.agent_stream_service import AgentStreamService, format_sse_event
 
 
 router = APIRouter()
@@ -25,6 +29,9 @@ session_service = AgentSessionService(session_factory=SessionLocal)
 read_service = AgentReadService(session_factory=SessionLocal)
 execution_service = AgentExecutionService(session_factory=SessionLocal)
 task_read_service = AgentTaskReadService(session_factory=SessionLocal)
+STREAM_BATCH_LIMIT = 50
+STREAM_POLL_INTERVAL_SECONDS = 0.5
+STREAM_HEARTBEAT_INTERVAL_SECONDS = 10.0
 
 
 def _translate_planner_error(exc: Exception) -> HTTPException:
@@ -57,6 +64,21 @@ def _active_operation_conflict(exc: ActiveOperationConflict) -> HTTPException:
             },
         },
     )
+
+
+def _parse_last_sequence(after_sequence: int | None, last_event_id: str | None) -> int:
+    if last_event_id:
+        try:
+            return max(0, int(last_event_id))
+        except ValueError:
+            return 0
+    return max(0, after_sequence or 0)
+
+
+def _trace_event_payload(event: AgentTraceEvent) -> dict:
+    if hasattr(event, "model_dump"):
+        return event.model_dump()
+    return event.dict()
 
 
 class SessionCreateRequest(BaseModel):
@@ -239,6 +261,91 @@ async def list_session_trace(session_id: str, afterSequence: int | None = None, 
         return await run_in_threadpool(read_trace)
     except KeyError:
         raise HTTPException(status_code=404, detail="Session not found")
+
+
+@router.get("/sessions/{session_id}/stream")
+async def stream_session_trace(
+    session_id: str,
+    request: Request,
+    afterSequence: int | None = None,
+    last_event_id: str | None = Header(default=None, alias="Last-Event-ID"),
+):
+    last_sequence = _parse_last_sequence(afterSequence, last_event_id)
+
+    def ensure_session_exists():
+        with SessionLocal() as db:
+            AgentStreamService(db).require_session(session_id)
+
+    try:
+        await run_in_threadpool(ensure_session_exists)
+    except KeyError:
+        raise HTTPException(status_code=404, detail="Session not found")
+
+    async def event_generator():
+        nonlocal last_sequence
+        last_heartbeat_at = asyncio.get_running_loop().time()
+
+        while True:
+            if await request.is_disconnected():
+                break
+
+            def read_batch():
+                with SessionLocal() as db:
+                    service = AgentStreamService(db)
+                    batch = service.read_trace_batch(
+                        session_id,
+                        after_sequence=last_sequence,
+                        limit=STREAM_BATCH_LIMIT,
+                    )
+                    should_close = service.should_close_stream(session_id)
+                    return batch, should_close
+
+            try:
+                batch, should_close = await run_in_threadpool(read_batch)
+            except Exception:
+                yield format_sse_event(
+                    "stream_error",
+                    {"sessionId": session_id, "lastSequence": last_sequence},
+                )
+                break
+
+            for event in batch.events:
+                last_sequence = event.sequence
+                yield format_sse_event(
+                    event.eventType,
+                    _trace_event_payload(event),
+                    event_id=event.sequence,
+                )
+
+            if should_close:
+                yield format_sse_event(
+                    "stream_closed",
+                    {
+                        "sessionId": session_id,
+                        "lastSequence": last_sequence,
+                        "reason": "session_terminal",
+                    },
+                )
+                break
+
+            now = asyncio.get_running_loop().time()
+            if now - last_heartbeat_at >= STREAM_HEARTBEAT_INTERVAL_SECONDS:
+                yield format_sse_event(
+                    "heartbeat",
+                    {"sessionId": session_id, "lastSequence": last_sequence},
+                )
+                last_heartbeat_at = now
+
+            await asyncio.sleep(STREAM_POLL_INTERVAL_SECONDS)
+
+    return StreamingResponse(
+        event_generator(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+        },
+    )
 
 
 @router.get("/dashboard", response_model=AgentDashboardSummary)
