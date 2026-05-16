@@ -387,21 +387,35 @@ class AgentArtifactRecord(Base):
 class KnowledgeSourceRecord(Base):
     __tablename__ = "knowledge_sources"
     __table_args__ = (
-        Index("idx_knowledge_sources_source_type_created_at", "source_type", "created_at"),
+        Index("idx_knowledge_sources_project_key_created_at", "project_key", "created_at"),
+        Index("idx_knowledge_sources_status_updated_at", "status", "updated_at"),
     )
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_new_uuid)
-    source_type: Mapped[str] = mapped_column(String(64), nullable=False)
-    title: Mapped[str] = mapped_column(String(255), nullable=False)
-    uri: Mapped[str | None] = mapped_column(String(512), nullable=True)
-    metadata_json: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
+    project_key: Mapped[str] = mapped_column(String(128), default="default", nullable=False)
+    name: Mapped[str] = mapped_column(String(255), nullable=False)
+    content_type: Mapped[str] = mapped_column(String(128), nullable=False)
+    status: Mapped[str] = mapped_column(String(32), default="pending", nullable=False)
+    active_version_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
+    processing_version_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
+    last_failed_version_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
+    error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
+    deletion_requested_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    deleted_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime,
+        default=datetime.utcnow,
+        onupdate=datetime.utcnow,
+        nullable=False,
+    )
 
 
-class KnowledgeDocumentRecord(Base):
-    __tablename__ = "knowledge_documents"
+class KnowledgeVersionRecord(Base):
+    __tablename__ = "knowledge_versions"
     __table_args__ = (
-        Index("idx_knowledge_documents_source_id_created_at", "source_id", "created_at"),
+        Index("idx_knowledge_versions_source_id_created_at", "source_id", "created_at"),
+        Index("uq_knowledge_versions_source_id_version_number", "source_id", "version_number", unique=True),
     )
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_new_uuid)
@@ -410,28 +424,49 @@ class KnowledgeDocumentRecord(Base):
         ForeignKey("knowledge_sources.id"),
         nullable=False,
     )
-    title: Mapped[str] = mapped_column(String(255), nullable=False)
-    content: Mapped[str] = mapped_column(Text, nullable=False)
-    metadata_json: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
+    version_number: Mapped[int] = mapped_column(Integer, nullable=False)
+    status: Mapped[str] = mapped_column(String(32), default="pending", nullable=False)
+    content_hash: Mapped[str] = mapped_column(String(128), nullable=False)
+    storage_path: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    original_filename: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    file_size: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    parser_type: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    retry_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
+    activated_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    failed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime,
+        default=datetime.utcnow,
+        onupdate=datetime.utcnow,
+        nullable=False,
+    )
 
 
 class KnowledgeChunkRecord(Base):
     __tablename__ = "knowledge_chunks"
     __table_args__ = (
-        Index("idx_knowledge_chunks_document_id_index", "document_id", "chunk_index"),
+        Index("idx_knowledge_chunks_source_id_created_at", "source_id", "created_at"),
+        Index("idx_knowledge_chunks_version_id_index", "version_id", "chunk_index"),
     )
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_new_uuid)
-    document_id: Mapped[str] = mapped_column(
+    source_id: Mapped[str] = mapped_column(
         String(36),
-        ForeignKey("knowledge_documents.id"),
+        ForeignKey("knowledge_sources.id"),
+        nullable=False,
+    )
+    version_id: Mapped[str] = mapped_column(
+        String(36),
+        ForeignKey("knowledge_versions.id"),
         nullable=False,
     )
     chunk_index: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    chunk_type: Mapped[str] = mapped_column(String(64), default="text", nullable=False)
+    title_path: Mapped[str | None] = mapped_column(String(512), nullable=True)
     content: Mapped[str] = mapped_column(Text, nullable=False)
     token_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
-    embedding_ref: Mapped[str | None] = mapped_column(String(255), nullable=True)
     metadata_json: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
 
