@@ -7,9 +7,10 @@ from typing import Callable
 from sqlalchemy.orm import Session
 
 from backend.app.knowledge.storage import LocalKnowledgeStorage
+from backend.app.knowledge.source_read_service import build_source_summary
 from backend.config import get_settings
 from backend.db.repositories import KnowledgeRepository
-from backend.models.knowledge import KnowledgeSourceSummary, KnowledgeVersionSummary
+from backend.models.knowledge import KnowledgeSourceSummary
 
 
 def _default_dispatch_ingestion(version_id: str) -> None:
@@ -93,7 +94,7 @@ class KnowledgeUploadService:
         self.repo.update_version_storage_path(version.id, saved.storage_path)
         self.repo.set_processing_version(source.id, version.id, status="pending")
         self.dispatch_ingestion(version.id)
-        return self._build_source_summary(source.id)
+        return build_source_summary(self.repo, source.id)
 
     def upload_file(
         self,
@@ -111,37 +112,4 @@ class KnowledgeUploadService:
         )
 
     def _build_source_summary(self, source_id: str) -> KnowledgeSourceSummary:
-        source = self.repo.get_source(source_id)
-        if source is None:
-            raise ValueError(f"knowledge source not found: {source_id}")
-
-        return KnowledgeSourceSummary(
-            id=source.id,
-            name=source.name,
-            status=source.status,
-            contentType=source.content_type,
-            createdAt=source.created_at.isoformat(),
-            updatedAt=source.updated_at.isoformat(),
-            errorSummary=source.error_message,
-            activeVersion=self._build_version_summary(source.active_version_id),
-            processingVersion=self._build_version_summary(source.processing_version_id),
-            lastFailedVersion=self._build_version_summary(source.last_failed_version_id),
-            deletionRequestedAt=source.deletion_requested_at.isoformat() if source.deletion_requested_at else None,
-        )
-
-    def _build_version_summary(self, version_id: str | None) -> KnowledgeVersionSummary | None:
-        if version_id is None:
-            return None
-        version = self.repo.get_version(version_id)
-        if version is None:
-            return None
-        return KnowledgeVersionSummary(
-            id=version.id,
-            versionNumber=version.version_number,
-            contentHash=version.content_hash,
-            status=version.status,
-            createdAt=version.created_at.isoformat(),
-            updatedAt=version.updated_at.isoformat(),
-            failedAt=version.failed_at.isoformat() if version.failed_at else None,
-            reason=version.error_message,
-        )
+        return build_source_summary(self.repo, source_id)

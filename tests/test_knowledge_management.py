@@ -17,6 +17,7 @@ from sqlalchemy import create_engine, event
 from sqlalchemy import inspect as sa_inspect
 from sqlalchemy import text
 from sqlalchemy.orm import sessionmaker
+from sqlalchemy.pool import StaticPool
 
 from backend.db.base import Base
 
@@ -24,6 +25,13 @@ from backend.db.base import Base
 ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
+
+
+def _make_test_client(app):
+    import httpx
+
+    transport = httpx.ASGITransport(app=app)
+    return httpx.AsyncClient(transport=transport, base_url="http://testserver")
 
 
 class KnowledgeModelsContractTests(unittest.TestCase):
@@ -91,49 +99,44 @@ class KnowledgeRouterContractTests(unittest.TestCase):
         self.assertIn("/api/knowledge-sources/{source_id}", paths)
 
     def test_upload_endpoint_declares_upload_file_shape(self):
-        from fastapi import UploadFile
+        route = self._get_route("/knowledge-sources/upload", "POST")
+        parameter = inspect.signature(route.endpoint).parameters["file"]
+
+        self.assertEqual(parameter.annotation, "UploadFile")
+        self.assertEqual(parameter.default.media_type, "multipart/form-data")
+
+    def test_upload_route_declares_summary_response_model(self):
+        from backend.models.knowledge import KnowledgeSourceSummary
 
         route = self._get_route("/knowledge-sources/upload", "POST")
         parameter = inspect.signature(route.endpoint).parameters["file"]
 
-        self.assertIs(parameter.annotation, UploadFile)
-        self.assertEqual(parameter.default.media_type, "multipart/form-data")
+        self.assertEqual(parameter.annotation, "UploadFile")
+        self.assertIs(route.response_model, KnowledgeSourceSummary)
 
-    def test_upload_endpoint_raises_not_implemented_for_file_upload_calls(self):
-        from fastapi import HTTPException, UploadFile
-
-        route = self._get_route("/knowledge-sources/upload", "POST")
-        upload = UploadFile(filename="knowledge.txt", file=BytesIO(b"hello"))
-
-        with self.assertRaises(HTTPException) as context:
-            asyncio.run(route.endpoint(file=upload))
-
-        self.assertEqual(context.exception.status_code, 501)
-
-    def test_knowledge_get_endpoint_returns_not_implemented(self):
-        from fastapi import HTTPException
+    def test_knowledge_get_route_declares_summary_response_model(self):
+        from backend.models.knowledge import KnowledgeSourceSummary
 
         route = self._get_route("/knowledge-sources/{source_id}", "GET")
 
-        with self.assertRaises(HTTPException) as context:
-            asyncio.run(route.endpoint(source_id="source-123"))
+        self.assertIs(route.response_model, KnowledgeSourceSummary)
 
-        self.assertEqual(context.exception.status_code, 501)
-
-    def test_knowledge_delete_endpoint_returns_not_implemented(self):
-        from fastapi import HTTPException
+    def test_knowledge_delete_route_declares_summary_response_model(self):
+        from backend.models.knowledge import KnowledgeSourceSummary
 
         route = self._get_route("/knowledge-sources/{source_id}", "DELETE")
 
-        with self.assertRaises(HTTPException) as context:
-            asyncio.run(route.endpoint(source_id="source-123"))
-
-        self.assertEqual(context.exception.status_code, 501)
+        self.assertIs(route.response_model, KnowledgeSourceSummary)
 
 
 class KnowledgeManagementPersistenceTests(unittest.TestCase):
     def setUp(self) -> None:
-        self.engine = create_engine("sqlite:///:memory:", connect_args={"check_same_thread": False})
+        self.engine = create_engine(
+            "sqlite+pysqlite:///:memory:",
+            future=True,
+            connect_args={"check_same_thread": False},
+            poolclass=StaticPool,
+        )
 
         @event.listens_for(self.engine, "connect")
         def _enable_foreign_keys(dbapi_connection, _connection_record):
@@ -382,7 +385,12 @@ class KnowledgeManagementChunkingTests(unittest.TestCase):
 
 class KnowledgeManagementPipelineTests(unittest.TestCase):
     def setUp(self) -> None:
-        self.engine = create_engine("sqlite:///:memory:", connect_args={"check_same_thread": False})
+        self.engine = create_engine(
+            "sqlite+pysqlite:///:memory:",
+            future=True,
+            connect_args={"check_same_thread": False},
+            poolclass=StaticPool,
+        )
 
         @event.listens_for(self.engine, "connect")
         def _enable_foreign_keys(dbapi_connection, _connection_record):
@@ -392,7 +400,12 @@ class KnowledgeManagementPipelineTests(unittest.TestCase):
                 cursor.close()
 
         Base.metadata.create_all(bind=self.engine)
-        self.SessionLocal = sessionmaker(bind=self.engine)
+        self.SessionLocal = sessionmaker(
+            bind=self.engine,
+            autoflush=False,
+            autocommit=False,
+            future=True,
+        )
         self.db = self.SessionLocal()
 
     def tearDown(self) -> None:
@@ -657,6 +670,67 @@ class KnowledgeManagementConfigTests(unittest.TestCase):
 
         self.assertEqual(settings.knowledge_storage_dir, "backend/storage/knowledge")
         self.assertEqual(settings.knowledge_queue, "clipforge-knowledge")
+
+
+class KnowledgeManagementApiTests(unittest.TestCase):
+    def setUp(self) -> None:
+        self.engine = create_engine(
+            "sqlite+pysqlite:///:memory:",
+            future=True,
+            connect_args={"check_same_thread": False},
+            poolclass=StaticPool,
+        )
+
+        @event.listens_for(self.engine, "connect")
+        def _enable_foreign_keys(dbapi_connection, _connection_record):
+            if isinstance(dbapi_connection, sqlite3.Connection):
+                cursor = dbapi_connection.cursor()
+                cursor.execute("PRAGMA foreign_keys=ON")
+                cursor.close()
+
+        Base.metadata.create_all(bind=self.engine)
+        self.SessionLocal = sessionmaker(
+            bind=self.engine,
+            autoflush=False,
+            autocommit=False,
+            future=True,
+        )
+        self.db = self.SessionLocal()
+
+    def tearDown(self) -> None:
+        self.db.rollback()
+        self.db.close()
+        with self.engine.begin() as connection:
+            connection.exec_driver_sql("PRAGMA foreign_keys=OFF")
+            Base.metadata.drop_all(bind=connection)
+        self.engine.dispose()
+
+    def test_upload_rejects_unsupported_extension(self) -> None:
+        from backend.main import app
+
+        with patch("backend.api.knowledge.SessionLocal", self.SessionLocal, create=True):
+            async def _run():
+                async with _make_test_client(app) as client:
+                    return await client.post(
+                        "/api/knowledge-sources/upload",
+                        files={"file": ("brand.pdf", b"%PDF-1.4", "application/pdf")},
+                    )
+
+            response = asyncio.run(_run())
+
+        self.assertEqual(response.status_code, 400)
+
+    def test_get_missing_source_returns_404(self) -> None:
+        from backend.main import app
+
+        with patch("backend.api.knowledge.SessionLocal", self.SessionLocal, create=True):
+            async def _run():
+                async with _make_test_client(app) as client:
+                    return await client.get("/api/knowledge-sources/missing-source")
+
+            response = asyncio.run(_run())
+
+        self.assertEqual(response.status_code, 404)
 
 
 if __name__ == "__main__":
