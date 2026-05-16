@@ -285,6 +285,7 @@ const TRACE_EVENT_TYPES = [
   'job_started',
   'job_succeeded',
   'job_failed',
+  'tool_call_recorded',
   'rag_retrieval_started',
   'rag_retrieval_succeeded',
   'skill_selected',

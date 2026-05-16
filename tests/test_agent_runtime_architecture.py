@@ -60,6 +60,22 @@ class AgentRuntimeArchitectureTests(unittest.TestCase):
         self.assertTrue(hasattr(trace_recorder, "TraceRecorder"))
         self.assertTrue(hasattr(agent_runtime, "AgentRuntime"))
 
+    def test_mcp_foundation_boundaries_import(self) -> None:
+        tool_contracts = importlib.import_module("backend.domain.tools.contracts")
+        tool_registry = importlib.import_module("backend.app.tools.registry")
+        permission_service = importlib.import_module("backend.app.tools.permission_service")
+        tool_call_service = importlib.import_module("backend.app.tools.tool_call_service")
+        local_adapter = importlib.import_module("backend.infrastructure.tools.local_adapter")
+        mcp_adapter = importlib.import_module("backend.infrastructure.tools.mcp_adapter")
+
+        self.assertTrue(hasattr(tool_contracts, "ToolDefinition"))
+        self.assertTrue(hasattr(tool_contracts, "ToolCallSummary"))
+        self.assertTrue(hasattr(tool_registry, "BuiltinToolRegistry"))
+        self.assertTrue(hasattr(permission_service, "ToolPermissionService"))
+        self.assertTrue(hasattr(tool_call_service, "ToolCallService"))
+        self.assertTrue(hasattr(local_adapter, "LocalToolAdapter"))
+        self.assertTrue(hasattr(mcp_adapter, "MCPToolAdapter"))
+
     def test_infrastructure_and_worker_boundaries_reexport_existing_adapters(self) -> None:
         runtime_config = importlib.import_module("backend.infrastructure.config.runtime_config_service")
         render_service = importlib.import_module("backend.infrastructure.media.render_service")

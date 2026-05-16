@@ -229,6 +229,7 @@ export default function BriefWorkspacePage() {
   const setSubmitting = useAgentStore((state) => state.setSubmitting);
   const appendTraceEvent = useAgentStore((state) => state.appendTraceEvent);
   const lastTraceSequence = useAgentStore((state) => state.lastTraceSequence);
+  const setStreamState = useAgentStore((state) => state.setStreamState);
 
   const [message, setMessage] = useState('');
   const [errorText, setErrorText] = useState('');
@@ -306,6 +307,7 @@ export default function BriefWorkspacePage() {
     }
 
     let isActive = true;
+    setStreamState('connecting');
     const subscription = subscribeAgentSessionTrace(
       targetSessionId,
       {
@@ -314,6 +316,7 @@ export default function BriefWorkspacePage() {
             return;
           }
 
+          setStreamState('open');
           appendTraceEvent(event);
           if (isTerminalTraceEvent(event.eventType)) {
             void refreshSessionSnapshot(targetSessionId);
@@ -321,12 +324,16 @@ export default function BriefWorkspacePage() {
         },
         onClosed: () => {
           if (isActive) {
+            setStreamState('closed');
             void refreshSessionSnapshot(targetSessionId);
           }
         },
         onError: () => {
-          if (isActive && RUNNING_STATUSES.has(targetStatus)) {
-            void refreshSessionSnapshot(targetSessionId);
+          if (isActive) {
+            setStreamState('error');
+            if (RUNNING_STATUSES.has(targetStatus)) {
+              void refreshSessionSnapshot(targetSessionId);
+            }
           }
         },
       },
@@ -335,9 +342,10 @@ export default function BriefWorkspacePage() {
 
     return () => {
       isActive = false;
+      setStreamState('closed');
       subscription.close();
     };
-  }, [appendTraceEvent, session?.id, session?.status, setSession]);
+  }, [appendTraceEvent, session?.id, session?.status, setSession, setStreamState]);
 
   useEffect(() => {
     setSelectedDirection('');

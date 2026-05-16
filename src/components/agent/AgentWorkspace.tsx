@@ -30,6 +30,7 @@ export default function AgentWorkspace() {
   const setSession = useAgentStore((state) => state.setSession);
   const appendTraceEvent = useAgentStore((state) => state.appendTraceEvent);
   const lastTraceSequence = useAgentStore((state) => state.lastTraceSequence);
+  const setStreamState = useAgentStore((state) => state.setStreamState);
   const videoUrl = resolveSessionVideoUrl(session);
   const sceneCount = session?.plan?.scenes.length ?? 0;
   const targetDuration = session?.plan?.targetDuration ?? null;
@@ -82,6 +83,7 @@ export default function AgentWorkspace() {
     }
 
     let isActive = true;
+    setStreamState('connecting');
     const subscription = subscribeAgentSessionTrace(
       sessionId,
       {
@@ -90,6 +92,7 @@ export default function AgentWorkspace() {
             return;
           }
 
+          setStreamState('open');
           appendTraceEvent(event);
           if (isTerminalTraceEvent(event.eventType)) {
             void refreshSessionSnapshot(sessionId);
@@ -97,12 +100,16 @@ export default function AgentWorkspace() {
         },
         onClosed: () => {
           if (isActive) {
+            setStreamState('closed');
             void refreshSessionSnapshot(sessionId);
           }
         },
         onError: () => {
-          if (isActive && RUNNING_STATUSES.has(sessionStatus)) {
-            void refreshSessionSnapshot(sessionId);
+          if (isActive) {
+            setStreamState('error');
+            if (RUNNING_STATUSES.has(sessionStatus)) {
+              void refreshSessionSnapshot(sessionId);
+            }
           }
         },
       },
@@ -111,9 +118,10 @@ export default function AgentWorkspace() {
 
     return () => {
       isActive = false;
+      setStreamState('closed');
       subscription.close();
     };
-  }, [appendTraceEvent, sessionId, sessionStatus, setSession]);
+  }, [appendTraceEvent, sessionId, sessionStatus, setSession, setStreamState]);
 
   useEffect(() => {
     if (!sessionId || !RUNNING_STATUSES.has(sessionStatus)) {

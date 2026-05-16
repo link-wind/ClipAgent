@@ -466,3 +466,30 @@ class AgentContextUsageRecord(Base):
     usage_type: Mapped[str] = mapped_column(String(64), default="planning_context", nullable=False)
     metadata_json: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
+
+
+class ToolCallRecord(Base):
+    __tablename__ = "tool_calls"
+    __table_args__ = (
+        Index("idx_tool_calls_run_id_started_at", "run_id", "started_at"),
+        Index("idx_tool_calls_step_id_started_at", "step_id", "started_at"),
+        Index("idx_tool_calls_tool_id_started_at", "tool_id", "started_at"),
+    )
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True, default=_new_uuid)
+    run_id: Mapped[str] = mapped_column(
+        String(36),
+        ForeignKey("agent_runs.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    step_id: Mapped[str] = mapped_column(String(128), default="", nullable=False)
+    tool_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    status: Mapped[str] = mapped_column(String(32), default="started", nullable=False)
+    arguments_json: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
+    result_summary: Mapped[str] = mapped_column(Text, default="", nullable=False)
+    result_ref: Mapped[str] = mapped_column(String(255), default="", nullable=False)
+    error_message: Mapped[str] = mapped_column(Text, default="", nullable=False)
+    actor: Mapped[str] = mapped_column(String(128), default="agent_runtime", nullable=False)
+    actor_role: Mapped[str] = mapped_column(String(64), default="planner", nullable=False)
+    started_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)

@@ -19,6 +19,11 @@ class TraceBatch:
 
 
 def format_sse_event(event_name: str, payload: dict[str, Any], event_id: int | None = None) -> str:
+    if event_id is None:
+        sequence = payload.get("sequence")
+        if sequence is not None:
+            event_id = sequence
+
     lines: list[str] = []
     if event_id is not None:
         lines.append(f"id: {event_id}")

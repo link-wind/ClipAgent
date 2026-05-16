@@ -9,6 +9,7 @@ from backend.db.repositories.agent_sessions import AgentSessionRepository
 from backend.db.repositories.agent_steps import AgentStepRepository
 from backend.db.repositories.agent_trace_events import AgentTraceEventRepository
 from backend.db.repositories.knowledge import KnowledgeRepository
+from backend.db.repositories.tool_calls import ToolCallRepository
 
 __all__ = [
     "AgentSessionRepository",
@@ -22,4 +23,5 @@ __all__ = [
     "AgentEventRepository",
     "AgentArtifactRepository",
     "KnowledgeRepository",
+    "ToolCallRepository",
 ]

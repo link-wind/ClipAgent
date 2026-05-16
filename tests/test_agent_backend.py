@@ -209,23 +209,33 @@ class AgentStreamServiceTests(unittest.TestCase):
             "createdAt": datetime(2026, 5, 16, 12, 0, 0).isoformat(),
         }
 
-        frame = format_sse_event("step_succeeded", payload, event_id=12)
+        frame = format_sse_event("step_succeeded", payload)
 
         self.assertTrue(frame.startswith("id: 12\n"))
         self.assertIn("event: step_succeeded\n", frame)
         self.assertIn('"sequence":12', frame)
         self.assertTrue(frame.endswith("\n\n"))
 
-    def test_format_sse_event_splits_multiline_payload_safely(self):
+    def test_format_sse_event_writes_json_payload_and_preserves_multiline_message(self):
         from backend.services.agent_stream_service import format_sse_event
 
+        message = "line 1\nline 2"
         frame = format_sse_event(
             "heartbeat",
-            {"sessionId": "session-1", "message": "line 1\nline 2"},
+            {"sessionId": "session-1", "message": message},
         )
 
-        self.assertIn("event: heartbeat\n", frame)
-        self.assertIn("data: ", frame)
+        self.assertEqual(frame, frame.rstrip("\n") + "\n\n")
+
+        lines = frame.splitlines()
+        self.assertEqual(lines[0], "event: heartbeat")
+        self.assertEqual(len([line for line in lines if line.startswith("data: ")]), 1)
+
+        data_line = next(line for line in lines if line.startswith("data: "))
+        payload = json.loads(data_line.removeprefix("data: "))
+
+        self.assertEqual(payload["sessionId"], "session-1")
+        self.assertEqual(payload["message"], message)
         self.assertTrue(frame.endswith("\n\n"))
 
 
@@ -862,6 +872,77 @@ class AgentApiTests(unittest.TestCase):
         )
 
         self.assertEqual(response.status_code, 400)
+
+    def test_tool_call_service_records_trace_event_through_existing_backend_path(self):
+        from backend.app.tools.tool_call_service import ToolCallService
+        from backend.db.repositories import (
+            AgentRunRepository,
+            AgentSessionRepository,
+            AgentStepRepository,
+            AgentTraceEventRepository,
+        )
+        from backend.domain.tools.contracts import ToolCallRequest, ToolCallResult
+        from backend.runtime.trace_recorder import TraceRecorder
+
+        with self.session_factory() as db:
+            session = AgentSessionRepository(db).create(
+                id="session-tool-1",
+                status="active",
+                progress=0.0,
+                active_operation_type="none",
+                planner_trace_json={},
+            )
+            run = AgentRunRepository(db).create(
+                id="run-tool-1",
+                session_id=session.id,
+                trigger_type="planning",
+                status="running",
+            )
+            AgentStepRepository(db).create(
+                id="step-tool-1",
+                session_id=session.id,
+                run_id=run.id,
+                step_key="retrieve_context",
+                title="Retrieve context",
+                description="",
+                status="running",
+            )
+            db.commit()
+
+            service = ToolCallService(
+                db_session=db,
+                tool_call_repository=None,
+                trace_recorder=TraceRecorder(db),
+            )
+            request = ToolCallRequest(
+                session_id=session.id,
+                run_id="run-tool-1",
+                step_id="step-tool-1",
+                tool_id="read_project_knowledge",
+                arguments={"documentId": "doc-1"},
+                actor="runtime-actor",
+                actor_role="researcher",
+                permission_scope="project",
+            )
+            result = ToolCallResult(
+                status="succeeded",
+                data={"summary": "done"},
+                result_summary="done",
+                result_ref="tool:read_project_knowledge",
+                error_message="",
+            )
+
+            summary = service.record_tool_call(request, result)
+            db.commit()
+            events = AgentTraceEventRepository(db).list_for_session(session.id)
+
+        self.assertEqual(summary.tool_id, "read_project_knowledge")
+        self.assertEqual(summary.result_ref, "tool:read_project_knowledge")
+        self.assertEqual(len(events), 1)
+        self.assertEqual(events[0].event_type, "tool_call_recorded")
+        self.assertEqual(events[0].payload_json["toolId"], "read_project_knowledge")
+        self.assertEqual(events[0].actor_role, "researcher")
+        self.assertEqual(events[0].actor_id, "runtime-actor")
 
     def test_get_session_returns_created_session(self):
         from backend.main import app

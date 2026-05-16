@@ -1,18 +1,22 @@
 import { create } from 'zustand'
 import type { AgentEvent, AgentSession, AgentTraceEvent } from '@/lib/agentApi'
 
+export type AgentTraceStreamState = 'idle' | 'connecting' | 'open' | 'error' | 'closed'
+
 interface AgentStore {
   session: AgentSession | null
   activeSessionId: string | null
   events: AgentEvent[]
   traceEvents: AgentTraceEvent[]
   lastTraceSequence: number
+  streamState: AgentTraceStreamState
   isSubmitting: boolean
   setSession: (session: AgentSession | null) => void
   setActiveSessionId: (sessionId: string | null) => void
   setEvents: (events: AgentEvent[]) => void
   appendTraceEvent: (event: AgentTraceEvent) => void
   resetTrace: () => void
+  setStreamState: (streamState: AgentTraceStreamState) => void
   setSubmitting: (isSubmitting: boolean) => void
   reset: () => void
 }
@@ -23,6 +27,7 @@ export const useAgentStore = create<AgentStore>((set) => ({
   events: [],
   traceEvents: [],
   lastTraceSequence: 0,
+  streamState: 'idle',
   isSubmitting: false,
   setSession: (session) =>
     set((state) => {
@@ -53,7 +58,8 @@ export const useAgentStore = create<AgentStore>((set) => ({
         lastTraceSequence: event.sequence,
       }
     }),
-  resetTrace: () => set({ traceEvents: [], lastTraceSequence: 0 }),
+  resetTrace: () => set({ traceEvents: [], lastTraceSequence: 0, streamState: 'idle' }),
+  setStreamState: (streamState) => set({ streamState }),
   setSubmitting: (isSubmitting) => set({ isSubmitting }),
   reset: () =>
     set({
@@ -62,6 +68,7 @@ export const useAgentStore = create<AgentStore>((set) => ({
       events: [],
       traceEvents: [],
       lastTraceSequence: 0,
+      streamState: 'idle',
       isSubmitting: false,
     }),
 }))
