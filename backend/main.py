@@ -9,6 +9,7 @@ from fastapi.staticfiles import StaticFiles
 from backend.api.agent import router as agent_router
 from backend.api.ai import router as ai_router
 from backend.api.config import router as config_router
+from backend.api.knowledge import router as knowledge_router
 from backend.db import engine as _engine
 from backend.utils.websocket import ws_manager
 
@@ -42,6 +43,7 @@ app.add_middleware(
 app.include_router(agent_router, prefix="/api/agent")
 app.include_router(ai_router, prefix="/api/ai")
 app.include_router(config_router, prefix="/api/config")
+app.include_router(knowledge_router, prefix="/api")
 
 
 @app.get("/health")
