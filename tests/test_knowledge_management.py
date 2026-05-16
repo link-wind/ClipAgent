@@ -330,5 +330,66 @@ class KnowledgeManagementPersistenceTests(unittest.TestCase):
             engine.dispose()
 
 
+class KnowledgeManagementStorageTests(unittest.TestCase):
+    def test_local_storage_saves_upload_and_reopens_content(self) -> None:
+        from tempfile import TemporaryDirectory
+
+        from backend.app.knowledge.storage import LocalKnowledgeStorage
+
+        with TemporaryDirectory() as temp_dir:
+            storage = LocalKnowledgeStorage(Path(temp_dir))
+            saved = storage.save_upload(
+                project_key="default",
+                source_id="source-1",
+                version_number=1,
+                filename="brand-guidelines.md",
+                content=b"# Brand\nClipForge",
+            )
+
+            self.assertTrue(storage.exists(saved.storage_path))
+            self.assertIn("brand-guidelines.md", saved.storage_path)
+            with storage.open(saved.storage_path) as handle:
+                self.assertEqual(handle.read().decode("utf-8"), "# Brand\nClipForge")
+
+            storage.delete(saved.storage_path)
+            self.assertFalse(storage.exists(saved.storage_path))
+
+
+class KnowledgeManagementChunkingTests(unittest.TestCase):
+    def test_chunk_text_splits_paragraphs_by_blank_lines(self) -> None:
+        from backend.app.knowledge.chunking import chunk_text
+
+        chunks = chunk_text("第一段。\n\n第二段。")
+
+        self.assertEqual([chunk.chunk_type for chunk in chunks], ["paragraph", "paragraph"])
+        self.assertEqual([chunk.content for chunk in chunks], ["第一段。", "第二段。"])
+
+    def test_markdown_chunker_preserves_heading_paths_list_blocks_and_code_blocks(self) -> None:
+        from backend.app.knowledge.chunking import chunk_markdown_text
+
+        chunks = chunk_markdown_text(
+            "# 产品定位\nClipForge 是视频 Agent。\n\n## API\n- 创建知识源\n- 查询状态\n\n```ts\nfetch('/api')\n```"
+        )
+
+        self.assertEqual(chunks[0].title_path, "产品定位")
+        self.assertEqual(chunks[0].chunk_type, "paragraph")
+        self.assertTrue(any(chunk.chunk_type == "list_block" and chunk.title_path == "产品定位 / API" for chunk in chunks))
+        self.assertTrue(any(chunk.chunk_type == "code_block" and chunk.title_path == "产品定位 / API" for chunk in chunks))
+
+
+class KnowledgeManagementConfigTests(unittest.TestCase):
+    def test_get_settings_exposes_knowledge_storage_defaults(self) -> None:
+        from unittest.mock import patch
+
+        from backend.config import get_settings
+
+        get_settings.cache_clear()
+        with patch("backend.config.runtime_config_service.get_effective_value", return_value=None):
+            settings = get_settings()
+
+        self.assertEqual(settings.knowledge_storage_dir, "backend/storage/knowledge")
+        self.assertEqual(settings.knowledge_queue, "clipforge-knowledge")
+
+
 if __name__ == "__main__":
     unittest.main()
