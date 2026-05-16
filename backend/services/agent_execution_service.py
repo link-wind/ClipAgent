@@ -8,6 +8,7 @@ from backend.db.repositories import (
 )
 from backend.models.agent import AgentSession
 from backend.services.agent_read_service import AgentReadService
+from backend.services.agent_step_service import AgentStepService
 from backend.tasks.agent_tasks import run_agent_job
 
 
@@ -55,6 +56,28 @@ class AgentExecutionService:
                     max_attempts=3,
                 )
                 job_id = job_record.id
+                if not session_repo.try_start_operation(session_id, "job", job_id):
+                    raise RuntimeError("Session has an active operation")
+
+                step_service = AgentStepService(db)
+                create_task_step = step_service.start_step(
+                    session_id=session_id,
+                    job_id=job_id,
+                    step_key="create_task",
+                    title="创建执行任务",
+                    description="用户确认方案后创建后端 job，并返回队列信息。",
+                    sequence=5,
+                    actor_role="executor",
+                )
+                step_service.succeed_step(
+                    create_task_step.id,
+                    summary="任务已入队",
+                    result={
+                        "jobId": job_id,
+                        "sessionId": session_id,
+                        "queueName": "celery",
+                    },
+                )
                 session_record.status = "queued"
                 session_record.progress = 25
                 session_record.current_step = "任务已入队"
@@ -75,7 +98,36 @@ class AgentExecutionService:
                 db.rollback()
                 raise
 
-        self.enqueue_job(job_id)
+        try:
+            self.enqueue_job(job_id)
+        except Exception as exc:
+            with self.session_factory() as db:
+                session_repo = AgentSessionRepository(db)
+                job_repo = AgentJobRepository(db)
+                event_repo = AgentEventRepository(db)
+                job_repo.update_status(
+                    job_id,
+                    status="failed",
+                    error_message=str(exc),
+                )
+                session_record = session_repo.get(session_id)
+                if session_record is not None:
+                    session_record.status = "failed"
+                    session_record.current_step = "任务入队失败"
+                    session_record.error_message = str(exc)
+                    session_record.error_retryable_step = "queue"
+                session_repo.fail_operation(session_id, "job", job_id, str(exc))
+                event_repo.create(
+                    session_id=session_id,
+                    job_id=job_id,
+                    event_type="job_enqueue_failed",
+                    step="queued",
+                    progress=25,
+                    message=str(exc),
+                    payload_json={"jobId": job_id},
+                )
+                db.commit()
+            raise
         return self.read_service.read_session(session_id)
 
     @staticmethod

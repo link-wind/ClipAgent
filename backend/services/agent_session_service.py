@@ -8,6 +8,8 @@ from backend.db.repositories import (
 )
 from backend.models.agent import AgentSession, EditPlan, PlanScene
 from backend.services.agent_read_service import AgentReadService
+from backend.services.agent_run_service import AgentRunService
+from backend.services.agent_step_service import AgentStepService
 from backend.services.grounding_service import grounding_service
 from backend.services.planner_orchestrator import PlannerOrchestrator
 from backend.services.planner_projection import execution_plan_to_edit_plan
@@ -79,60 +81,91 @@ class AgentSessionService:
 
                 message_record = message_repo.create(session_id=session_id, role="user", content=content)
                 latest_plan = plan_repo.get_latest_for_session(session_id)
-                if self._should_start_grounding(session_record, latest_plan):
-                    grounding_summary = grounding_service.build_grounding_summary(
-                        content,
-                        existing=session_record.grounding_summary_json,
-                    )
-                    self._apply_grounding_to_session(session_record, grounding_summary)
-                    session_repo.update_grounding_state(
-                        session_id,
-                        grounding_status=grounding_summary.status,
-                        grounding_summary_json=grounding_summary.model_dump(mode="json"),
-                        selected_candidate_ids_json=[],
-                    )
-                    self._append_grounding_ready_message(message_repo, session_id)
-                    db.commit()
-                    return self.read_service.read_session(session_id)
-
-                if latest_plan is not None:
-                    planner_orchestrator = PlannerOrchestrator()
-                    next_plan = planner_orchestrator.persist_user_revision_replan(
-                        db=db,
-                        session_record=session_record,
-                        message_record=message_record,
-                        scene_keyword_updates=self._extract_scene_keyword_updates(content),
-                    )
-                    plan = execution_plan_to_edit_plan(next_plan.execution_plan_json)
-                    self._apply_plan_to_session(session_record, plan)
-                    session_repo.set_current_plan(session_id, next_plan.id)
-                    self._append_plan_ready_message(message_repo, session_id)
-                    db.commit()
-                    return self.read_service.read_session(session_id)
-
-                should_create_plan = (
-                    latest_plan is None
-                    or session_record.status == "plan_ready"
-                    or (
-                        session_record.status == "failed"
-                        and session_record.error_retryable_step == "planning"
-                    )
+                run_service = AgentRunService(db)
+                run_record = run_service.start_run(
+                    session_id=session_id,
+                    trigger_type="user_revision" if latest_plan is not None else "user_message",
+                    source_message_id=message_record.id,
                 )
-                if should_create_plan:
-                    plan = self._build_next_plan(content)
-                    next_version = 1
-                    created_plan = plan_repo.create(
-                        session_id=session_id,
-                        version=next_version,
-                        title=plan.title,
-                        target_duration=int(plan.targetDuration),
-                        style=plan.style,
-                        plan_json=plan.model_dump(mode="json"),
-                        execution_plan_json=plan.model_dump(mode="json"),
+                if self._should_start_grounding(session_record, latest_plan):
+                    try:
+                        grounding_summary = grounding_service.build_grounding_summary(
+                            content,
+                            existing=session_record.grounding_summary_json,
+                        )
+                        self._apply_grounding_to_session(session_record, grounding_summary)
+                        session_repo.update_grounding_state(
+                            session_id,
+                            grounding_status=grounding_summary.status,
+                            grounding_summary_json=grounding_summary.model_dump(mode="json"),
+                            selected_candidate_ids_json=[],
+                        )
+                        self._append_grounding_ready_message(message_repo, session_id)
+                        run_service.succeed_run(
+                            run_record.id,
+                            summary="候选产品画面已生成",
+                            output={"groundingStatus": grounding_summary.status},
+                        )
+                        db.commit()
+                        return self.read_service.read_session(session_id)
+                    except Exception as exc:
+                        run_service.fail_run(run_record.id, str(exc))
+                        raise
+
+                try:
+                    if latest_plan is not None:
+                        planner_orchestrator = PlannerOrchestrator()
+                        next_plan = planner_orchestrator.persist_user_revision_replan(
+                            db=db,
+                            session_record=session_record,
+                            message_record=message_record,
+                            scene_keyword_updates=self._extract_scene_keyword_updates(content),
+                        )
+                        plan = execution_plan_to_edit_plan(next_plan.execution_plan_json)
+                        self._apply_plan_to_session(session_record, plan)
+                        session_repo.set_current_plan(session_id, next_plan.id)
+                        self._record_planning_steps(db, session_id, run_record.id, content, plan)
+                        self._append_plan_ready_message(message_repo, session_id)
+                        run_service.succeed_run(
+                            run_record.id,
+                            summary="剪辑方案已生成",
+                            output={"planId": next_plan.id},
+                        )
+                        db.commit()
+                        return self.read_service.read_session(session_id)
+
+                    should_create_plan = (
+                        latest_plan is None
+                        or session_record.status == "plan_ready"
+                        or (
+                            session_record.status == "failed"
+                            and session_record.error_retryable_step == "planning"
+                        )
                     )
-                    session_repo.set_current_plan(session_id, created_plan.id)
-                    self._apply_plan_to_session(session_record, plan)
-                    self._append_plan_ready_message(message_repo, session_id)
+                    if should_create_plan:
+                        plan = self._build_next_plan(content)
+                        next_version = 1
+                        created_plan = plan_repo.create(
+                            session_id=session_id,
+                            version=next_version,
+                            title=plan.title,
+                            target_duration=int(plan.targetDuration),
+                            style=plan.style,
+                            plan_json=plan.model_dump(mode="json"),
+                            execution_plan_json=plan.model_dump(mode="json"),
+                        )
+                        session_repo.set_current_plan(session_id, created_plan.id)
+                        self._apply_plan_to_session(session_record, plan)
+                        self._record_planning_steps(db, session_id, run_record.id, content, plan)
+                        self._append_plan_ready_message(message_repo, session_id)
+                        run_service.succeed_run(
+                            run_record.id,
+                            summary="剪辑方案已生成",
+                            output={"planId": created_plan.id},
+                        )
+                except Exception as exc:
+                    run_service.fail_run(run_record.id, str(exc))
+                    raise
 
                 db.commit()
             except Exception:
@@ -157,6 +190,11 @@ class AgentSessionService:
                 if not self._can_confirm_grounding(session_record):
                     raise RuntimeError("Session is not awaiting confirmation of grounding candidates")
 
+                run_service = AgentRunService(db)
+                run_record = run_service.start_run(
+                    session_id=session_id,
+                    trigger_type="grounding_confirm",
+                )
                 grounding_summary = session_record.grounding_summary_json or {}
                 available_candidates = grounding_summary.get("candidates", []) or []
                 candidate_lookup = {candidate.get("id"): candidate for candidate in available_candidates}
@@ -225,8 +263,15 @@ class AgentSessionService:
                     selected_candidate_ids_json=candidate_ids,
                 )
                 self._append_plan_ready_message(message_repo, session_id)
+                run_service.succeed_run(
+                    run_record.id,
+                    summary="候选产品画面已确认并生成方案",
+                    output={"planId": next_plan.id, "selectedCandidateIds": candidate_ids},
+                )
                 db.commit()
             except Exception:
+                if "run_record" in locals():
+                    run_service.fail_run(run_record.id, "候选产品画面确认失败")
                 db.rollback()
                 raise
 
@@ -254,6 +299,53 @@ class AgentSessionService:
             role="assistant",
             content=GROUNDING_READY_MESSAGE,
         )
+
+    def _record_planning_steps(self, db, session_id: str, run_id: str, prompt: str, plan: EditPlan) -> None:
+        step_service = AgentStepService(db)
+        steps = [
+            (
+                "understand_request",
+                "理解原始需求",
+                "读取用户原始 prompt，提炼主题、受众、用途和初步意图。",
+                {"originalPrompt": prompt},
+            ),
+            (
+                "extract_requirements",
+                "提炼目标与限制",
+                "提炼时长、格式、风格、素材限制、输出目标等约束。",
+                {
+                    "title": plan.title,
+                    "targetDuration": plan.targetDuration,
+                    "style": plan.style,
+                    "sceneCount": len(plan.scenes),
+                },
+            ),
+            (
+                "generate_options",
+                "生成方案方向",
+                "生成多个可选方向，供用户选择主方向。",
+                {
+                    "title": plan.title,
+                    "options": [scene.model_dump(mode="json") for scene in plan.scenes],
+                },
+            ),
+            (
+                "finalize_plan",
+                "生成最终执行方案",
+                "根据用户选择生成最终方案、镜头拆分和可确认计划。",
+                plan.model_dump(mode="json"),
+            ),
+        ]
+        for index, (step_key, title, description, result) in enumerate(steps, start=1):
+            step = step_service.start_step(
+                session_id=session_id,
+                run_id=run_id,
+                step_key=step_key,
+                title=title,
+                description=description,
+                sequence=index,
+            )
+            step_service.succeed_step(step.id, summary=title, result=result)
 
     def _is_editable(self, session_record) -> bool:
         # 仅允许空闲、方案可编辑或规划失败重试

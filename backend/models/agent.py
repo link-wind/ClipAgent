@@ -110,6 +110,32 @@ class AgentEvent(BaseModel):
     createdAt: str
 
 
+class AgentRunSummary(BaseModel):
+    id: str
+    sessionId: str
+    triggerType: str
+    status: str
+    summary: str = ""
+    startedAt: Optional[str] = None
+    finishedAt: Optional[str] = None
+    createdAt: str
+
+
+class AgentTraceEvent(BaseModel):
+    id: str
+    sessionId: str
+    runId: Optional[str] = None
+    stepId: Optional[str] = None
+    jobId: Optional[str] = None
+    eventType: str
+    level: str = "info"
+    message: Optional[str] = None
+    payload: Dict[str, Any] = Field(default_factory=dict)
+    sequence: int = 0
+    actorRole: str = "planner"
+    createdAt: str
+
+
 class AgentDiagnostic(BaseModel):
     phase: AgentDiagnosticPhase
     category: AgentDiagnosticCategory

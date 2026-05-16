@@ -5,6 +5,7 @@ from backend.db.repositories import (
     AgentMessageRepository,
     AgentPlanRepository,
     AgentSessionRepository,
+    AgentStepRepository,
 )
 from backend.models.agent import (
     AgentError,
@@ -47,6 +48,7 @@ class AgentReadService:
                 plan_row=self.load_current_plan(db, session_record),
                 artifact_rows=self.load_artifacts(db, session_id),
                 event_rows=AgentEventRepository(db).list_for_session(session_id),
+                persisted_step_rows=AgentStepRepository(db).list_for_session(session_id),
                 job_record=active_job_record,
             )
 
@@ -77,7 +79,16 @@ class AgentReadService:
                 raise KeyError(session_id)
             return self.build_event_response(self.load_events(db, session_id))
 
-    def build_session_response(self, session_record, message_rows, plan_row, artifact_rows, event_rows, job_record=None) -> AgentSession:
+    def build_session_response(
+        self,
+        session_record,
+        message_rows,
+        plan_row,
+        artifact_rows,
+        event_rows,
+        job_record=None,
+        persisted_step_rows=None,
+    ) -> AgentSession:
         # 将数据库行映射回 Pydantic 会话
         plan = self._build_edit_plan(plan_row)
         clip_rows = [row for row in artifact_rows if row.artifact_type == "clip"]
@@ -103,11 +114,15 @@ class AgentReadService:
                 event
                 for event in self.build_event_response(event_rows)
             ],
-            steps=self.step_snapshot_service.build_session_steps(
-                session_record=session_record,
-                message_rows=message_rows,
-                plan_row=plan_row,
-                event_rows=event_rows,
+            steps=(
+                self.step_snapshot_service.build_persisted_steps(persisted_step_rows)
+                if persisted_step_rows
+                else self.step_snapshot_service.build_session_steps(
+                    session_record=session_record,
+                    message_rows=message_rows,
+                    plan_row=plan_row,
+                    event_rows=event_rows,
+                )
             ),
             videoUrl=session_record.video_url,
             activeJobId=session_record.active_job_id,

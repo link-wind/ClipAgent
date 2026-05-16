@@ -247,6 +247,8 @@ class AgentPersistenceModelTests(unittest.TestCase):
                 "error_message",
                 "error_retryable_step",
                 "active_job_id",
+                "active_operation_type",
+                "active_operation_id",
                 "current_plan_id",
                 "planner_trace_json",
                 "grounding_status",
@@ -489,12 +491,20 @@ class AlembicPersistenceTests(unittest.TestCase):
             / "versions"
             / "20260508_add_planner_persistence_foundations.py"
         )
+        agent_run_trace_migration = (
+            ROOT
+            / "backend"
+            / "alembic"
+            / "versions"
+            / "20260516_add_agent_run_trace_model.py"
+        )
 
         self.assertTrue(alembic_ini.exists())
         self.assertTrue(env_py.exists())
         self.assertTrue(script_template.exists())
         self.assertTrue(migration.exists())
         self.assertTrue(planner_persistence_migration.exists())
+        self.assertTrue(agent_run_trace_migration.exists())
 
     def test_alembic_ini_uses_config_relative_paths(self):
         alembic_ini = ROOT / "backend" / "alembic.ini"
@@ -768,6 +778,298 @@ class AlembicPersistenceTests(unittest.TestCase):
             downgrade_batches.setdefault(batch.table_name, []).append(batch)
         self.assertIsNone(downgrade_batches["agent_plans"][0].kwargs.get("recreate"))
         self.assertIsNone(downgrade_batches["agent_sessions"][0].kwargs.get("recreate"))
+
+    def test_agent_run_trace_migration_declares_schema_changes_and_reversal(self):
+        module, fake_op = self._load_migration_module("20260516_add_agent_run_trace_model.py")
+
+        module.upgrade()
+        upgrade_batches = {}
+        for batch in fake_op.batch_calls:
+            upgrade_batches.setdefault(batch.table_name, []).append(batch)
+        session_columns = {
+            call["column"].name: call["column"]
+            for call in upgrade_batches["agent_sessions"][0].add_columns
+        }
+        self.assertEqual(set(session_columns), {"active_operation_type", "active_operation_id"})
+        self.assertFalse(session_columns["active_operation_type"].nullable)
+        self.assertEqual(
+            {call["name"] for call in fake_op.create_tables},
+            {"agent_runs", "agent_steps", "agent_trace_events"},
+        )
+        self.assertEqual(
+            {call["name"] for call in fake_op.create_indexes},
+            {
+                "idx_agent_runs_session_id_created_at",
+                "idx_agent_runs_session_id_status",
+                "idx_agent_runs_parent_run_id_created_at",
+                "idx_agent_runs_related_job_id_created_at",
+                "idx_agent_steps_session_id_sequence",
+                "idx_agent_steps_run_id_sequence",
+                "idx_agent_steps_job_id_sequence",
+                "idx_agent_trace_events_session_id_sequence",
+                "idx_agent_trace_events_run_id_sequence",
+                "idx_agent_trace_events_step_id_sequence",
+                "idx_agent_trace_events_job_id_sequence",
+                "uq_agent_trace_events_session_id_sequence",
+            },
+        )
+
+        module.downgrade()
+        downgrade_batches = {}
+        for batch in fake_op.batch_calls[1:]:
+            downgrade_batches.setdefault(batch.table_name, []).append(batch)
+        self.assertEqual(
+            [call["name"] for call in fake_op.drop_tables],
+            ["agent_trace_events", "agent_steps", "agent_runs"],
+        )
+        self.assertEqual(
+            {call["name"] for call in downgrade_batches["agent_sessions"][0].drop_columns},
+            {"active_operation_id", "active_operation_type"},
+        )
+
+    def test_agent_run_trace_migration_executes_and_preserves_existing_sessions(self):
+        metadata = MetaData()
+        agent_sessions = Table(
+            "agent_sessions",
+            metadata,
+            Column("id", String(36), primary_key=True),
+            Column("status", String(32), nullable=False),
+            Column("current_step", String(128), nullable=True),
+            Column("progress", Float(), nullable=False),
+            Column("title", String(255), nullable=True),
+            Column("video_url", String(512), nullable=True),
+            Column("error_message", String(), nullable=True),
+            Column("error_retryable_step", String(128), nullable=True),
+            Column("active_job_id", String(36), nullable=True),
+            Column("current_plan_id", String(36), nullable=True),
+            Column("planner_trace_json", JSON(), nullable=False),
+            Column("grounding_status", String(32), nullable=True),
+            Column("grounding_summary_json", JSON(), nullable=True),
+            Column("selected_candidate_ids_json", JSON(), nullable=True),
+            Column("created_at", DateTime(), nullable=False),
+            Column("updated_at", DateTime(), nullable=False),
+        )
+        agent_messages = Table(
+            "agent_messages",
+            metadata,
+            Column("id", String(36), primary_key=True),
+            Column("session_id", String(36), ForeignKey("agent_sessions.id"), nullable=False),
+            Column("role", String(32), nullable=False),
+            Column("content", String(), nullable=False),
+            Column("created_at", DateTime(), nullable=False),
+        )
+        agent_plans = Table(
+            "agent_plans",
+            metadata,
+            Column("id", String(36), primary_key=True),
+            Column("session_id", String(36), ForeignKey("agent_sessions.id"), nullable=False),
+            Column("version", Integer(), nullable=False),
+            Column("title", String(255), nullable=True),
+            Column("target_duration", Integer(), nullable=True),
+            Column("style", String(128), nullable=True),
+            Column("plan_json", JSON(), nullable=False),
+            Column("parent_plan_id", String(36), nullable=True),
+            Column("trigger_type", String(64), nullable=True),
+            Column("planner_mode", String(32), nullable=True),
+            Column("planner_model", String(128), nullable=True),
+            Column("execution_plan_json", JSON(), nullable=False),
+            Column("change_summary", String(), nullable=True),
+            Column("status", String(32), nullable=False),
+            Column("created_at", DateTime(), nullable=False),
+        )
+        agent_jobs = Table(
+            "agent_jobs",
+            metadata,
+            Column("id", String(36), primary_key=True),
+            Column("session_id", String(36), ForeignKey("agent_sessions.id"), nullable=True),
+            Column("plan_id", String(36), ForeignKey("agent_plans.id"), nullable=True),
+            Column("job_type", String(64), nullable=False),
+            Column("status", String(32), nullable=False),
+            Column("attempt_count", Integer(), nullable=False),
+            Column("max_attempts", Integer(), nullable=False),
+            Column("progress", Float(), nullable=False),
+            Column("current_step", String(128), nullable=True),
+            Column("error_message", String(), nullable=True),
+            Column("worker_id", String(128), nullable=True),
+            Column("started_at", DateTime(), nullable=True),
+            Column("finished_at", DateTime(), nullable=True),
+            Column("created_at", DateTime(), nullable=False),
+            Column("updated_at", DateTime(), nullable=False),
+        )
+        engine = create_engine("sqlite+pysqlite:///:memory:", future=True)
+        event.listen(
+            engine,
+            "connect",
+            lambda dbapi_connection, _connection_record: dbapi_connection.execute(
+                "PRAGMA foreign_keys=ON"
+            ),
+        )
+
+        try:
+            metadata.create_all(engine)
+            with engine.connect() as conn:
+                now = datetime.utcnow()
+                conn.execute(
+                    agent_sessions.insert(),
+                    [
+                        {
+                            "id": "sess-1",
+                            "status": "active",
+                            "current_step": None,
+                            "progress": 0.0,
+                            "title": "demo",
+                            "video_url": None,
+                            "error_message": None,
+                            "error_retryable_step": None,
+                            "active_job_id": None,
+                            "current_plan_id": None,
+                            "planner_trace_json": {},
+                            "grounding_status": "confirmed",
+                            "grounding_summary_json": {},
+                            "selected_candidate_ids_json": [],
+                            "created_at": now,
+                            "updated_at": now,
+                        }
+                    ],
+                )
+                conn.execute(
+                    agent_messages.insert(),
+                    [
+                        {
+                            "id": "msg-1",
+                            "session_id": "sess-1",
+                            "role": "user",
+                            "content": "demo",
+                            "created_at": now,
+                        }
+                    ],
+                )
+                conn.execute(
+                    agent_jobs.insert(),
+                    [
+                        {
+                            "id": "job-1",
+                            "session_id": "sess-1",
+                            "plan_id": None,
+                            "job_type": "generate_video",
+                            "status": "queued",
+                            "attempt_count": 0,
+                            "max_attempts": 1,
+                            "progress": 0.0,
+                            "current_step": None,
+                            "error_message": None,
+                            "worker_id": None,
+                            "started_at": None,
+                            "finished_at": None,
+                            "created_at": now,
+                            "updated_at": now,
+                        }
+                    ],
+                )
+                conn.commit()
+
+                from alembic.operations import Operations
+                from alembic.runtime.migration import MigrationContext
+
+                migration_path = (
+                    ROOT
+                    / "backend"
+                    / "alembic"
+                    / "versions"
+                    / "20260516_add_agent_run_trace_model.py"
+                )
+                migration_tx = conn.begin()
+                migration_context = MigrationContext.configure(conn)
+                operations = Operations(migration_context)
+                fake_alembic = types.ModuleType("alembic")
+                fake_alembic.op = operations
+                spec = importlib.util.spec_from_file_location(
+                    "clipforge_real_agent_run_trace_migration",
+                    migration_path,
+                )
+                module = importlib.util.module_from_spec(spec)
+
+                with patch.dict(sys.modules, {"alembic": fake_alembic}, clear=False):
+                    spec.loader.exec_module(module)
+                    module.upgrade()
+
+                session_columns = {
+                    column["name"]: column
+                    for column in inspect(conn).get_columns("agent_sessions")
+                }
+                self.assertIn("active_operation_type", session_columns)
+                self.assertIn("active_operation_id", session_columns)
+                self.assertFalse(session_columns["active_operation_type"]["nullable"])
+                self.assertEqual(
+                    conn.execute(
+                        text("SELECT active_operation_type FROM agent_sessions WHERE id = 'sess-1'")
+                    ).scalar_one(),
+                    "none",
+                )
+                self.assertIn(
+                    "agent_runs",
+                    {table_name for table_name in inspect(conn).get_table_names()},
+                )
+                conn.execute(
+                    text(
+                        """
+                        INSERT INTO agent_runs (
+                            id, session_id, source_message_id, trigger_type, status,
+                            actor_type, actor_role, input_json, output_json, metadata_json, created_at, updated_at
+                        )
+                        VALUES (
+                            'run-1', 'sess-1', 'msg-1', 'user_message', 'succeeded',
+                            'agent', 'planner', '{}', '{}', '{}', :created_at, :updated_at
+                        )
+                        """
+                    ),
+                    {"created_at": now, "updated_at": now},
+                )
+                conn.execute(
+                    text(
+                        """
+                        INSERT INTO agent_steps (
+                            id, session_id, run_id, job_id, step_key, title, description,
+                            status, progress, summary, sequence, actor_type, actor_role,
+                            created_at, updated_at
+                        )
+                        VALUES (
+                            'step-1', 'sess-1', 'run-1', 'job-1', 'search', 'Search', '',
+                            'succeeded', 100, '', 1, 'agent', 'executor', :created_at, :updated_at
+                        )
+                        """
+                    ),
+                    {"created_at": now, "updated_at": now},
+                )
+                conn.execute(
+                    text(
+                        """
+                        INSERT INTO agent_trace_events (
+                            id, session_id, run_id, step_id, job_id, event_type, level,
+                            message, payload_json, sequence, actor_type, actor_role, created_at
+                        )
+                        VALUES (
+                            'trace-1', 'sess-1', 'run-1', 'step-1', 'job-1',
+                            'step_succeeded', 'info', 'done', '{}', 1, 'agent', 'executor', :created_at
+                        )
+                        """
+                    ),
+                    {"created_at": now},
+                )
+
+                module.downgrade()
+                downgraded_tables = set(inspect(conn).get_table_names())
+                self.assertNotIn("agent_trace_events", downgraded_tables)
+                self.assertNotIn("agent_steps", downgraded_tables)
+                self.assertNotIn("agent_runs", downgraded_tables)
+                downgraded_session_columns = {
+                    column["name"] for column in inspect(conn).get_columns("agent_sessions")
+                }
+                self.assertNotIn("active_operation_type", downgraded_session_columns)
+                self.assertNotIn("active_operation_id", downgraded_session_columns)
+                migration_tx.commit()
+        finally:
+            engine.dispose()
 
     def test_planner_persistence_migration_executes_and_normalizes_duplicate_versions(self):
         metadata = MetaData()

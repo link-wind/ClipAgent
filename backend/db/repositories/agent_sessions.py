@@ -1,4 +1,4 @@
-from sqlalchemy import func, select
+from sqlalchemy import func, select, update
 from sqlalchemy.orm import Session
 
 from backend.db.models import AgentSessionRecord
@@ -82,4 +82,91 @@ class AgentSessionRepository:
         self.db.add(record)
         self.db.flush()
         self.db.refresh(record)
+        return record
+
+    def try_start_operation(
+        self,
+        session_id: str,
+        operation_type: str,
+        operation_id: str,
+    ) -> bool:
+        stmt = (
+            update(AgentSessionRecord)
+            .where(AgentSessionRecord.id == session_id)
+            .where(AgentSessionRecord.active_operation_type == "none")
+            .where(AgentSessionRecord.active_operation_id.is_(None))
+            .values(
+                active_operation_type=operation_type,
+                active_operation_id=operation_id,
+            )
+        )
+        result = self.db.execute(stmt)
+        if result.rowcount != 1:
+            return False
+
+        self.db.flush()
+        return True
+
+    def finish_operation(
+        self,
+        session_id: str,
+        operation_type: str,
+        operation_id: str,
+    ) -> bool:
+        stmt = (
+            update(AgentSessionRecord)
+            .where(AgentSessionRecord.id == session_id)
+            .where(AgentSessionRecord.active_operation_type == operation_type)
+            .where(AgentSessionRecord.active_operation_id == operation_id)
+            .values(
+                active_operation_type="none",
+                active_operation_id=None,
+            )
+        )
+        result = self.db.execute(stmt)
+        if result.rowcount != 1:
+            return False
+
+        self.db.flush()
+        return True
+
+    def fail_operation(
+        self,
+        session_id: str,
+        operation_type: str,
+        operation_id: str,
+        error_message: str | None = None,
+    ) -> bool:
+        stmt = (
+            update(AgentSessionRecord)
+            .where(AgentSessionRecord.id == session_id)
+            .where(AgentSessionRecord.active_operation_type == operation_type)
+            .where(AgentSessionRecord.active_operation_id == operation_id)
+            .values(
+                active_operation_type="none",
+                active_operation_id=None,
+                status="failed",
+                error_message=error_message,
+            )
+        )
+        result = self.db.execute(stmt)
+        if result.rowcount != 1:
+            return False
+
+        self.db.flush()
+        return True
+
+    def _get_matching_operation(
+        self,
+        session_id: str,
+        operation_type: str,
+        operation_id: str,
+    ) -> AgentSessionRecord | None:
+        record = self.get(session_id)
+        if record is None:
+            return None
+        if record.active_operation_type != operation_type:
+            return None
+        if record.active_operation_id != operation_id:
+            return None
         return record

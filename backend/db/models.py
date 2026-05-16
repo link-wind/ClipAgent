@@ -28,6 +28,8 @@ class AgentSessionRecord(Base):
         ForeignKey("agent_jobs.id"),
         nullable=True,
     )
+    active_operation_type: Mapped[str] = mapped_column(String(32), default="none", nullable=False)
+    active_operation_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
     current_plan_id: Mapped[str | None] = mapped_column(
         String(36),
         ForeignKey("agent_plans.id"),
@@ -76,6 +78,149 @@ class AgentMessageRecord(Base):
     )
     role: Mapped[str] = mapped_column(String(32), nullable=False)
     content: Mapped[str] = mapped_column(Text, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
+
+
+class AgentRunRecord(Base):
+    __tablename__ = "agent_runs"
+    __table_args__ = (
+        Index("idx_agent_runs_session_id_created_at", "session_id", "created_at"),
+        Index("idx_agent_runs_session_id_status", "session_id", "status"),
+        Index("idx_agent_runs_parent_run_id_created_at", "parent_run_id", "created_at"),
+        Index("idx_agent_runs_related_job_id_created_at", "related_job_id", "created_at"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_new_uuid)
+    session_id: Mapped[str] = mapped_column(
+        String(36),
+        ForeignKey("agent_sessions.id"),
+        nullable=False,
+    )
+    source_message_id: Mapped[str | None] = mapped_column(
+        String(36),
+        ForeignKey("agent_messages.id"),
+        nullable=True,
+    )
+    trigger_type: Mapped[str] = mapped_column(String(64), nullable=False)
+    status: Mapped[str] = mapped_column(String(32), default="pending", nullable=False)
+    summary: Mapped[str | None] = mapped_column(Text, nullable=True)
+    error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
+    parent_run_id: Mapped[str | None] = mapped_column(
+        String(36),
+        ForeignKey("agent_runs.id"),
+        nullable=True,
+    )
+    related_job_id: Mapped[str | None] = mapped_column(
+        String(36),
+        ForeignKey("agent_jobs.id"),
+        nullable=True,
+    )
+    actor_type: Mapped[str] = mapped_column(String(32), default="agent", nullable=False)
+    actor_role: Mapped[str] = mapped_column(String(64), default="planner", nullable=False)
+    actor_id: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    agent_name: Mapped[str | None] = mapped_column(String(128), default="clipforge_agent", nullable=True)
+    input_json: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
+    output_json: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
+    metadata_json: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
+    started_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime,
+        default=datetime.utcnow,
+        onupdate=datetime.utcnow,
+        nullable=False,
+    )
+
+
+class AgentStepRecord(Base):
+    __tablename__ = "agent_steps"
+    __table_args__ = (
+        Index("idx_agent_steps_session_id_sequence", "session_id", "sequence"),
+        Index("idx_agent_steps_run_id_sequence", "run_id", "sequence"),
+        Index("idx_agent_steps_job_id_sequence", "job_id", "sequence"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_new_uuid)
+    session_id: Mapped[str] = mapped_column(
+        String(36),
+        ForeignKey("agent_sessions.id"),
+        nullable=False,
+    )
+    run_id: Mapped[str | None] = mapped_column(
+        String(36),
+        ForeignKey("agent_runs.id"),
+        nullable=True,
+    )
+    job_id: Mapped[str | None] = mapped_column(
+        String(36),
+        ForeignKey("agent_jobs.id"),
+        nullable=True,
+    )
+    step_key: Mapped[str] = mapped_column(String(64), nullable=False)
+    title: Mapped[str] = mapped_column(String(255), nullable=False)
+    description: Mapped[str] = mapped_column(Text, default="", nullable=False)
+    status: Mapped[str] = mapped_column(String(32), default="pending", nullable=False)
+    progress: Mapped[float] = mapped_column(Float, default=0.0, nullable=False)
+    summary: Mapped[str] = mapped_column(Text, default="", nullable=False)
+    result_json: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    error_json: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    sequence: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    actor_type: Mapped[str] = mapped_column(String(32), default="agent", nullable=False)
+    actor_role: Mapped[str] = mapped_column(String(64), default="planner", nullable=False)
+    actor_id: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    agent_name: Mapped[str | None] = mapped_column(String(128), default="clipforge_agent", nullable=True)
+    started_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime,
+        default=datetime.utcnow,
+        onupdate=datetime.utcnow,
+        nullable=False,
+    )
+
+
+class AgentTraceEventRecord(Base):
+    __tablename__ = "agent_trace_events"
+    __table_args__ = (
+        Index("idx_agent_trace_events_session_id_sequence", "session_id", "sequence"),
+        Index("idx_agent_trace_events_run_id_sequence", "run_id", "sequence"),
+        Index("idx_agent_trace_events_step_id_sequence", "step_id", "sequence"),
+        Index("idx_agent_trace_events_job_id_sequence", "job_id", "sequence"),
+        Index("uq_agent_trace_events_session_id_sequence", "session_id", "sequence", unique=True),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_new_uuid)
+    session_id: Mapped[str] = mapped_column(
+        String(36),
+        ForeignKey("agent_sessions.id"),
+        nullable=False,
+    )
+    run_id: Mapped[str | None] = mapped_column(
+        String(36),
+        ForeignKey("agent_runs.id"),
+        nullable=True,
+    )
+    step_id: Mapped[str | None] = mapped_column(
+        String(36),
+        ForeignKey("agent_steps.id"),
+        nullable=True,
+    )
+    job_id: Mapped[str | None] = mapped_column(
+        String(36),
+        ForeignKey("agent_jobs.id"),
+        nullable=True,
+    )
+    event_type: Mapped[str] = mapped_column(String(64), nullable=False)
+    level: Mapped[str] = mapped_column(String(16), default="info", nullable=False)
+    message: Mapped[str | None] = mapped_column(Text, nullable=True)
+    payload_json: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
+    sequence: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    actor_type: Mapped[str] = mapped_column(String(32), default="agent", nullable=False)
+    actor_role: Mapped[str] = mapped_column(String(64), default="planner", nullable=False)
+    actor_id: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    agent_name: Mapped[str | None] = mapped_column(String(128), default="clipforge_agent", nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
 
 

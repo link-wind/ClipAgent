@@ -6,8 +6,18 @@ from pydantic import BaseModel
 from backend.app.agent.session_use_cases import AgentReadService, AgentSessionService
 from backend.app.execution.job_use_cases import AgentExecutionService, AgentTaskReadService
 from backend.db import SessionLocal
-from backend.models.agent import AgentDashboardSummary, AgentEvent, AgentSession, AgentTaskDetail, AgentTaskSummary
+from backend.db.repositories import AgentRunRepository, AgentSessionRepository, AgentTraceEventRepository
+from backend.models.agent import (
+    AgentDashboardSummary,
+    AgentEvent,
+    AgentRunSummary,
+    AgentSession,
+    AgentTaskDetail,
+    AgentTaskSummary,
+    AgentTraceEvent,
+)
 from backend.services.agent_service import agent_service
+from backend.services.agent_run_service import ActiveOperationConflict
 
 
 router = APIRouter()
@@ -34,6 +44,19 @@ def _translate_planner_error(exc: Exception) -> HTTPException:
             return HTTPException(status_code=400, detail="OpenAI 兼容服务请求参数无效，请检查模型或输入配置。")
         return HTTPException(status_code=status_code, detail="OpenAI 兼容服务请求失败，请检查当前配置。")
     raise exc
+
+
+def _active_operation_conflict(exc: ActiveOperationConflict) -> HTTPException:
+    return HTTPException(
+        status_code=409,
+        detail={
+            "message": "Session has an active operation",
+            "activeOperation": {
+                "type": exc.operation_type,
+                "id": exc.operation_id,
+            },
+        },
+    )
 
 
 class SessionCreateRequest(BaseModel):
@@ -75,6 +98,8 @@ async def add_message(session_id: str, request: MessageRequest):
         return agent_service.sync_session(session)
     except KeyError:
         raise HTTPException(status_code=404, detail="Session not found")
+    except ActiveOperationConflict as exc:
+        raise _active_operation_conflict(exc)
     except (RuntimeError, ValueError) as exc:
         raise HTTPException(status_code=400, detail=str(exc))
     except Exception as exc:
@@ -92,6 +117,8 @@ async def confirm_grounding_candidates(session_id: str, request: GroundingConfir
         return agent_service.sync_session(session)
     except KeyError:
         raise HTTPException(status_code=404, detail="Session not found")
+    except ActiveOperationConflict as exc:
+        raise _active_operation_conflict(exc)
     except (RuntimeError, ValueError) as exc:
         raise HTTPException(status_code=400, detail=str(exc))
     except Exception as exc:
@@ -105,6 +132,8 @@ async def confirm_session(session_id: str):
         return agent_service.sync_session(session)
     except KeyError:
         raise HTTPException(status_code=404, detail="Session not found")
+    except ActiveOperationConflict as exc:
+        raise _active_operation_conflict(exc)
     except RuntimeError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
 
@@ -113,6 +142,101 @@ async def confirm_session(session_id: str):
 async def get_session_events(session_id: str):
     try:
         return await run_in_threadpool(read_service.read_events, session_id)
+    except KeyError:
+        raise HTTPException(status_code=404, detail="Session not found")
+
+
+@router.get("/sessions/{session_id}/runs", response_model=list[AgentRunSummary])
+async def list_session_runs(session_id: str):
+    def read_runs():
+        with SessionLocal() as db:
+            session_record = AgentSessionRepository(db).get(session_id)
+            if session_record is None:
+                raise KeyError(session_id)
+            return [
+                AgentRunSummary(
+                    id=row.id,
+                    sessionId=row.session_id,
+                    triggerType=row.trigger_type,
+                    status=row.status,
+                    summary=row.summary or "",
+                    startedAt=row.started_at.isoformat() if row.started_at else None,
+                    finishedAt=row.finished_at.isoformat() if row.finished_at else None,
+                    createdAt=row.created_at.isoformat(),
+                )
+                for row in AgentRunRepository(db).list_for_session(session_id)
+            ]
+
+    try:
+        return await run_in_threadpool(read_runs)
+    except KeyError:
+        raise HTTPException(status_code=404, detail="Session not found")
+
+
+@router.get("/sessions/{session_id}/runs/{run_id}/trace", response_model=list[AgentTraceEvent])
+async def list_run_trace(session_id: str, run_id: str):
+    def read_trace():
+        with SessionLocal() as db:
+            session_record = AgentSessionRepository(db).get(session_id)
+            run_record = AgentRunRepository(db).get(run_id)
+            if session_record is None or run_record is None or run_record.session_id != session_id:
+                raise KeyError(run_id)
+            return [
+                AgentTraceEvent(
+                    id=row.id,
+                    sessionId=row.session_id,
+                    runId=row.run_id,
+                    stepId=row.step_id,
+                    jobId=row.job_id,
+                    eventType=row.event_type,
+                    level=row.level,
+                    message=row.message,
+                    payload=row.payload_json or {},
+                    sequence=row.sequence,
+                    actorRole=row.actor_role,
+                    createdAt=row.created_at.isoformat(),
+                )
+                for row in AgentTraceEventRepository(db).list_for_run(run_id)
+            ]
+
+    try:
+        return await run_in_threadpool(read_trace)
+    except KeyError:
+        raise HTTPException(status_code=404, detail="Run not found")
+
+
+@router.get("/sessions/{session_id}/trace", response_model=list[AgentTraceEvent])
+async def list_session_trace(session_id: str, afterSequence: int | None = None, limit: int = 100):
+    def read_trace():
+        with SessionLocal() as db:
+            session_record = AgentSessionRepository(db).get(session_id)
+            if session_record is None:
+                raise KeyError(session_id)
+            bounded_limit = max(1, min(limit, 500))
+            return [
+                AgentTraceEvent(
+                    id=row.id,
+                    sessionId=row.session_id,
+                    runId=row.run_id,
+                    stepId=row.step_id,
+                    jobId=row.job_id,
+                    eventType=row.event_type,
+                    level=row.level,
+                    message=row.message,
+                    payload=row.payload_json or {},
+                    sequence=row.sequence,
+                    actorRole=row.actor_role,
+                    createdAt=row.created_at.isoformat(),
+                )
+                for row in AgentTraceEventRepository(db).list_for_session(
+                    session_id,
+                    after_sequence=afterSequence,
+                    limit=bounded_limit,
+                )
+            ]
+
+    try:
+        return await run_in_threadpool(read_trace)
     except KeyError:
         raise HTTPException(status_code=404, detail="Session not found")
 

@@ -75,6 +75,23 @@ RETRYABLE_STEP_TO_AGENT_STEP: dict[str, AgentStepId] = {
 
 
 class AgentStepSnapshotService:
+    def build_persisted_steps(self, step_rows) -> list[AgentStep]:
+        return [
+            AgentStep(
+                id=row.step_key,
+                title=row.title,
+                description=row.description,
+                status=row.status,
+                progress=row.progress,
+                summary=row.summary or "",
+                result=row.result_json or None,
+                error=AgentStepError.model_validate(row.error_json) if row.error_json else None,
+                startedAt=row.started_at.isoformat() if row.started_at else None,
+                finishedAt=row.finished_at.isoformat() if row.finished_at else None,
+            )
+            for row in step_rows
+        ]
+
     def build_session_steps(self, session_record, message_rows, plan_row, event_rows) -> list[AgentStep]:
         first_prompt = self._extract_first_prompt(message_rows)
         plan = self._extract_plan(plan_row)
