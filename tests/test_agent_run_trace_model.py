@@ -452,6 +452,39 @@ class AgentRunTraceModelTests(unittest.TestCase):
             ["step_started", "step_succeeded"],
         )
 
+    def test_step_service_accepts_skill_observability_step_keys(self):
+        session = AgentSessionRepository(self.db).create(status="idle", current_step="", progress=0)
+        run = AgentRunRepository(self.db).create(
+            session_id=session.id,
+            trigger_type="user_message",
+            status="running",
+        )
+        service = AgentStepService(self.db)
+
+        first = service.start_step(
+            session_id=session.id,
+            run_id=run.id,
+            step_key="select_strategy",
+            title="选择规划策略",
+            description="选择 skill。",
+            sequence=1,
+        )
+        second = service.start_step(
+            session_id=session.id,
+            run_id=run.id,
+            step_key="build_planner_request",
+            title="构建 Planner Request",
+            description="生成 planner request 证据。",
+            sequence=2,
+        )
+
+        self.assertEqual(
+            [step.step_key for step in AgentStepRepository(self.db).list_for_run(run.id)],
+            ["select_strategy", "build_planner_request"],
+        )
+        self.assertEqual(first.status, "running")
+        self.assertEqual(second.status, "running")
+
     def test_step_service_records_failed_step_error(self):
         session = AgentSessionRepository(self.db).create(status="idle", current_step="", progress=0)
         service = AgentStepService(self.db)
@@ -508,7 +541,14 @@ class AgentRunTraceModelTests(unittest.TestCase):
         self.assertEqual(runs[-1].status, "succeeded")
         self.assertEqual(
             [step.step_key for step in steps],
-            ["understand_request", "extract_requirements", "generate_options", "finalize_plan"],
+            [
+                "select_strategy",
+                "build_planner_request",
+                "understand_request",
+                "extract_requirements",
+                "generate_options",
+                "finalize_plan",
+            ],
         )
         self.assertTrue(all(step.status == "succeeded" for step in steps))
 

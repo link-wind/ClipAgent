@@ -49,11 +49,16 @@ class AgentRunService:
         return run
 
     def succeed_run(self, run_id: str, summary: str = "", output: dict | None = None):
+        current = self.run_repo.get(run_id)
+        merged_output = {
+            **(current.output_json or {}),
+            **(output or {}),
+        } if current is not None else (output or {})
         run = self.run_repo.update_status(
             run_id,
             status="succeeded",
             summary=summary,
-            output_json=output or {},
+            output_json=merged_output,
             finished_at=datetime.utcnow(),
         )
         if run is None:

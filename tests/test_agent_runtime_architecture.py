@@ -23,6 +23,8 @@ class AgentRuntimeArchitectureTests(unittest.TestCase):
             "backend/runtime/trace_recorder.py",
             "backend/domain/__init__.py",
             "backend/domain/agent/__init__.py",
+            "backend/domain/skills/__init__.py",
+            "backend/domain/skills/contracts.py",
             "backend/domain/planning/__init__.py",
             "backend/infrastructure/__init__.py",
             "backend/infrastructure/config/__init__.py",
@@ -149,3 +151,28 @@ class AgentRuntimeArchitectureTests(unittest.TestCase):
         self.assertTrue(hasattr(ingestion_service, "KnowledgeIngestionService"))
         self.assertTrue(hasattr(context_usage_service, "ContextUsageService"))
         self.assertTrue(hasattr(lightweight_index, "LightweightVectorIndex"))
+
+    def test_skill_foundation_boundaries_import(self) -> None:
+        skill_contracts = importlib.import_module("backend.domain.skills.contracts")
+        skill_domain = importlib.import_module("backend.domain.skills")
+        skill_registry = importlib.import_module("backend.app.skills.registry")
+        selection_service = importlib.import_module("backend.app.skills.selection_service")
+        product_handlers = importlib.import_module("backend.skills.builtin.product_intro_video.handlers")
+        repair_handlers = importlib.import_module(
+            "backend.skills.builtin.execution_feedback_replan.handlers"
+        )
+
+        self.assertTrue(hasattr(skill_contracts, "SkillDefinition"))
+        self.assertTrue(hasattr(skill_contracts, "PlannerRequest"))
+        self.assertTrue(hasattr(skill_contracts, "SkillSelectionRequest"))
+        self.assertTrue(hasattr(skill_contracts, "SkillSelection"))
+        self.assertTrue(hasattr(skill_contracts, "SkillRunSummary"))
+        self.assertTrue(hasattr(skill_domain, "SkillDefinition"))
+        self.assertTrue(hasattr(skill_domain, "PlannerRequest"))
+        self.assertTrue(hasattr(skill_domain, "SkillSelectionRequest"))
+        self.assertTrue(hasattr(skill_domain, "SkillSelection"))
+        self.assertTrue(hasattr(skill_domain, "SkillRunSummary"))
+        self.assertTrue(hasattr(skill_registry, "BuiltinSkillRegistry"))
+        self.assertTrue(hasattr(selection_service, "SkillSelectionService"))
+        self.assertTrue(hasattr(product_handlers, "build_product_intro_planner_request"))
+        self.assertTrue(hasattr(repair_handlers, "build_execution_feedback_replan_request"))

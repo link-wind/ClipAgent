@@ -21,7 +21,7 @@ import backend.api.agent as agent_api_module
 from backend.config import get_settings
 from backend.db.base import Base
 from backend.db.models import AgentPlanRecord, AgentSessionRecord
-from backend.db.repositories import AgentTraceEventRepository
+from backend.db.repositories import AgentRunRepository, AgentStepRepository, AgentTraceEventRepository
 from backend.services.agent_execution_service import AgentExecutionService
 from backend.services.agent_read_service import AgentReadService
 from backend.services.agent_session_service import AgentSessionService
@@ -71,6 +71,39 @@ class BackendImportTests(unittest.TestCase):
             service = GPTService()
             with self.assertRaisesRegex(RuntimeError, "OPENAI_API_KEY is not configured"):
                 asyncio.run(service.analyze_script("测试脚本"))
+
+
+class SkillEngineContractTests(unittest.TestCase):
+    def test_skill_engine_delegates_selection_to_application_service(self):
+        from backend.domain.skills.contracts import SkillSelection, SkillSelectionRequest
+        from backend.runtime.skill_engine import SkillEngine
+
+        class StubSelectionService:
+            def __init__(self):
+                self.requests = []
+
+            def select_skill(self, request):
+                self.requests.append(request)
+                return SkillSelection(
+                    skill_id="builtin.product_intro_video",
+                    version="0.1.0",
+                    reason="stub-selection",
+                )
+
+        selection_service = StubSelectionService()
+        engine = SkillEngine(selection_service=selection_service)
+        request = SkillSelectionRequest(
+            session_id="session-1",
+            run_id="run-1",
+            run_type="initial_planning",
+            user_message="做一个产品介绍视频",
+        )
+
+        selection = engine.select_skill(request)
+
+        self.assertEqual(selection.skill_id, "builtin.product_intro_video")
+        self.assertEqual(selection.reason, "stub-selection")
+        self.assertEqual(selection_service.requests, [request])
 
 
 class AgentSessionTests(unittest.TestCase):
@@ -607,6 +640,47 @@ class AgentApiTests(unittest.TestCase):
         self.assertEqual(latest_plan.version, 3)
         self.assertEqual(latest_plan.trigger_type, "user_revision")
         self.assertEqual(latest_plan.execution_plan_json["style"], "商务演示风格")
+
+    def test_revision_replan_writes_skill_observability_into_existing_run_step_trace_models(self):
+        created = self.session_service.create_session()
+        awaiting = self.session_service.add_user_message(created.id, "给 Notion AI 做一个 30 秒产品亮点视频")
+        self.session_service.confirm_grounding_candidates(
+            created.id,
+            [candidate.id for candidate in awaiting.grounding.candidates[:2]],
+        )
+
+        self.session_service.add_user_message(created.id, "更商务一点，品牌感再强一点")
+
+        with self.session_factory() as db:
+            run = AgentRunRepository(db).list_for_session(created.id)[-1]
+            steps = AgentStepRepository(db).list_for_run(run.id)
+            trace_events = AgentTraceEventRepository(db).list_for_run(run.id)
+
+        self.assertEqual(run.trigger_type, "user_revision")
+        self.assertIn("skillSelectionRequest", run.input_json)
+        self.assertEqual(run.input_json["skillSelectionRequest"]["run_type"], "user_revision")
+        self.assertEqual(run.metadata_json["skill"]["skillId"], "builtin.product_intro_video")
+        self.assertEqual(run.metadata_json["skill"]["status"], "succeeded")
+        self.assertEqual(run.output_json["plannerRequest"]["action"], "user_revision")
+        self.assertEqual(
+            [step.step_key for step in steps[:2]],
+            ["select_strategy", "build_planner_request"],
+        )
+        event_types = [event.event_type for event in trace_events]
+        self.assertEqual(
+            event_types[:8],
+            [
+                "run_started",
+                "step_started",
+                "skill_selected",
+                "step_succeeded",
+                "step_started",
+                "skill_run_started",
+                "skill_run_succeeded",
+                "step_succeeded",
+            ],
+        )
+        self.assertEqual(event_types[-1], "run_succeeded")
 
     def test_add_message_updates_failed_planning_session_plan_when_scene_keywords_are_provided(self):
         created = self.session_service.create_session("做一个科技短片")

@@ -120,6 +120,7 @@ class AgentSessionService:
                             session_record=session_record,
                             message_record=message_record,
                             scene_keyword_updates=self._extract_scene_keyword_updates(content),
+                            run_id=run_record.id,
                         )
                         plan = execution_plan_to_edit_plan(next_plan.execution_plan_json)
                         self._apply_plan_to_session(session_record, plan)
@@ -238,6 +239,7 @@ class AgentSessionService:
                             db=db,
                             session_record=session_record,
                             candidate_ids=candidate_ids,
+                            run_id=run_record.id,
                         )
                         grounded_plan = execution_plan_to_edit_plan(next_plan.execution_plan_json)
                         self._apply_plan_to_session(session_record, grounded_plan)
@@ -248,6 +250,7 @@ class AgentSessionService:
                         db=db,
                         session_record=session_record,
                         candidate_ids=candidate_ids,
+                        run_id=run_record.id,
                     )
                     grounded_plan = execution_plan_to_edit_plan(next_plan.execution_plan_json)
                     self._apply_plan_to_session(session_record, grounded_plan)
@@ -303,6 +306,7 @@ class AgentSessionService:
 
     def _record_planning_steps(self, db, session_id: str, run_id: str, prompt: str, plan: EditPlan) -> None:
         step_service = AgentStepService(db)
+        existing_step_count = len(step_service.step_repo.list_for_run(run_id))
         steps = [
             (
                 "understand_request",
@@ -337,7 +341,7 @@ class AgentSessionService:
                 plan.model_dump(mode="json"),
             ),
         ]
-        for index, (step_key, title, description, result) in enumerate(steps, start=1):
+        for index, (step_key, title, description, result) in enumerate(steps, start=existing_step_count + 1):
             step = step_service.start_step(
                 session_id=session_id,
                 run_id=run_id,

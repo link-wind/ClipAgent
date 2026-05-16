@@ -115,7 +115,9 @@ class AgentReadService:
                 for event in self.build_event_response(event_rows)
             ],
             steps=(
-                self.step_snapshot_service.build_persisted_steps(persisted_step_rows)
+                self.step_snapshot_service.build_persisted_steps(
+                    self._filter_session_persisted_steps(persisted_step_rows)
+                )
                 if persisted_step_rows
                 else self.step_snapshot_service.build_session_steps(
                     session_record=session_record,
@@ -148,6 +150,19 @@ class AgentReadService:
             progress=session_record.progress,
             currentStep=session_record.current_step or "",
         )
+
+    def _filter_session_persisted_steps(self, persisted_step_rows):
+        visible_step_keys = {
+            "understand_request",
+            "extract_requirements",
+            "generate_options",
+            "finalize_plan",
+            "create_task",
+            "search_assets",
+            "prepare_assets",
+            "render_video",
+        }
+        return [row for row in persisted_step_rows if row.step_key in visible_step_keys]
 
     def _should_include_session_diagnostic(self, session_record, job_record) -> bool:
         if getattr(session_record, "status", None) == "failed":
