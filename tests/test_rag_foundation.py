@@ -112,6 +112,70 @@ class RagFoundationRetrievalTests(RagFoundationDbTestCase):
         self.assertGreater(results[0].score, 0)
         self.assertEqual(results[0].matched_terms, ["产品", "使用场景"])
 
+    def test_retrieval_service_only_reads_ready_active_source_chunks(self) -> None:
+        from backend.app.knowledge.retrieval_service import KnowledgeRetrievalService
+        from backend.db.repositories import KnowledgeRepository
+        from backend.domain.knowledge.contracts import RetrievalQuery
+
+        repo = KnowledgeRepository(self.db)
+        source = repo.create_source(
+            project_key="default",
+            name="brand.md",
+            content_type="text/markdown",
+            status="ready",
+        )
+        version = repo.create_version(
+            source_id=source.id,
+            version_number=1,
+            status="ready",
+            content_hash="hash-ready",
+            storage_path="default/source/v1/brand.md",
+            original_filename="brand.md",
+            file_size=100,
+            parser_type="markdown",
+        )
+        repo.activate_version(version.id)
+        repo.create_chunk(
+            source_id=source.id,
+            version_id=version.id,
+            chunk_index=0,
+            chunk_type="paragraph",
+            title_path="",
+            content="ClipForge 负责视频生成。",
+            token_count=4,
+        )
+
+        other = repo.create_source(
+            project_key="default",
+            name="draft.md",
+            content_type="text/markdown",
+            status="processing",
+        )
+        other_version = repo.create_version(
+            source_id=other.id,
+            version_number=1,
+            status="processing",
+            content_hash="hash-draft",
+            storage_path="default/source/v1/draft.md",
+            original_filename="draft.md",
+            file_size=10,
+            parser_type="markdown",
+        )
+        repo.set_processing_version(other.id, other_version.id, status="processing")
+        repo.create_chunk(
+            source_id=other.id,
+            version_id=other_version.id,
+            chunk_index=0,
+            chunk_type="paragraph",
+            title_path="",
+            content="this chunk should be ignored",
+            token_count=5,
+        )
+
+        results = KnowledgeRetrievalService(self.db).retrieve(RetrievalQuery(text="视频生成", top_k=3))
+        self.assertEqual(len(results), 1)
+        self.assertEqual(results[0].chunk.content, "ClipForge 负责视频生成。")
+
     def test_retrieval_service_returns_seed_context_chunks(self) -> None:
         from backend.app.knowledge.retrieval_service import KnowledgeRetrievalService
         from backend.domain.knowledge.contracts import RetrievalQuery
@@ -180,6 +244,40 @@ class RagFoundationContextEngineTests(RagFoundationDbTestCase):
         self.assertEqual(recorder.events[0].event_type, "rag_retrieval_started")
         self.assertEqual(recorder.events[-1].event_type, "rag_retrieval_succeeded")
         self.assertEqual(recorder.events[-1].actor_role, "context")
+
+    def test_context_engine_surfaces_chunk_metadata_in_documents_and_citations(self) -> None:
+        from backend.domain.knowledge.contracts import KnowledgeChunk, RetrievalResult
+        from backend.runtime.context_engine import ContextEngine, ContextRequest
+
+        class RetrievalWithStructuredChunk:
+            def retrieve(self, query):
+                return [
+                    RetrievalResult(
+                        chunk=KnowledgeChunk(
+                            id="chunk-1",
+                            document_id="source-1",
+                            content="ClipForge 负责视频生成。",
+                            metadata={
+                                "source_id": "source-1",
+                                "version_id": "version-1",
+                                "title_path": "Brand / Tone",
+                                "chunk_type": "paragraph",
+                            },
+                        ),
+                        score=0.9,
+                        matched_terms=["视频生成"],
+                    )
+                ]
+
+        engine = ContextEngine(retrieval_service=RetrievalWithStructuredChunk(), trace_recorder=_FakeTraceRecorder())
+        bundle = engine.build_context(ContextRequest(session_id="session-1", message="视频生成"))
+
+        self.assertEqual(bundle.documents[0]["sourceId"], "source-1")
+        self.assertEqual(bundle.documents[0]["versionId"], "version-1")
+        self.assertEqual(bundle.documents[0]["titlePath"], "Brand / Tone")
+        self.assertEqual(bundle.documents[0]["chunkType"], "paragraph")
+        self.assertEqual(bundle.citations[0]["sourceId"], "source-1")
+        self.assertEqual(bundle.citations[0]["versionId"], "version-1")
 
     def test_context_engine_returns_empty_context_when_retrieval_fails(self) -> None:
         from backend.runtime.context_engine import ContextEngine, ContextRequest

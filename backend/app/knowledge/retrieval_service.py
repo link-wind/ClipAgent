@@ -33,25 +33,42 @@ class KnowledgeRetrievalService:
         self.index = index or LightweightVectorIndex()
 
     def retrieve(self, query: RetrievalQuery) -> list[RetrievalResult]:
-        chunks = self._load_chunks()
+        chunks = self._load_chunks(query)
         return self.index.search(query, chunks)
 
-    def _load_chunks(self) -> list[KnowledgeChunk]:
+    def _load_chunks(self, query: RetrievalQuery | None = None) -> list[KnowledgeChunk]:
         if self.db is None:
             return list(DEFAULT_SEED_CHUNKS)
 
-        records = KnowledgeRepository(self.db).list_chunks()
+        project_key = self._project_key_from_query(query)
+        records = KnowledgeRepository(self.db).list_ready_active_chunks(project_key)
         if not records:
             return list(DEFAULT_SEED_CHUNKS)
 
         return [
             KnowledgeChunk(
                 id=record.id,
-                document_id=record.document_id,
+                document_id=record.source_id,
                 content=record.content,
                 chunk_index=record.chunk_index,
                 token_count=record.token_count,
-                metadata=record.metadata_json or {},
+                metadata=self._chunk_metadata(record),
             )
             for record in records
         ]
+
+    def _project_key_from_query(self, query: RetrievalQuery | None) -> str:
+        if query is not None:
+            metadata = query.metadata or {}
+            project_key = metadata.get("project_key")
+            if isinstance(project_key, str) and project_key.strip():
+                return project_key.strip()
+        return "default"
+
+    def _chunk_metadata(self, record) -> dict[str, object]:
+        metadata = dict(record.metadata_json or {})
+        metadata.setdefault("source_id", record.source_id)
+        metadata.setdefault("version_id", record.version_id)
+        metadata.setdefault("title_path", record.title_path)
+        metadata.setdefault("chunk_type", record.chunk_type)
+        return metadata

@@ -273,6 +273,23 @@ class KnowledgeRepository:
         )
         return list(self.db.scalars(stmt))
 
+    def list_ready_active_chunks(self, project_key: str) -> list[KnowledgeChunkRecord]:
+        stmt = (
+            select(KnowledgeChunkRecord)
+            .join(KnowledgeSourceRecord, KnowledgeChunkRecord.source_id == KnowledgeSourceRecord.id)
+            .where(KnowledgeSourceRecord.project_key == project_key)
+            .where(KnowledgeSourceRecord.status == "ready")
+            .where(KnowledgeSourceRecord.deleted_at.is_(None))
+            .where(KnowledgeSourceRecord.active_version_id.is_not(None))
+            .where(KnowledgeChunkRecord.version_id == KnowledgeSourceRecord.active_version_id)
+            .order_by(
+                KnowledgeSourceRecord.created_at.asc(),
+                KnowledgeChunkRecord.chunk_index.asc(),
+                KnowledgeChunkRecord.id.asc(),
+            )
+        )
+        return list(self.db.scalars(stmt))
+
     def delete_chunks_for_version(self, version_id: str) -> int:
         stmt = select(KnowledgeChunkRecord).where(KnowledgeChunkRecord.version_id == version_id)
         records = list(self.db.scalars(stmt))

@@ -76,6 +76,10 @@ class ContextEngine:
             {
                 "chunkId": result.chunk.id,
                 "documentId": result.chunk.document_id,
+                "sourceId": result.chunk.metadata.get("source_id", result.chunk.document_id),
+                "versionId": result.chunk.metadata.get("version_id"),
+                "titlePath": result.chunk.metadata.get("title_path"),
+                "chunkType": result.chunk.metadata.get("chunk_type"),
                 "content": result.chunk.content,
                 "score": result.score,
                 "matchedTerms": result.matched_terms,
@@ -86,6 +90,8 @@ class ContextEngine:
             {
                 "documentId": result.chunk.document_id,
                 "chunkId": result.chunk.id,
+                "sourceId": result.chunk.metadata.get("source_id", result.chunk.document_id),
+                "versionId": result.chunk.metadata.get("version_id"),
                 "score": result.score,
             }
             for result in results
