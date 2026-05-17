@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from backend.app.skills.registry import BuiltinSkillRegistry
+from backend.app.skills.registry import BuiltinSkillRegistry, Handler
 from backend.domain.skills.contracts import SkillSelection, SkillSelectionRequest
 
 
@@ -18,3 +18,6 @@ class SkillSelectionService:
                     reason=f"run_type={request.run_type} matched {definition.id}",
                 )
         raise LookupError(request.run_type)
+
+    def resolve_handler(self, skill_id: str) -> Handler:
+        return self._registry.resolve_handler(skill_id)

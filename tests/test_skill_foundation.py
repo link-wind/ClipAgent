@@ -205,6 +205,75 @@ class SkillSelectionServiceTests(unittest.TestCase):
             )
 
 
+class SkillEngineTests(unittest.TestCase):
+    def test_skill_engine_builds_planner_request_from_selected_handler(self) -> None:
+        from backend.domain.skills.contracts import PlannerRequest, SkillSelectionRequest
+        from backend.runtime.skill_engine import SkillEngine
+
+        engine = SkillEngine()
+
+        result = engine.build_planner_request(
+            SkillSelectionRequest(
+                session_id="session-1",
+                run_id="run-1",
+                run_type="initial_planning",
+                user_message="做一个 30 秒产品介绍视频",
+                context={"briefSummary": "强调产品价值和使用场景"},
+            )
+        )
+
+        self.assertEqual(result.selection.skill_id, "builtin.product_intro_video")
+        self.assertEqual(result.selection.version, "0.1.0")
+        self.assertIsInstance(result.planner_request, PlannerRequest)
+        self.assertEqual(result.planner_request.action, "initial_planning")
+        self.assertEqual(
+            result.planner_request.messages,
+            [{"role": "user", "content": "做一个 30 秒产品介绍视频"}],
+        )
+        self.assertEqual(result.summary.skill_id, "builtin.product_intro_video")
+        self.assertEqual(result.summary.skill_version, "0.1.0")
+        self.assertEqual(result.summary.status, "succeeded")
+        self.assertEqual(result.summary.input_summary, "run_type=initial_planning")
+        self.assertEqual(result.summary.output_summary, "planner_request action=initial_planning")
+
+    def test_skill_engine_returns_failed_summary_when_handler_raises(self) -> None:
+        from backend.domain.skills.contracts import SkillDefinition, SkillSelectionRequest
+        from backend.runtime.skill_engine import SkillEngine
+
+        class FakeRegistry:
+            def list_definitions(self):
+                return [
+                    SkillDefinition(
+                        id="builtin.broken",
+                        version="0.1.0",
+                        name="Broken",
+                        description="Broken skill.",
+                        trigger_conditions={"runTypes": ["initial_planning"]},
+                        handler="tests.fixtures.missing:handler",
+                    )
+                ]
+
+            def resolve_handler(self, _skill_id: str):
+                raise RuntimeError("handler import failed")
+
+        engine = SkillEngine.from_registry(FakeRegistry())
+
+        result = engine.build_planner_request(
+            SkillSelectionRequest(
+                session_id="session-1",
+                run_id="run-1",
+                run_type="initial_planning",
+                user_message="test",
+            )
+        )
+
+        self.assertEqual(result.selection.skill_id, "builtin.broken")
+        self.assertIsNone(result.planner_request)
+        self.assertEqual(result.summary.skill_id, "builtin.broken")
+        self.assertEqual(result.summary.status, "failed")
+        self.assertIn("handler import failed", result.summary.error_message)
+
+
 class BuiltinSkillHandlerTests(unittest.TestCase):
     def test_product_intro_handler_builds_planner_request_for_initial_planning(self) -> None:
         from backend.domain.skills.contracts import PlannerRequest, SkillSelectionRequest
