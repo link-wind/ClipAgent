@@ -92,6 +92,57 @@ class MCPFoundationRegistryTests(unittest.TestCase):
         self.assertEqual(definition.category, "knowledge")
         self.assertTrue(definition.tool_name.endswith(":read_project_knowledge"))
 
+    def test_builtin_tool_registry_accepts_configured_mcp_definitions(self) -> None:
+        from backend.app.tools.registry import BuiltinToolRegistry
+        from backend.domain.tools.contracts import ToolDefinition
+
+        registry = BuiltinToolRegistry(
+            configured_definitions=[
+                ToolDefinition(
+                    id="remote_search",
+                    name="Remote Search",
+                    description="Search remote docs through MCP.",
+                    category="knowledge",
+                    permissions={"scope": "project", "mode": "read_only"},
+                    source_type="mcp",
+                    mcp_server_id="docs-server",
+                    tool_name="search_docs",
+                    timeout_ms=1200,
+                )
+            ]
+        )
+
+        definitions = registry.list_definitions()
+        definition = registry.get_definition("remote_search")
+
+        self.assertIn("remote_search", [item.id for item in definitions])
+        self.assertEqual(definition.source_type, "mcp")
+        self.assertEqual(definition.mcp_server_id, "docs-server")
+        self.assertEqual(definition.tool_name, "search_docs")
+        self.assertEqual(definition.timeout_ms, 1200)
+
+    def test_builtin_tool_registry_rejects_local_handler_resolution_for_mcp_tools(self) -> None:
+        from backend.app.tools.registry import BuiltinToolRegistry
+        from backend.domain.tools.contracts import ToolDefinition
+
+        registry = BuiltinToolRegistry(
+            configured_definitions=[
+                ToolDefinition(
+                    id="remote_search",
+                    name="Remote Search",
+                    description="Search remote docs through MCP.",
+                    category="knowledge",
+                    permissions={"scope": "project", "mode": "read_only"},
+                    source_type="mcp",
+                    mcp_server_id="docs-server",
+                    tool_name="search_docs",
+                )
+            ]
+        )
+
+        with self.assertRaisesRegex(LookupError, "does not expose a local handler"):
+            registry.resolve_handler("remote_search")
+
     def test_tool_permission_service_allows_matching_read_only_scope(self) -> None:
         from backend.app.tools.permission_service import PermissionDecision, ToolPermissionService
         from backend.domain.tools.contracts import ToolPermission

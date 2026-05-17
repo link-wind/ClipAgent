@@ -8,8 +8,13 @@ from backend.tools.builtin import BUILTIN_TOOL_DEFINITION_MODULES
 
 
 class BuiltinToolRegistry:
-    def __init__(self, definition_modules: tuple[str, ...] | None = None) -> None:
+    def __init__(
+        self,
+        definition_modules: tuple[str, ...] | None = None,
+        configured_definitions: list[ToolDefinition] | tuple[ToolDefinition, ...] | None = None,
+    ) -> None:
         self._definition_modules = definition_modules or BUILTIN_TOOL_DEFINITION_MODULES
+        self._configured_definitions = tuple(configured_definitions or ())
         self._definitions_by_id: dict[str, ToolDefinition] | None = None
 
     def list_definitions(self) -> list[ToolDefinition]:
@@ -24,6 +29,8 @@ class BuiltinToolRegistry:
 
     def resolve_handler(self, tool_id: str) -> Any:
         definition = self.get_definition(tool_id)
+        if definition.source_type != "local_builtin":
+            raise LookupError(f"Tool {tool_id} does not expose a local handler.")
         module_name, function_name = definition.tool_name.split(":", maxsplit=1)
         module = import_module(module_name)
         return getattr(module, function_name)
@@ -34,6 +41,8 @@ class BuiltinToolRegistry:
             for module_name in self._definition_modules:
                 module = import_module(module_name)
                 definition = getattr(module, "TOOL_DEFINITION")
+                definitions[definition.id] = definition
+            for definition in self._configured_definitions:
                 definitions[definition.id] = definition
             self._definitions_by_id = definitions
         return self._definitions_by_id
