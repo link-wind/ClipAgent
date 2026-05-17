@@ -1,6 +1,12 @@
 from __future__ import annotations
 
+import json
+import os
+import tempfile
 import unittest
+from pathlib import Path
+from unittest.mock import patch
+
 from sqlalchemy import create_engine, event
 from sqlalchemy.orm import sessionmaker
 
@@ -142,6 +148,96 @@ class MCPFoundationRegistryTests(unittest.TestCase):
 
         with self.assertRaisesRegex(LookupError, "does not expose a local handler"):
             registry.resolve_handler("remote_search")
+
+    def test_runtime_config_builds_configured_mcp_tool_definitions(self) -> None:
+        from backend.app.tools.configured_definitions import load_configured_mcp_tool_definitions
+        from backend.services.runtime_config_service import RuntimeConfigService
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            runtime_path = Path(temp_dir) / "runtime_config.local.json"
+            runtime_path.write_text(
+                json.dumps(
+                    {
+                        "CLIPFORGE_MCP_TOOLS_JSON": json.dumps(
+                            [
+                                {
+                                    "id": "remote_search",
+                                    "name": "Remote Search",
+                                    "description": "Search remote docs through MCP.",
+                                    "category": "knowledge",
+                                    "scope": "project",
+                                    "mcpServerId": "docs-server",
+                                    "toolName": "search_docs",
+                                    "timeoutMs": 1200,
+                                }
+                            ]
+                        )
+                    }
+                ),
+                encoding="utf-8",
+            )
+            service = RuntimeConfigService(config_path=runtime_path)
+
+            definitions = load_configured_mcp_tool_definitions(service)
+
+        self.assertEqual(len(definitions), 1)
+        definition = definitions[0]
+        self.assertEqual(definition.id, "remote_search")
+        self.assertEqual(definition.name, "Remote Search")
+        self.assertEqual(definition.description, "Search remote docs through MCP.")
+        self.assertEqual(definition.category, "knowledge")
+        self.assertEqual(definition.permissions, {"scope": "project", "mode": "read_only"})
+        self.assertEqual(definition.source_type, "mcp")
+        self.assertEqual(definition.mcp_server_id, "docs-server")
+        self.assertEqual(definition.tool_name, "search_docs")
+        self.assertEqual(definition.timeout_ms, 1200)
+
+    def test_runtime_config_mcp_tools_json_can_fall_back_to_environment(self) -> None:
+        from backend.app.tools.configured_definitions import load_configured_mcp_tool_definitions
+        from backend.services.runtime_config_service import RuntimeConfigService
+
+        tools_json = json.dumps(
+            [
+                {
+                    "id": "remote_diagnostics",
+                    "name": "Remote Diagnostics",
+                    "description": "Read diagnostics through MCP.",
+                    "category": "diagnostics",
+                    "scope": "session",
+                    "mcpServerId": "diagnostics-server",
+                    "toolName": "read_diagnostics",
+                }
+            ]
+        )
+        with tempfile.TemporaryDirectory() as temp_dir, patch.dict(
+            os.environ,
+            {"CLIPFORGE_MCP_TOOLS_JSON": tools_json},
+            clear=False,
+        ):
+            service = RuntimeConfigService(config_path=Path(temp_dir) / "runtime_config.local.json")
+            definitions = load_configured_mcp_tool_definitions(service)
+
+        self.assertEqual([definition.id for definition in definitions], ["remote_diagnostics"])
+        self.assertEqual(definitions[0].mcp_server_id, "diagnostics-server")
+        self.assertEqual(definitions[0].tool_name, "read_diagnostics")
+        self.assertEqual(definitions[0].permissions["scope"], "session")
+
+    def test_runtime_config_rejects_invalid_mcp_tools_json(self) -> None:
+        from backend.app.tools.configured_definitions import load_configured_mcp_tool_definitions
+        from backend.services.runtime_config_service import RuntimeConfigService
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            runtime_path = Path(temp_dir) / "runtime_config.local.json"
+            service = RuntimeConfigService(config_path=runtime_path)
+            service.update({"CLIPFORGE_MCP_TOOLS_JSON": "not-json"})
+
+            with self.assertRaisesRegex(ValueError, "CLIPFORGE_MCP_TOOLS_JSON must be valid JSON"):
+                load_configured_mcp_tool_definitions(service)
+
+    def test_app_tools_exports_mcp_definition_loader(self) -> None:
+        from backend.app.tools import load_configured_mcp_tool_definitions
+
+        self.assertTrue(callable(load_configured_mcp_tool_definitions))
 
     def test_tool_permission_service_allows_matching_read_only_scope(self) -> None:
         from backend.app.tools.permission_service import PermissionDecision, ToolPermissionService

@@ -70,6 +70,17 @@ FIELD_DEFINITIONS: tuple[RuntimeField, ...] = (
         "api_worker",
         "Knowledge ingestion worker 队列名。",
     ),
+    RuntimeField(
+        "CLIPFORGE_MCP_TOOLS_JSON",
+        "MCP Tools JSON",
+        "mcp",
+        "json",
+        False,
+        "",
+        ("CLIPFORGE_MCP_TOOLS_JSON",),
+        "api_worker",
+        "MCP 工具定义 JSON。当前只作为后端配置入口，不在设置页展示。",
+    ),
 )
 
 VISIBLE_GROUPS = {
