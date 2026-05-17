@@ -1,3 +1,4 @@
+from datetime import datetime
 import unittest
 
 from sqlalchemy import create_engine, event
@@ -24,6 +25,7 @@ from backend.domain.skills.contracts import PlannerRequest, SkillRunSummary, Ski
 from backend.runtime.skill_engine import PlannerRequestBuildResult
 from backend.runtime.trace_recorder import TraceEvent, TraceRecorder
 from backend.services.agent_execution_service import AgentExecutionService
+from backend.services.agent_read_service import AgentReadService
 from backend.services.agent_run_service import ActiveOperationConflict, AgentRunService
 from backend.services.agent_session_service import AgentSessionService
 from backend.services.agent_step_service import AgentStepService
@@ -829,6 +831,57 @@ class AgentRunTraceModelTests(unittest.TestCase):
         self.assertEqual(updated.steps[0].status, "succeeded")
         self.assertEqual(updated.steps[3].id, "finalize_plan")
         self.assertEqual(updated.steps[3].status, "succeeded")
+
+    def test_read_session_overlays_latest_persisted_standard_step_per_key(self):
+        session = AgentSessionRepository(self.db).create(status="plan_ready", current_step="", progress=0)
+        step_repo = AgentStepRepository(self.db)
+
+        step_repo.create(
+            id="step-z",
+            session_id=session.id,
+            step_key="finalize_plan",
+            title="旧计划步骤",
+            description="旧步骤描述",
+            status="failed",
+            progress=0.2,
+            summary="旧步骤失败",
+            error_json={
+                "message": "旧步骤失败",
+                "retryable": True,
+                "retryableStep": "finalize_plan",
+            },
+            sequence=4,
+            created_at=datetime(2026, 1, 1, 10, 0, 0),
+            updated_at=datetime(2026, 1, 1, 10, 0, 0),
+        )
+        step_repo.create(
+            id="step-a",
+            session_id=session.id,
+            step_key="finalize_plan",
+            title="新计划步骤",
+            description="新步骤描述",
+            status="succeeded",
+            progress=1.0,
+            summary="新步骤成功",
+            result_json={"planId": "new-plan"},
+            sequence=4,
+            created_at=datetime(2026, 1, 1, 10, 1, 0),
+            updated_at=datetime(2026, 1, 1, 10, 1, 0),
+        )
+        self.db.commit()
+
+        session_response = AgentReadService(self.SessionLocal).read_session(session.id)
+        finalize_step = session_response.steps[3]
+
+        self.assertEqual(len(session_response.steps), 8)
+        self.assertEqual(finalize_step.id, "finalize_plan")
+        self.assertEqual(finalize_step.title, "生成最终执行方案")
+        self.assertEqual(finalize_step.description, "根据用户选择生成最终方案、镜头拆分和可确认计划。")
+        self.assertEqual(finalize_step.status, "succeeded")
+        self.assertEqual(finalize_step.progress, 1.0)
+        self.assertEqual(finalize_step.summary, "新步骤成功")
+        self.assertEqual(finalize_step.result, {"planId": "new-plan"})
+        self.assertIsNone(finalize_step.error)
 
     def test_run_and_trace_rows_map_to_api_models(self):
         session = AgentSessionRepository(self.db).create(status="idle", current_step="", progress=0)

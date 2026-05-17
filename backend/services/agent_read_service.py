@@ -1,3 +1,5 @@
+from datetime import datetime
+
 from backend.db.repositories import (
     AgentArtifactRepository,
     AgentEventRepository,
@@ -92,6 +94,31 @@ class AgentReadService:
         # 将数据库行映射回 Pydantic 会话
         plan = self._build_edit_plan(plan_row)
         clip_rows = [row for row in artifact_rows if row.artifact_type == "clip"]
+        visible_persisted_step_rows = self._filter_session_persisted_steps(persisted_step_rows or [])
+        steps = self.step_snapshot_service.build_session_steps(
+            session_record=session_record,
+            message_rows=message_rows,
+            plan_row=plan_row,
+            event_rows=event_rows,
+        )
+        if visible_persisted_step_rows:
+            steps_by_id = {step.id: step for step in steps}
+            for step in self.step_snapshot_service.build_persisted_steps(visible_persisted_step_rows):
+                base_step = steps_by_id.get(step.id)
+                if base_step is None:
+                    continue
+                steps_by_id[step.id] = base_step.model_copy(
+                    update={
+                        "status": step.status,
+                        "progress": step.progress,
+                        "summary": step.summary,
+                        "result": step.result,
+                        "error": step.error,
+                        "startedAt": step.startedAt,
+                        "finishedAt": step.finishedAt,
+                    }
+                )
+            steps = [steps_by_id.get(step.id, step) for step in steps]
         return AgentSession(
             id=session_record.id,
             status=AgentStatus(session_record.status),
@@ -114,18 +141,7 @@ class AgentReadService:
                 event
                 for event in self.build_event_response(event_rows)
             ],
-            steps=(
-                self.step_snapshot_service.build_persisted_steps(
-                    self._filter_session_persisted_steps(persisted_step_rows)
-                )
-                if persisted_step_rows
-                else self.step_snapshot_service.build_session_steps(
-                    session_record=session_record,
-                    message_rows=message_rows,
-                    plan_row=plan_row,
-                    event_rows=event_rows,
-                )
-            ),
+            steps=steps,
             videoUrl=session_record.video_url,
             activeJobId=session_record.active_job_id,
             grounding=self._build_grounding_response(session_record),
@@ -152,7 +168,7 @@ class AgentReadService:
         )
 
     def _filter_session_persisted_steps(self, persisted_step_rows):
-        visible_step_keys = {
+        visible_step_keys = (
             "understand_request",
             "extract_requirements",
             "generate_options",
@@ -161,8 +177,24 @@ class AgentReadService:
             "search_assets",
             "prepare_assets",
             "render_video",
-        }
-        return [row for row in persisted_step_rows if row.step_key in visible_step_keys]
+        )
+        latest_rows_by_key = {}
+        for row in persisted_step_rows:
+            if row.step_key not in visible_step_keys:
+                continue
+            current = latest_rows_by_key.get(row.step_key)
+            if current is None or self._step_row_version_key(row) > self._step_row_version_key(current):
+                latest_rows_by_key[row.step_key] = row
+        return [
+            latest_rows_by_key[step_key]
+            for step_key in visible_step_keys
+            if step_key in latest_rows_by_key
+        ]
+
+    def _step_row_version_key(self, step_row):
+        created_at = getattr(step_row, "created_at", None) or datetime.min
+        updated_at = getattr(step_row, "updated_at", None) or created_at
+        return (updated_at, created_at, getattr(step_row, "id", ""))
 
     def _should_include_session_diagnostic(self, session_record, job_record) -> bool:
         if getattr(session_record, "status", None) == "failed":
