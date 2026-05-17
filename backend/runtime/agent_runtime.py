@@ -27,3 +27,30 @@ class AgentRuntime:
 
     def confirm_plan(self, session_id: str):
         return self.execution_service.confirm_session(session_id)
+
+
+def build_agent_runtime(
+    *,
+    session_service: Any | None = None,
+    execution_service: Any | None = None,
+    context_engine: ContextEngine | None = None,
+    skill_engine: SkillEngine | None = None,
+    tool_gateway: ToolGateway | None = None,
+    trace_recorder: TraceRecorder | None = None,
+) -> AgentRuntime:
+    if session_service is None or execution_service is None:
+        from backend.app.agent.session_use_cases import AgentSessionService
+        from backend.app.execution.job_use_cases import AgentExecutionService
+        from backend.db import SessionLocal
+
+        session_service = session_service or AgentSessionService(session_factory=SessionLocal)
+        execution_service = execution_service or AgentExecutionService(session_factory=SessionLocal)
+
+    return AgentRuntime(
+        session_service=session_service,
+        execution_service=execution_service,
+        context_engine=context_engine or ContextEngine(),
+        skill_engine=skill_engine or SkillEngine(),
+        tool_gateway=tool_gateway or ToolGateway(),
+        trace_recorder=trace_recorder or TraceRecorder(),
+    )

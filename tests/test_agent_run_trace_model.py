@@ -883,6 +883,49 @@ class AgentRunTraceModelTests(unittest.TestCase):
         self.assertEqual(finalize_step.result, {"planId": "new-plan"})
         self.assertIsNone(finalize_step.error)
 
+    def test_step_projection_service_hides_internal_steps_and_keeps_standard_shape(self):
+        from backend.app.agent.step_projection_service import StepProjectionService
+
+        session = AgentSessionRepository(self.db).create(status="plan_ready", current_step="", progress=0)
+        step_repo = AgentStepRepository(self.db)
+        step_repo.create(
+            session_id=session.id,
+            step_key="rag_retrieval",
+            title="内部 RAG 检索",
+            description="内部观测步骤",
+            status="succeeded",
+            progress=1.0,
+            summary="命中 2 条上下文",
+            sequence=2,
+        )
+        step_repo.create(
+            session_id=session.id,
+            step_key="finalize_plan",
+            title="内部计划标题",
+            description="内部计划描述",
+            status="running",
+            progress=0.5,
+            summary="正在生成计划",
+            sequence=4,
+        )
+        self.db.commit()
+
+        projected_steps = StepProjectionService().build_session_steps(
+            session_record=session,
+            message_rows=[],
+            plan_row=None,
+            event_rows=[],
+            persisted_step_rows=step_repo.list_for_session(session.id),
+        )
+
+        self.assertEqual(len(projected_steps), 8)
+        self.assertNotIn("rag_retrieval", [step.id for step in projected_steps])
+        self.assertEqual(projected_steps[3].id, "finalize_plan")
+        self.assertEqual(projected_steps[3].title, "生成最终执行方案")
+        self.assertEqual(projected_steps[3].description, "根据用户选择生成最终方案、镜头拆分和可确认计划。")
+        self.assertEqual(projected_steps[3].status, "running")
+        self.assertEqual(projected_steps[3].summary, "正在生成计划")
+
     def test_run_and_trace_rows_map_to_api_models(self):
         session = AgentSessionRepository(self.db).create(status="idle", current_step="", progress=0)
         run = AgentRunRepository(self.db).create(

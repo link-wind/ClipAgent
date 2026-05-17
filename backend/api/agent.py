@@ -19,6 +19,7 @@ from backend.models.agent import (
     AgentTaskSummary,
     AgentTraceEvent,
 )
+from backend.runtime.agent_runtime import build_agent_runtime
 from backend.services.agent_service import agent_service
 from backend.services.agent_run_service import ActiveOperationConflict
 from backend.services.agent_stream_service import AgentStreamService, format_sse_event
@@ -32,6 +33,13 @@ task_read_service = AgentTaskReadService(session_factory=SessionLocal)
 STREAM_BATCH_LIMIT = 50
 STREAM_POLL_INTERVAL_SECONDS = 0.5
 STREAM_HEARTBEAT_INTERVAL_SECONDS = 10.0
+
+
+def _runtime():
+    return build_agent_runtime(
+        session_service=session_service,
+        execution_service=execution_service,
+    )
 
 
 def _translate_planner_error(exc: Exception) -> HTTPException:
@@ -96,7 +104,8 @@ class GroundingConfirmRequest(BaseModel):
 @router.post("/sessions", response_model=AgentSession)
 async def create_session(request: SessionCreateRequest):
     try:
-        session = await run_in_threadpool(session_service.create_session, request.message)
+        runtime = _runtime()
+        session = await run_in_threadpool(runtime.create_session, request.message)
         return agent_service.sync_session(session)
     except HTTPException:
         raise
@@ -116,7 +125,8 @@ async def get_session(session_id: str):
 @router.post("/sessions/{session_id}/messages", response_model=AgentSession)
 async def add_message(session_id: str, request: MessageRequest):
     try:
-        session = await run_in_threadpool(session_service.add_user_message, session_id, request.message)
+        runtime = _runtime()
+        session = await run_in_threadpool(runtime.submit_message, session_id, request.message)
         return agent_service.sync_session(session)
     except KeyError:
         raise HTTPException(status_code=404, detail="Session not found")
@@ -131,8 +141,9 @@ async def add_message(session_id: str, request: MessageRequest):
 @router.post("/sessions/{session_id}/grounding/confirm", response_model=AgentSession)
 async def confirm_grounding_candidates(session_id: str, request: GroundingConfirmRequest):
     try:
+        runtime = _runtime()
         session = await run_in_threadpool(
-            session_service.confirm_grounding_candidates,
+            runtime.confirm_grounding,
             session_id,
             request.candidateIds,
         )
@@ -150,7 +161,8 @@ async def confirm_grounding_candidates(session_id: str, request: GroundingConfir
 @router.post("/sessions/{session_id}/confirm", response_model=AgentSession)
 async def confirm_session(session_id: str):
     try:
-        session = await run_in_threadpool(execution_service.confirm_session, session_id)
+        runtime = _runtime()
+        session = await run_in_threadpool(runtime.confirm_plan, session_id)
         return agent_service.sync_session(session)
     except KeyError:
         raise HTTPException(status_code=404, detail="Session not found")

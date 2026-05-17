@@ -1084,6 +1084,22 @@ class AgentExecutionWorkerTests(unittest.TestCase):
         self.assertTrue(callable(getattr(AgentProgressService, "mark_job_failed", None)))
         self.assertTrue(callable(getattr(AgentProgressService, "mark_job_succeeded", None)))
 
+    def test_run_agent_job_delegates_to_execution_workflow_service(self):
+        from backend.tasks.agent_tasks import run_agent_job
+
+        session_id, job_id = self._create_queued_job()
+
+        with patch("backend.tasks.agent_tasks.SessionLocal", self.session_factory), patch(
+            "backend.tasks.agent_tasks.ExecutionWorkflowService",
+        ) as workflow_cls:
+            workflow = workflow_cls.return_value
+
+            run_agent_job(job_id)
+
+        workflow_cls.assert_called_once()
+        self.assertEqual(workflow_cls.call_args.kwargs["session_factory"], self.session_factory)
+        workflow.run_job.assert_called_once_with(job_id)
+
     def test_run_agent_job_persists_success_state_events_and_artifacts(self):
         from backend.db.repositories import AgentArtifactRepository, AgentEventRepository, AgentJobRepository
         from backend.models.agent import AgentStatus

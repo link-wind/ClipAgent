@@ -1,4 +1,6 @@
-from sqlalchemy import func, select
+from datetime import datetime
+
+from sqlalchemy import func, select, update
 from sqlalchemy.orm import Session
 
 from backend.db.models import AgentJobRecord
@@ -79,4 +81,28 @@ class AgentJobRepository:
         self.db.add(record)
         self.db.flush()
         self.db.refresh(record)
+        return record
+
+    def try_claim_job(self, job_id: str) -> AgentJobRecord | None:
+        # 原子抢占任务，避免重复投递时多个 worker 同时执行。
+        stmt = (
+            update(AgentJobRecord)
+            .where(AgentJobRecord.id == job_id, AgentJobRecord.status == "queued")
+            .values(
+                status="running",
+                progress=35,
+                current_step="正在搜索素材",
+                started_at=datetime.utcnow(),
+                error_message=None,
+            )
+        )
+        result = self.db.execute(stmt)
+        if result.rowcount != 1:
+            self.db.flush()
+            return None
+
+        self.db.flush()
+        record = self.get(job_id)
+        if record is not None:
+            self.db.refresh(record)
         return record
