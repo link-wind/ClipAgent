@@ -9,7 +9,7 @@ from backend.db.repositories import (
     AgentRunRepository,
     AgentStepRepository,
 )
-from backend.domain.skills.contracts import PlannerRequest, SkillSelectionRequest
+from backend.domain.skills.contracts import PlannerRequest, SkillRunSummary, SkillSelectionRequest
 from backend.runtime.context_engine import ContextBundle, ContextEngine, ContextRequest
 from backend.runtime.skill_engine import SkillEngine
 from backend.runtime.trace_recorder import TraceEvent, TraceRecorder
@@ -368,6 +368,7 @@ class PlannerOrchestrator:
         sequence = len(step_repo.list_for_run(run_id)) if step_repo and run_id else 0
         select_step = None
         build_step = None
+        build_summary_payload = None
 
         try:
             if step_service is not None:
@@ -430,7 +431,11 @@ class PlannerOrchestrator:
                     payload=selection_payload,
                 )
             )
-            planner_request = self.skill_registry.resolve_handler(selection.skill_id)(selection_request)
+            build_result = self.skill_engine.build_planner_request(selection_request, selection=selection)
+            build_summary_payload = self._skill_run_summary_payload(build_result.summary)
+            if build_result.summary.status != "succeeded" or build_result.planner_request is None:
+                raise RuntimeError(build_result.summary.error_message or "Skill failed to build planner request")
+            planner_request = build_result.planner_request
             planner_request_payload = self._planner_request_payload(planner_request)
             trace_recorder.record(
                 TraceEvent(
@@ -441,6 +446,7 @@ class PlannerOrchestrator:
                     message=f"Planner request ready for {selection.skill_id}",
                     payload={
                         **selection_payload,
+                        "skillRunSummary": build_summary_payload,
                         "plannerRequest": planner_request_payload,
                     },
                 )
@@ -479,7 +485,11 @@ class PlannerOrchestrator:
                     event_type="skill_run_failed",
                     level="error",
                     message=str(exc),
-                    payload={"runType": run_type, "message": str(exc)},
+                    payload={
+                        "runType": run_type,
+                        "message": str(exc),
+                        **({"skillRunSummary": build_summary_payload} if build_summary_payload else {}),
+                    },
                 )
             )
             if run_record is not None:
@@ -543,4 +553,14 @@ class PlannerOrchestrator:
             "failureContextKeys": sorted(planner_request.failure_context.keys()),
             "retryStrategyHint": planner_request.retry_strategy_hint,
             "failedSceneIds": planner_request.failed_scene_ids,
+        }
+
+    def _skill_run_summary_payload(self, summary: SkillRunSummary) -> dict:
+        return {
+            "skillId": summary.skill_id,
+            "skillVersion": summary.skill_version,
+            "status": summary.status,
+            "inputSummary": summary.input_summary,
+            "outputSummary": summary.output_summary,
+            "errorMessage": summary.error_message,
         }

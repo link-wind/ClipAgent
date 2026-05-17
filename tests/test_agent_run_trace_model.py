@@ -20,11 +20,14 @@ from backend.db.repositories import (
 )
 from backend.models.agent import AgentStep
 from backend.models.agent import AgentRunSummary, AgentTraceEvent as AgentTraceEventModel
+from backend.domain.skills.contracts import PlannerRequest, SkillRunSummary, SkillSelection
+from backend.runtime.skill_engine import PlannerRequestBuildResult
 from backend.runtime.trace_recorder import TraceEvent, TraceRecorder
 from backend.services.agent_execution_service import AgentExecutionService
 from backend.services.agent_run_service import ActiveOperationConflict, AgentRunService
 from backend.services.agent_session_service import AgentSessionService
 from backend.services.agent_step_service import AgentStepService
+from backend.services.planner_orchestrator import PlannerOrchestrator
 
 
 class AgentRunTraceModelTests(unittest.TestCase):
@@ -484,6 +487,122 @@ class AgentRunTraceModelTests(unittest.TestCase):
         )
         self.assertEqual(first.status, "running")
         self.assertEqual(second.status, "running")
+
+    def test_planner_orchestrator_builds_planner_request_through_skill_engine(self):
+        class FakeSkillEngine:
+            def __init__(self):
+                self.selection_requests = []
+                self.build_requests = []
+
+            def select_skill(self, request):
+                self.selection_requests.append(request)
+                return SkillSelection(
+                    skill_id="builtin.product_intro_video",
+                    version="0.1.0",
+                    reason="fake selection",
+                )
+
+            def build_planner_request(self, request, *, selection=None):
+                self.build_requests.append((request, selection))
+                return PlannerRequestBuildResult(
+                    selection=selection,
+                    planner_request=PlannerRequest(
+                        action=request.run_type,
+                        system_prompt="fake prompt",
+                        messages=[{"role": "user", "content": request.user_message}],
+                        output_schema={"type": "agent_plan"},
+                    ),
+                    summary=SkillRunSummary(
+                        skill_id="builtin.product_intro_video",
+                        skill_version="0.1.0",
+                        status="succeeded",
+                    ),
+                )
+
+        class FailingRegistry:
+            def resolve_handler(self, _skill_id):
+                raise AssertionError("planner orchestrator must use SkillEngine.build_planner_request")
+
+        session = AgentSessionRepository(self.db).create(status="idle", current_step="", progress=0)
+        run = AgentRunRepository(self.db).create(
+            session_id=session.id,
+            trigger_type="user_message",
+            status="running",
+        )
+        skill_engine = FakeSkillEngine()
+        orchestrator = PlannerOrchestrator(
+            skill_engine=skill_engine,
+            skill_registry=FailingRegistry(),
+        )
+
+        orchestrator._record_skill_observability(
+            db=self.db,
+            session_record=session,
+            run_id=run.id,
+            run_type="initial_planning",
+            user_message="做一个产品介绍视频",
+        )
+
+        self.assertEqual(len(skill_engine.selection_requests), 1)
+        self.assertEqual(len(skill_engine.build_requests), 1)
+        build_request, build_selection = skill_engine.build_requests[0]
+        self.assertEqual(build_request.run_type, "initial_planning")
+        self.assertEqual(build_selection.skill_id, "builtin.product_intro_video")
+        run_record = AgentRunRepository(self.db).get(run.id)
+        self.assertEqual(run_record.output_json["plannerRequest"]["action"], "initial_planning")
+        self.assertEqual(run_record.metadata_json["skill"]["status"], "succeeded")
+
+    def test_planner_orchestrator_records_skill_engine_build_failure_summary(self):
+        class FailingSkillEngine:
+            def select_skill(self, _request):
+                return SkillSelection(
+                    skill_id="builtin.product_intro_video",
+                    version="0.1.0",
+                    reason="fake selection",
+                )
+
+            def build_planner_request(self, _request, *, selection=None):
+                return PlannerRequestBuildResult(
+                    selection=selection,
+                    planner_request=None,
+                    summary=SkillRunSummary(
+                        skill_id="builtin.product_intro_video",
+                        skill_version="0.1.0",
+                        status="failed",
+                        input_summary="run_type=initial_planning",
+                        error_message="handler import failed",
+                    ),
+                )
+
+        session = AgentSessionRepository(self.db).create(status="idle", current_step="", progress=0)
+        run = AgentRunRepository(self.db).create(
+            session_id=session.id,
+            trigger_type="user_message",
+            status="running",
+        )
+        orchestrator = PlannerOrchestrator(skill_engine=FailingSkillEngine())
+
+        with self.assertRaisesRegex(RuntimeError, "handler import failed"):
+            orchestrator._record_skill_observability(
+                db=self.db,
+                session_record=session,
+                run_id=run.id,
+                run_type="initial_planning",
+                user_message="做一个产品介绍视频",
+            )
+
+        steps = AgentStepRepository(self.db).list_for_run(run.id)
+        events = AgentTraceEventRepository(self.db).list_for_run(run.id)
+        failed_event = events[-1]
+        run_record = AgentRunRepository(self.db).get(run.id)
+
+        self.assertEqual(steps[-1].step_key, "build_planner_request")
+        self.assertEqual(steps[-1].status, "failed")
+        self.assertEqual(failed_event.event_type, "skill_run_failed")
+        self.assertEqual(failed_event.payload_json["skillRunSummary"]["status"], "failed")
+        self.assertEqual(failed_event.payload_json["skillRunSummary"]["errorMessage"], "handler import failed")
+        self.assertEqual(run_record.metadata_json["skill"]["status"], "failed")
+        self.assertEqual(run_record.metadata_json["skill"]["errorMessage"], "handler import failed")
 
     def test_step_service_records_failed_step_error(self):
         session = AgentSessionRepository(self.db).create(status="idle", current_step="", progress=0)

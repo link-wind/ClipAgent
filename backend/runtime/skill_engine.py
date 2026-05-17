@@ -23,8 +23,13 @@ class SkillEngine:
     def select_skill(self, request: SkillSelectionRequest) -> SkillSelection:
         return self.selection_service.select_skill(request)
 
-    def build_planner_request(self, request: SkillSelectionRequest) -> PlannerRequestBuildResult:
-        selection = self.select_skill(request)
+    def build_planner_request(
+        self,
+        request: SkillSelectionRequest,
+        *,
+        selection: SkillSelection | None = None,
+    ) -> PlannerRequestBuildResult:
+        selection = selection or self.select_skill(request)
         try:
             handler = self.selection_service.resolve_handler(selection.skill_id)
             planner_request = handler(request)
