@@ -1,6 +1,7 @@
 from dataclasses import dataclass, field
 from typing import Any
 
+from backend.app.knowledge.retrieval_pipeline import RetrievalDiagnostics
 from backend.app.knowledge.retrieval_service import KnowledgeRetrievalService
 from backend.domain.knowledge.contracts import RetrievalQuery, RetrievalResult
 from backend.runtime.trace_recorder import TraceEvent, TraceRecorder
@@ -42,20 +43,42 @@ class ContextEngine:
         self._record(
             request,
             "rag_retrieval_started",
-            {"scope": request.scope, "query": query.text, "topK": query.top_k},
+            {
+                "scope": request.scope,
+                "query": query.text,
+                "topK": query.top_k,
+                "stream": self._stream_payload(
+                    status="running",
+                    progress=0.1,
+                    label="检索上下文",
+                    message="正在检索可用知识。",
+                ),
+            },
         )
         try:
-            results = self.retrieval_service.retrieve(query)
+            pipeline_result = self._retrieve_context(query)
         except Exception as exc:
             self._record(
                 request,
                 "rag_retrieval_failed",
-                {"scope": request.scope, "query": query.text, "error": str(exc)},
+                {
+                    "scope": request.scope,
+                    "query": query.text,
+                    "error": str(exc),
+                    "stream": self._stream_payload(
+                        status="failed",
+                        progress=1.0,
+                        label="上下文检索失败",
+                        message="上下文检索失败，继续使用当前输入。",
+                    ),
+                },
                 level="warning",
                 message="RAG context retrieval failed",
             )
             return ContextBundle()
 
+        results = pipeline_result["results"]
+        diagnostics = pipeline_result["diagnostics"]
         usage_ids = self._record_usage(request, query, results)
         bundle = self._bundle_from_results(results)
         self._record(
@@ -65,11 +88,63 @@ class ContextEngine:
                 "scope": request.scope,
                 "query": query.text,
                 "chunkCount": len(results),
-                "topScore": results[0].score if results else 0.0,
+                "topScore": self._top_score(results, diagnostics),
                 "usageIds": usage_ids,
+                "diagnostics": self._diagnostics_payload(diagnostics),
+                "stream": self._stream_payload(
+                    status="succeeded",
+                    progress=1.0,
+                    label="上下文检索完成",
+                    message=f"命中 {len(results)} 条上下文。",
+                ),
             },
         )
         return bundle
+
+    def _stream_payload(
+        self,
+        *,
+        status: str,
+        progress: float,
+        label: str,
+        message: str,
+    ) -> dict[str, Any]:
+        return {
+            "phase": "context_retrieval",
+            "status": status,
+            "progress": progress,
+            "label": label,
+            "message": message,
+        }
+
+    def _retrieve_context(self, query: RetrievalQuery) -> dict[str, Any]:
+        if hasattr(self.retrieval_service, "retrieve_with_diagnostics"):
+            result = self.retrieval_service.retrieve_with_diagnostics(query)
+            return {"results": result.results, "diagnostics": result.diagnostics}
+        return {"results": self.retrieval_service.retrieve(query), "diagnostics": None}
+
+    def _diagnostics_payload(self, diagnostics: RetrievalDiagnostics | None) -> dict[str, Any]:
+        if diagnostics is None:
+            return {}
+        return {
+            "queryText": diagnostics.query_text,
+            "inputChunkCount": diagnostics.input_chunk_count,
+            "candidateCount": diagnostics.candidate_count,
+            "returnedCount": diagnostics.returned_count,
+            "candidateChunkIds": list(diagnostics.candidate_chunk_ids),
+            "rerankedChunkIds": list(diagnostics.reranked_chunk_ids),
+            "returnedChunkIds": list(diagnostics.returned_chunk_ids),
+            "topScore": diagnostics.top_score,
+        }
+
+    def _top_score(
+        self,
+        results: list[RetrievalResult],
+        diagnostics: RetrievalDiagnostics | None,
+    ) -> float:
+        if diagnostics is not None:
+            return diagnostics.top_score
+        return results[0].score if results else 0.0
 
     def _bundle_from_results(self, results: list[RetrievalResult]) -> ContextBundle:
         documents = [

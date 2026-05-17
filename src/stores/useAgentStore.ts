@@ -1,5 +1,6 @@
 import { create } from 'zustand'
-import type { AgentEvent, AgentSession, AgentTraceEvent } from '@/lib/agentApi'
+import { extractTraceStreamPayload } from '@/lib/agentApi'
+import type { AgentEvent, AgentSession, AgentTraceEvent, AgentTraceStreamPayload } from '@/lib/agentApi'
 
 export type AgentTraceStreamState = 'idle' | 'connecting' | 'open' | 'error' | 'closed'
 
@@ -10,6 +11,7 @@ interface AgentStore {
   traceEvents: AgentTraceEvent[]
   lastTraceSequence: number
   streamState: AgentTraceStreamState
+  currentTraceStream: AgentTraceStreamPayload | null
   isSubmitting: boolean
   setSession: (session: AgentSession | null) => void
   setActiveSessionId: (sessionId: string | null) => void
@@ -28,6 +30,7 @@ export const useAgentStore = create<AgentStore>((set) => ({
   traceEvents: [],
   lastTraceSequence: 0,
   streamState: 'idle',
+  currentTraceStream: null,
   isSubmitting: false,
   setSession: (session) =>
     set((state) => {
@@ -39,6 +42,7 @@ export const useAgentStore = create<AgentStore>((set) => ({
         events: session?.events ?? [],
         traceEvents: isSameSession ? state.traceEvents : [],
         lastTraceSequence: isSameSession ? state.lastTraceSequence : 0,
+        currentTraceStream: isSameSession ? state.currentTraceStream : null,
       }
     }),
   setActiveSessionId: (activeSessionId) => set({ activeSessionId }),
@@ -56,9 +60,11 @@ export const useAgentStore = create<AgentStore>((set) => ({
       return {
         traceEvents: [...state.traceEvents, event],
         lastTraceSequence: event.sequence,
+        currentTraceStream: extractTraceStreamPayload(event) ?? state.currentTraceStream,
       }
     }),
-  resetTrace: () => set({ traceEvents: [], lastTraceSequence: 0, streamState: 'idle' }),
+  resetTrace: () =>
+    set({ traceEvents: [], lastTraceSequence: 0, streamState: 'idle', currentTraceStream: null }),
   setStreamState: (streamState) => set({ streamState }),
   setSubmitting: (isSubmitting) => set({ isSubmitting }),
   reset: () =>
@@ -69,6 +75,7 @@ export const useAgentStore = create<AgentStore>((set) => ({
       traceEvents: [],
       lastTraceSequence: 0,
       streamState: 'idle',
+      currentTraceStream: null,
       isSubmitting: false,
     }),
 }))

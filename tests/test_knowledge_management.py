@@ -8,6 +8,7 @@ import sys
 import tempfile
 import types
 import unittest
+import zipfile
 from pathlib import Path
 from unittest.mock import patch
 
@@ -32,6 +33,35 @@ def _make_test_client(app):
 
     transport = httpx.ASGITransport(app=app)
     return httpx.AsyncClient(transport=transport, base_url="http://testserver")
+
+
+def _make_docx_bytes(text: str) -> bytes:
+    document_xml = (
+        '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+        '<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">'
+        "<w:body><w:p><w:r><w:t>"
+        f"{text}"
+        "</w:t></w:r></w:p></w:body></w:document>"
+    )
+    buffer = BytesIO()
+    with zipfile.ZipFile(buffer, "w") as archive:
+        archive.writestr("word/document.xml", document_xml)
+    return buffer.getvalue()
+
+
+def _make_pdf_bytes(text: str) -> bytes:
+    return (
+        b"%PDF-1.4\n"
+        b"1 0 obj << /Type /Catalog /Pages 2 0 R >> endobj\n"
+        b"2 0 obj << /Type /Pages /Kids [3 0 R] /Count 1 >> endobj\n"
+        b"3 0 obj << /Type /Page /Parent 2 0 R /Contents 4 0 R >> endobj\n"
+        b"4 0 obj << /Length 44 >> stream\n"
+        b"BT /F1 12 Tf 72 720 Td ("
+        + text.encode("utf-8")
+        + b") Tj ET\n"
+        b"endstream endobj\n"
+        b"trailer << /Root 1 0 R >>\n%%EOF\n"
+    )
 
 
 class KnowledgeModelsContractTests(unittest.TestCase):
@@ -72,6 +102,34 @@ class KnowledgeModelsContractTests(unittest.TestCase):
             },
         )
 
+    def test_knowledge_chunk_preview_contract_fields(self):
+        from backend.models.knowledge import KnowledgeChunkPreview
+
+        self.assertEqual(
+            set(KnowledgeChunkPreview.model_fields.keys()),
+            {
+                "id",
+                "versionId",
+                "chunkIndex",
+                "chunkType",
+                "titlePath",
+                "contentPreview",
+                "tokenCount",
+                "metadata",
+            },
+        )
+
+    def test_knowledge_source_detail_contract_fields(self):
+        from backend.models.knowledge import KnowledgeSourceDetail
+
+        self.assertEqual(
+            set(KnowledgeSourceDetail.model_fields.keys()),
+            {
+                "source",
+                "activeChunks",
+            },
+        )
+
 
 class KnowledgeRouterContractTests(unittest.TestCase):
     @staticmethod
@@ -90,6 +148,10 @@ class KnowledgeRouterContractTests(unittest.TestCase):
 
         self.assertIn("/knowledge-sources/upload", paths)
         self.assertIn("/knowledge-sources/{source_id}", paths)
+        self.assertIn("/knowledge-sources/{source_id}/detail", paths)
+        self.assertIn("/knowledge-sources/{source_id}/versions", paths)
+        self.assertIn("/knowledge-sources/{source_id}/retry", paths)
+        self.assertIn("/knowledge-sources", paths)
 
     def test_backend_main_registers_knowledge_router_under_api_prefix(self):
         module = importlib.import_module("backend.main")
@@ -97,6 +159,10 @@ class KnowledgeRouterContractTests(unittest.TestCase):
 
         self.assertIn("/api/knowledge-sources/upload", paths)
         self.assertIn("/api/knowledge-sources/{source_id}", paths)
+        self.assertIn("/api/knowledge-sources/{source_id}/detail", paths)
+        self.assertIn("/api/knowledge-sources/{source_id}/versions", paths)
+        self.assertIn("/api/knowledge-sources/{source_id}/retry", paths)
+        self.assertIn("/api/knowledge-sources", paths)
 
     def test_upload_endpoint_declares_upload_file_shape(self):
         route = self._get_route("/knowledge-sources/upload", "POST")
@@ -125,6 +191,34 @@ class KnowledgeRouterContractTests(unittest.TestCase):
         from backend.models.knowledge import KnowledgeSourceSummary
 
         route = self._get_route("/knowledge-sources/{source_id}", "DELETE")
+
+        self.assertIs(route.response_model, KnowledgeSourceSummary)
+
+    def test_knowledge_list_route_declares_list_summary_response_model(self):
+        from backend.models.knowledge import KnowledgeSourceSummary
+
+        route = self._get_route("/knowledge-sources", "GET")
+
+        self.assertEqual(route.response_model, list[KnowledgeSourceSummary])
+
+    def test_knowledge_detail_route_declares_detail_response_model(self):
+        from backend.models.knowledge import KnowledgeSourceDetail
+
+        route = self._get_route("/knowledge-sources/{source_id}/detail", "GET")
+
+        self.assertIs(route.response_model, KnowledgeSourceDetail)
+
+    def test_knowledge_versions_route_declares_list_version_response_model(self):
+        from backend.models.knowledge import KnowledgeVersionSummary
+
+        route = self._get_route("/knowledge-sources/{source_id}/versions", "GET")
+
+        self.assertEqual(route.response_model, list[KnowledgeVersionSummary])
+
+    def test_knowledge_retry_route_declares_summary_response_model(self):
+        from backend.models.knowledge import KnowledgeSourceSummary
+
+        route = self._get_route("/knowledge-sources/{source_id}/retry", "POST")
 
         self.assertIs(route.response_model, KnowledgeSourceSummary)
 
@@ -231,6 +325,44 @@ class KnowledgeManagementPersistenceTests(unittest.TestCase):
         self.assertEqual(active_chunks[0].id, chunk1.id)
         self.assertEqual(active_chunks[0].version_id, version1.id)
         self.assertEqual(active_chunks[0].metadata_json["section"], "intro")
+
+    def test_repository_lists_sources_by_updated_desc_and_excludes_deleted(self):
+        from backend.db.repositories import KnowledgeRepository
+
+        repo = KnowledgeRepository(self.db)
+        active_old = repo.create_source(
+            id="source-1",
+            project_key="default",
+            name="Old Active",
+            content_type="text/markdown",
+            status="ready",
+        )
+        active_new = repo.create_source(
+            id="source-2",
+            project_key="default",
+            name="New Active",
+            content_type="text/markdown",
+            status="ready",
+        )
+        deleted = repo.create_source(
+            id="source-deleted",
+            project_key="default",
+            name="Deleted Source",
+            content_type="text/markdown",
+            status="deleted",
+        )
+        repo.mark_source_deleted(deleted.id)
+
+        self.db.flush()
+        active_old.updated_at = active_new.updated_at
+        self.db.flush()
+        self.db.refresh(active_old)
+        self.db.refresh(active_new)
+
+        sources = repo.list_sources()
+
+        self.assertEqual([source.id for source in sources], [active_new.id, active_old.id])
+        self.assertNotIn(deleted.id, [source.id for source in sources])
 
     def test_phase2_2_migration_module_exists_with_upgrade_and_downgrade(self):
         migration_path = (
@@ -500,6 +632,86 @@ class KnowledgeManagementPipelineTests(unittest.TestCase):
             self.assertEqual(chunk_ids, [chunk.id for chunk in active_chunks])
             self.assertTrue(any(chunk.chunk_type == "paragraph" for chunk in active_chunks))
 
+    def test_ingestion_service_extracts_docx_text(self) -> None:
+        from tempfile import TemporaryDirectory
+
+        from backend.app.knowledge.ingestion_service import KnowledgeIngestionService
+        from backend.app.knowledge.storage import LocalKnowledgeStorage
+        from backend.db.repositories import KnowledgeRepository
+
+        with TemporaryDirectory() as temp_dir:
+            storage = LocalKnowledgeStorage(Path(temp_dir))
+            repo = KnowledgeRepository(self.db)
+            source = repo.create_source(
+                project_key="default",
+                name="brief.docx",
+                content_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                status="pending",
+            )
+            version = repo.create_version(
+                source_id=source.id,
+                version_number=1,
+                status="uploaded",
+                content_hash="hash-docx",
+                original_filename="brief.docx",
+                file_size=128,
+                parser_type="docx",
+            )
+            saved = storage.save_upload(
+                project_key=source.project_key,
+                source_id=source.id,
+                version_number=version.version_number,
+                filename="brief.docx",
+                content=_make_docx_bytes("ClipForge docx knowledge"),
+            )
+            repo.set_processing_version(source.id, version.id)
+            repo.update_version_storage_path(version.id, saved.storage_path)
+
+            KnowledgeIngestionService(self.db, storage=storage).ingest_version(version.id)
+
+            active_chunks = repo.list_active_chunks(source.id)
+            self.assertEqual([chunk.content for chunk in active_chunks], ["ClipForge docx knowledge"])
+
+    def test_ingestion_service_extracts_simple_pdf_text(self) -> None:
+        from tempfile import TemporaryDirectory
+
+        from backend.app.knowledge.ingestion_service import KnowledgeIngestionService
+        from backend.app.knowledge.storage import LocalKnowledgeStorage
+        from backend.db.repositories import KnowledgeRepository
+
+        with TemporaryDirectory() as temp_dir:
+            storage = LocalKnowledgeStorage(Path(temp_dir))
+            repo = KnowledgeRepository(self.db)
+            source = repo.create_source(
+                project_key="default",
+                name="brief.pdf",
+                content_type="application/pdf",
+                status="pending",
+            )
+            version = repo.create_version(
+                source_id=source.id,
+                version_number=1,
+                status="uploaded",
+                content_hash="hash-pdf",
+                original_filename="brief.pdf",
+                file_size=128,
+                parser_type="pdf",
+            )
+            saved = storage.save_upload(
+                project_key=source.project_key,
+                source_id=source.id,
+                version_number=version.version_number,
+                filename="brief.pdf",
+                content=_make_pdf_bytes("ClipForge PDF knowledge"),
+            )
+            repo.set_processing_version(source.id, version.id)
+            repo.update_version_storage_path(version.id, saved.storage_path)
+
+            KnowledgeIngestionService(self.db, storage=storage).ingest_version(version.id)
+
+            active_chunks = repo.list_active_chunks(source.id)
+            self.assertEqual([chunk.content for chunk in active_chunks], ["ClipForge PDF knowledge"])
+
     def test_ingestion_service_restores_previous_active_version_when_new_version_fails(self) -> None:
         from tempfile import TemporaryDirectory
 
@@ -713,12 +925,49 @@ class KnowledgeManagementApiTests(unittest.TestCase):
                 async with _make_test_client(app) as client:
                     return await client.post(
                         "/api/knowledge-sources/upload",
-                        files={"file": ("brand.pdf", b"%PDF-1.4", "application/pdf")},
+                        files={"file": ("brand.png", b"png", "image/png")},
                     )
 
             response = asyncio.run(_run())
 
         self.assertEqual(response.status_code, 400)
+
+    def test_upload_accepts_pdf_and_docx_extensions(self) -> None:
+        from backend.main import app
+
+        dispatched: list[str] = []
+        with patch("backend.api.knowledge.SessionLocal", self.SessionLocal, create=True), patch(
+            "backend.app.knowledge.upload_service._default_dispatch_ingestion",
+            side_effect=dispatched.append,
+        ):
+            async def _run():
+                async with _make_test_client(app) as client:
+                    pdf_response = await client.post(
+                        "/api/knowledge-sources/upload",
+                        files={"file": ("brief.pdf", _make_pdf_bytes("PDF upload"), "application/pdf")},
+                    )
+                    docx_response = await client.post(
+                        "/api/knowledge-sources/upload",
+                        files={
+                            "file": (
+                                "brief.docx",
+                                _make_docx_bytes("DOCX upload"),
+                                "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                            )
+                        },
+                    )
+                    return pdf_response, docx_response
+
+            pdf_response, docx_response = asyncio.run(_run())
+
+        self.assertEqual(pdf_response.status_code, 200)
+        self.assertEqual(pdf_response.json()["contentType"], "application/pdf")
+        self.assertEqual(docx_response.status_code, 200)
+        self.assertEqual(
+            docx_response.json()["contentType"],
+            "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        )
+        self.assertEqual(len(dispatched), 2)
 
     def test_get_missing_source_returns_404(self) -> None:
         from backend.main import app
@@ -731,6 +980,260 @@ class KnowledgeManagementApiTests(unittest.TestCase):
             response = asyncio.run(_run())
 
         self.assertEqual(response.status_code, 404)
+
+    def test_get_source_detail_returns_summary_and_active_chunks(self) -> None:
+        from backend.db.repositories import KnowledgeRepository
+        from backend.main import app
+
+        with patch("backend.api.knowledge.SessionLocal", self.SessionLocal, create=True):
+            db = self.SessionLocal()
+            try:
+                repo = KnowledgeRepository(db)
+                source = repo.create_source(
+                    id="source-detail",
+                    project_key="default",
+                    name="Detail Source",
+                    content_type="text/markdown",
+                    status="pending",
+                )
+                version = repo.create_version(
+                    id="version-active",
+                    source_id=source.id,
+                    version_number=1,
+                    status="uploaded",
+                    content_hash="hash-v1",
+                    original_filename="detail.md",
+                    file_size=256,
+                    parser_type="markdown",
+                )
+                repo.activate_version(version.id)
+                repo.create_chunk(
+                    id="chunk-1",
+                    source_id=source.id,
+                    version_id=version.id,
+                    chunk_index=0,
+                    chunk_type="paragraph",
+                    title_path="Intro",
+                    content="ClipForge uses project knowledge to ground planning decisions.",
+                    token_count=9,
+                    metadata_json={"section": "intro"},
+                )
+                repo.create_chunk(
+                    id="chunk-2",
+                    source_id=source.id,
+                    version_id=version.id,
+                    chunk_index=1,
+                    chunk_type="list_block",
+                    title_path="Rules",
+                    content="Only active version chunks should appear in this detail response.",
+                    token_count=10,
+                    metadata_json={"section": "rules"},
+                )
+                db.commit()
+            finally:
+                db.close()
+
+            async def _run():
+                async with _make_test_client(app) as client:
+                    return await client.get("/api/knowledge-sources/source-detail/detail")
+
+            response = asyncio.run(_run())
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(payload["source"]["id"], "source-detail")
+        self.assertEqual([chunk["id"] for chunk in payload["activeChunks"]], ["chunk-1", "chunk-2"])
+        self.assertEqual(payload["activeChunks"][0]["versionId"], "version-active")
+        self.assertEqual(payload["activeChunks"][0]["titlePath"], "Intro")
+        self.assertEqual(payload["activeChunks"][0]["metadata"], {"section": "intro"})
+
+    def test_list_source_versions_returns_version_summaries_newest_first(self) -> None:
+        from backend.db.repositories import KnowledgeRepository
+        from backend.main import app
+
+        with patch("backend.api.knowledge.SessionLocal", self.SessionLocal, create=True):
+            db = self.SessionLocal()
+            try:
+                repo = KnowledgeRepository(db)
+                source = repo.create_source(
+                    id="source-versions",
+                    project_key="default",
+                    name="Versioned Source",
+                    content_type="text/markdown",
+                    status="pending",
+                )
+                first = repo.create_version(
+                    id="version-1",
+                    source_id=source.id,
+                    version_number=1,
+                    status="active",
+                    content_hash="hash-v1",
+                    original_filename="versions.md",
+                    file_size=128,
+                    parser_type="markdown",
+                )
+                second = repo.create_version(
+                    id="version-2",
+                    source_id=source.id,
+                    version_number=2,
+                    status="failed",
+                    content_hash="hash-v2",
+                    original_filename="versions.md",
+                    file_size=256,
+                    parser_type="markdown",
+                )
+                repo.mark_version_failed(second.id, "parser failed")
+                expected_ids = [second.id, first.id]
+                db.commit()
+            finally:
+                db.close()
+
+            async def _run():
+                async with _make_test_client(app) as client:
+                    return await client.get("/api/knowledge-sources/source-versions/versions")
+
+            response = asyncio.run(_run())
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual([item["id"] for item in payload], expected_ids)
+        self.assertEqual(payload[0]["versionNumber"], 2)
+        self.assertEqual(payload[0]["reason"], "parser failed")
+
+    def test_retry_failed_source_requeues_last_failed_version(self) -> None:
+        from backend.db.repositories import KnowledgeRepository
+        from backend.main import app
+
+        dispatched: list[str] = []
+
+        with patch("backend.api.knowledge.SessionLocal", self.SessionLocal, create=True):
+            db = self.SessionLocal()
+            try:
+                repo = KnowledgeRepository(db)
+                source = repo.create_source(
+                    id="source-retry",
+                    project_key="default",
+                    name="Retry Source",
+                    content_type="text/markdown",
+                    status="pending",
+                )
+                version = repo.create_version(
+                    id="version-retry",
+                    source_id=source.id,
+                    version_number=1,
+                    status="uploaded",
+                    content_hash="hash-v1",
+                    original_filename="retry.md",
+                    file_size=128,
+                    parser_type="markdown",
+                )
+                repo.mark_version_failed(version.id, "parser failed")
+                db.commit()
+            finally:
+                db.close()
+
+            with patch(
+                "backend.app.knowledge.source_retry_service.dispatch_knowledge_version_ingestion",
+                side_effect=dispatched.append,
+            ):
+                async def _run():
+                    async with _make_test_client(app) as client:
+                        return await client.post("/api/knowledge-sources/source-retry/retry")
+
+                response = asyncio.run(_run())
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(payload["id"], "source-retry")
+        self.assertEqual(payload["status"], "pending")
+        self.assertEqual(payload["processingVersion"]["id"], "version-retry")
+        self.assertEqual(payload["errorSummary"], None)
+        self.assertEqual(dispatched, ["version-retry"])
+
+    def test_retry_ready_source_returns_conflict_without_dispatch(self) -> None:
+        from backend.db.repositories import KnowledgeRepository
+        from backend.main import app
+
+        dispatched: list[str] = []
+
+        with patch("backend.api.knowledge.SessionLocal", self.SessionLocal, create=True):
+            db = self.SessionLocal()
+            try:
+                repo = KnowledgeRepository(db)
+                repo.create_source(
+                    id="source-ready",
+                    project_key="default",
+                    name="Ready Source",
+                    content_type="text/markdown",
+                    status="ready",
+                )
+                db.commit()
+            finally:
+                db.close()
+
+            with patch(
+                "backend.app.knowledge.source_retry_service.dispatch_knowledge_version_ingestion",
+                side_effect=dispatched.append,
+            ):
+                async def _run():
+                    async with _make_test_client(app) as client:
+                        return await client.post("/api/knowledge-sources/source-ready/retry")
+
+                response = asyncio.run(_run())
+
+        self.assertEqual(response.status_code, 409)
+        self.assertEqual(dispatched, [])
+
+    def test_list_sources_returns_summaries(self) -> None:
+        from backend.db.repositories import KnowledgeRepository
+        from backend.main import app
+
+        with patch("backend.api.knowledge.SessionLocal", self.SessionLocal, create=True):
+            db = self.SessionLocal()
+            try:
+                repo = KnowledgeRepository(db)
+                newer = repo.create_source(
+                    id="source-2",
+                    project_key="default",
+                    name="Newer Source",
+                    content_type="text/markdown",
+                    status="ready",
+                )
+                older = repo.create_source(
+                    id="source-1",
+                    project_key="default",
+                    name="Older Source",
+                    content_type="text/markdown",
+                    status="ready",
+                )
+                deleted = repo.create_source(
+                    id="source-deleted",
+                    project_key="default",
+                    name="Deleted Source",
+                    content_type="text/markdown",
+                    status="deleted",
+                )
+                repo.mark_source_deleted(deleted.id)
+                db.flush()
+                older.updated_at = newer.updated_at
+                db.flush()
+                expected_ids = [newer.id, older.id]
+                deleted_id = deleted.id
+                db.commit()
+            finally:
+                db.close()
+
+            async def _run():
+                async with _make_test_client(app) as client:
+                    return await client.get("/api/knowledge-sources")
+
+            response = asyncio.run(_run())
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual([item["id"] for item in payload], expected_ids)
+        self.assertEqual([item["name"] for item in payload], ["Newer Source", "Older Source"])
+        self.assertNotIn(deleted_id, [item["id"] for item in payload])
 
 
 if __name__ == "__main__":

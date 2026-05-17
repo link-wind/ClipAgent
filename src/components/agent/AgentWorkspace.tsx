@@ -24,6 +24,12 @@ const STATUS_LABELS: Record<string, string> = {
   failed: '失败',
 };
 
+const TRACE_STATUS_LABELS: Record<string, string> = {
+  running: '进行中',
+  succeeded: '已完成',
+  failed: '失败',
+};
+
 export default function AgentWorkspace() {
   const session = useAgentStore((state) => state.session);
   const activeSessionId = useAgentStore((state) => state.activeSessionId);
@@ -31,6 +37,7 @@ export default function AgentWorkspace() {
   const appendTraceEvent = useAgentStore((state) => state.appendTraceEvent);
   const lastTraceSequence = useAgentStore((state) => state.lastTraceSequence);
   const setStreamState = useAgentStore((state) => state.setStreamState);
+  const currentTraceStream = useAgentStore((state) => state.currentTraceStream);
   const videoUrl = resolveSessionVideoUrl(session);
   const sceneCount = session?.plan?.scenes.length ?? 0;
   const targetDuration = session?.plan?.targetDuration ?? null;
@@ -159,10 +166,27 @@ export default function AgentWorkspace() {
           <span className={styles.brandMark} aria-hidden="true" />
           <div>
             <h1>ClipForge Agent</h1>
-            <p>{session?.currentStep || '等待需求'}</p>
+            <p>{currentTraceStream?.message || session?.currentStep || '等待需求'}</p>
           </div>
         </div>
-        <span className={styles.statusPill}>{STATUS_LABELS[session?.status || 'idle']}</span>
+        <div className={styles.headerStatus}>
+          {currentTraceStream ? (
+            <div className={styles.traceStatus} data-status={currentTraceStream.status} aria-label="实时执行状态">
+              <div className={styles.traceStatusMeta}>
+                <span>{currentTraceStream.label}</span>
+                <strong>{Math.round(currentTraceStream.progress * 100)}%</strong>
+              </div>
+              <div className={styles.traceProgress} aria-hidden="true">
+                <span style={{ width: `${Math.round(currentTraceStream.progress * 100)}%` }} />
+              </div>
+              <p>
+                <span>{currentTraceStream.message}</span>
+                <strong>{TRACE_STATUS_LABELS[currentTraceStream.status] || currentTraceStream.status}</strong>
+              </p>
+            </div>
+          ) : null}
+          <span className={styles.statusPill}>{STATUS_LABELS[session?.status || 'idle']}</span>
+        </div>
       </header>
 
       <main className={styles.main}>

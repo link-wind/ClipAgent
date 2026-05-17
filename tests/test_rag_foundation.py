@@ -112,6 +112,232 @@ class RagFoundationRetrievalTests(RagFoundationDbTestCase):
         self.assertGreater(results[0].score, 0)
         self.assertEqual(results[0].matched_terms, ["产品", "使用场景"])
 
+    def test_keyword_vector_store_matches_existing_lightweight_index_behavior(self) -> None:
+        from backend.domain.knowledge.contracts import KnowledgeChunk, RetrievalQuery
+        from backend.infrastructure.vector.store import KeywordVectorStore
+
+        chunks = [
+            KnowledgeChunk(id="chunk-1", document_id="doc-1", content="开头 3 秒需要明确产品和使用场景。"),
+            KnowledgeChunk(id="chunk-2", document_id="doc-1", content="素材关键词应具体到对象、动作和画面风格。"),
+        ]
+        results = KeywordVectorStore().search(
+            RetrievalQuery(text="产品 使用场景", top_k=2),
+            chunks,
+        )
+
+        self.assertEqual([result.chunk.id for result in results], ["chunk-1"])
+        self.assertEqual(results[0].matched_terms, ["产品", "使用场景"])
+
+    def test_retrieval_service_uses_vector_store_boundary(self) -> None:
+        from backend.app.knowledge.retrieval_service import KnowledgeRetrievalService
+        from backend.domain.knowledge.contracts import RetrievalQuery
+
+        class RecordingVectorStore:
+            def __init__(self) -> None:
+                self.calls = []
+
+            def search(self, query, chunks):
+                self.calls.append((query, chunks))
+                return []
+
+        vector_store = RecordingVectorStore()
+        results = KnowledgeRetrievalService(index=vector_store).retrieve(
+            RetrievalQuery(text="产品", top_k=1)
+        )
+
+        self.assertEqual(results, [])
+        self.assertEqual(vector_store.calls[0][0].text, "产品")
+        self.assertTrue(vector_store.calls[0][1])
+
+    def test_retrieval_pipeline_calls_vector_store_then_reranker(self) -> None:
+        from backend.app.knowledge.retrieval_pipeline import RetrievalPipeline
+        from backend.domain.knowledge.contracts import KnowledgeChunk, RetrievalQuery, RetrievalResult
+
+        events = []
+        chunk_a = KnowledgeChunk(id="chunk-a", document_id="doc-1", content="产品 使用场景")
+        chunk_b = KnowledgeChunk(id="chunk-b", document_id="doc-1", content="产品")
+
+        class RecordingVectorStore:
+            def search(self, query, chunks):
+                events.append(("search", query.text, [chunk.id for chunk in chunks]))
+                return [
+                    RetrievalResult(chunk=chunk_a, score=0.5, matched_terms=["产品"]),
+                    RetrievalResult(chunk=chunk_b, score=0.9, matched_terms=["产品"]),
+                ]
+
+        class RecordingReranker:
+            def rerank(self, query, results):
+                events.append(("rerank", query.text, [result.chunk.id for result in results]))
+                return list(reversed(results))
+
+        results = RetrievalPipeline(
+            vector_store=RecordingVectorStore(),
+            reranker=RecordingReranker(),
+        ).retrieve(RetrievalQuery(text="产品", top_k=1), [chunk_a, chunk_b])
+
+        self.assertEqual([result.chunk.id for result in results], ["chunk-b"])
+        self.assertEqual(
+            events,
+            [
+                ("search", "产品", ["chunk-a", "chunk-b"]),
+                ("rerank", "产品", ["chunk-a", "chunk-b"]),
+            ],
+        )
+
+    def test_retrieval_pipeline_records_diagnostics_for_last_run(self) -> None:
+        from backend.app.knowledge.retrieval_pipeline import RetrievalPipeline
+        from backend.domain.knowledge.contracts import KnowledgeChunk, RetrievalQuery, RetrievalResult
+
+        chunk_a = KnowledgeChunk(id="chunk-a", document_id="doc-1", content="产品 使用场景")
+        chunk_b = KnowledgeChunk(id="chunk-b", document_id="doc-1", content="产品")
+
+        class RecordingVectorStore:
+            def search(self, query, chunks):
+                return [
+                    RetrievalResult(chunk=chunk_a, score=0.4, matched_terms=["产品"]),
+                    RetrievalResult(chunk=chunk_b, score=0.9, matched_terms=["产品"]),
+                ]
+
+        class ScoreReranker:
+            def rerank(self, query, results):
+                return sorted(results, key=lambda result: result.score, reverse=True)
+
+        pipeline_result = RetrievalPipeline(
+            vector_store=RecordingVectorStore(),
+            reranker=ScoreReranker(),
+        ).retrieve_with_diagnostics(RetrievalQuery(text="产品", top_k=1), [chunk_a, chunk_b])
+        results = pipeline_result.results
+        diagnostics = pipeline_result.diagnostics
+
+        self.assertEqual([result.chunk.id for result in results], ["chunk-b"])
+        self.assertEqual(diagnostics.query_text, "产品")
+        self.assertEqual(diagnostics.input_chunk_count, 2)
+        self.assertEqual(diagnostics.candidate_count, 2)
+        self.assertEqual(diagnostics.returned_count, 1)
+        self.assertEqual(diagnostics.candidate_chunk_ids, ("chunk-a", "chunk-b"))
+        self.assertEqual(diagnostics.reranked_chunk_ids, ("chunk-b", "chunk-a"))
+        self.assertEqual(diagnostics.returned_chunk_ids, ("chunk-b",))
+        self.assertEqual(diagnostics.top_score, 0.9)
+
+    def test_retrieval_pipeline_records_top_score_as_max_returned_score(self) -> None:
+        from backend.app.knowledge.retrieval_pipeline import RetrievalPipeline
+        from backend.domain.knowledge.contracts import KnowledgeChunk, RetrievalQuery, RetrievalResult
+
+        chunk_a = KnowledgeChunk(id="chunk-a", document_id="doc-1", content="产品")
+        chunk_b = KnowledgeChunk(id="chunk-b", document_id="doc-1", content="使用场景")
+
+        class RecordingVectorStore:
+            def search(self, query, chunks):
+                return [
+                    RetrievalResult(chunk=chunk_a, score=0.4, matched_terms=["产品"]),
+                    RetrievalResult(chunk=chunk_b, score=0.9, matched_terms=["使用场景"]),
+                ]
+
+        class LowScoreFirstReranker:
+            def rerank(self, query, results):
+                return results
+
+        pipeline_result = RetrievalPipeline(
+            vector_store=RecordingVectorStore(),
+            reranker=LowScoreFirstReranker(),
+        ).retrieve_with_diagnostics(RetrievalQuery(text="产品 使用场景", top_k=2), [chunk_a, chunk_b])
+
+        self.assertEqual([result.chunk.id for result in pipeline_result.results], ["chunk-a", "chunk-b"])
+        self.assertEqual(pipeline_result.diagnostics.top_score, 0.9)
+
+    def test_retrieval_pipeline_records_empty_diagnostics_for_invalid_top_k(self) -> None:
+        from backend.app.knowledge.retrieval_pipeline import RetrievalPipeline
+        from backend.domain.knowledge.contracts import KnowledgeChunk, RetrievalQuery
+
+        chunk = KnowledgeChunk(id="chunk-a", document_id="doc-1", content="产品")
+        pipeline_result = RetrievalPipeline().retrieve_with_diagnostics(
+            RetrievalQuery(text="产品", top_k=0),
+            [chunk],
+        )
+
+        self.assertEqual(pipeline_result.results, [])
+        self.assertEqual(pipeline_result.diagnostics.query_text, "产品")
+        self.assertEqual(pipeline_result.diagnostics.input_chunk_count, 1)
+        self.assertEqual(pipeline_result.diagnostics.candidate_count, 0)
+        self.assertEqual(pipeline_result.diagnostics.returned_count, 0)
+
+    def test_retrieval_service_uses_retrieval_pipeline_boundary(self) -> None:
+        from backend.app.knowledge.retrieval_service import KnowledgeRetrievalService
+        from backend.domain.knowledge.contracts import RetrievalQuery
+
+        class RecordingPipeline:
+            def __init__(self) -> None:
+                self.calls = []
+
+            def retrieve(self, query, chunks):
+                self.calls.append((query, chunks))
+                return []
+
+        pipeline = RecordingPipeline()
+        results = KnowledgeRetrievalService(pipeline=pipeline).retrieve(
+            RetrievalQuery(text="素材", top_k=2)
+        )
+
+        self.assertEqual(results, [])
+        self.assertEqual(pipeline.calls[0][0].text, "素材")
+        self.assertTrue(pipeline.calls[0][1])
+
+    def test_retrieval_service_can_return_pipeline_diagnostics(self) -> None:
+        from backend.app.knowledge.retrieval_pipeline import RetrievalDiagnostics, RetrievalPipelineResult
+        from backend.app.knowledge.retrieval_service import KnowledgeRetrievalService
+        from backend.domain.knowledge.contracts import KnowledgeChunk, RetrievalQuery, RetrievalResult
+
+        chunk = KnowledgeChunk(id="chunk-1", document_id="doc-1", content="产品")
+
+        class RecordingPipeline:
+            def retrieve_with_diagnostics(self, query, chunks):
+                return RetrievalPipelineResult(
+                    results=[RetrievalResult(chunk=chunk, score=0.8, matched_terms=["产品"])],
+                    diagnostics=RetrievalDiagnostics(
+                        query_text=query.text,
+                        input_chunk_count=len(chunks),
+                        candidate_count=1,
+                        returned_count=1,
+                        candidate_chunk_ids=("chunk-1",),
+                        reranked_chunk_ids=("chunk-1",),
+                        returned_chunk_ids=("chunk-1",),
+                        top_score=0.8,
+                    ),
+                )
+
+        result = KnowledgeRetrievalService(pipeline=RecordingPipeline()).retrieve_with_diagnostics(
+            RetrievalQuery(text="产品", top_k=1)
+        )
+
+        self.assertEqual([item.chunk.id for item in result.results], ["chunk-1"])
+        self.assertEqual(result.diagnostics.query_text, "产品")
+        self.assertGreaterEqual(result.diagnostics.input_chunk_count, 1)
+
+    def test_retrieval_service_pipeline_takes_precedence_over_index(self) -> None:
+        from backend.app.knowledge.retrieval_service import KnowledgeRetrievalService
+        from backend.domain.knowledge.contracts import RetrievalQuery
+
+        class UnusedVectorStore:
+            def search(self, query, chunks):
+                raise AssertionError("index should not be used when pipeline is provided")
+
+        class RecordingPipeline:
+            def __init__(self) -> None:
+                self.called = False
+
+            def retrieve(self, query, chunks):
+                self.called = True
+                return []
+
+        pipeline = RecordingPipeline()
+        results = KnowledgeRetrievalService(
+            index=UnusedVectorStore(),
+            pipeline=pipeline,
+        ).retrieve(RetrievalQuery(text="产品", top_k=1))
+
+        self.assertEqual(results, [])
+        self.assertTrue(pipeline.called)
+
     def test_retrieval_service_only_reads_ready_active_source_chunks(self) -> None:
         from backend.app.knowledge.retrieval_service import KnowledgeRetrievalService
         from backend.db.repositories import KnowledgeRepository
@@ -245,6 +471,94 @@ class RagFoundationContextEngineTests(RagFoundationDbTestCase):
         self.assertEqual(recorder.events[-1].event_type, "rag_retrieval_succeeded")
         self.assertEqual(recorder.events[-1].actor_role, "context")
 
+    def test_context_engine_records_stream_shape_for_rag_trace_events(self) -> None:
+        from backend.runtime.context_engine import ContextEngine, ContextRequest
+
+        recorder = _FakeTraceRecorder()
+        engine = ContextEngine(trace_recorder=recorder)
+        engine.build_context(ContextRequest(session_id="session-1", message="短视频 产品 开头"))
+
+        started = recorder.events[0].payload["stream"]
+        succeeded = recorder.events[-1].payload["stream"]
+
+        self.assertEqual(started["phase"], "context_retrieval")
+        self.assertEqual(started["status"], "running")
+        self.assertEqual(started["progress"], 0.1)
+        self.assertEqual(started["label"], "检索上下文")
+        self.assertEqual(started["message"], "正在检索可用知识。")
+        self.assertEqual(succeeded["phase"], "context_retrieval")
+        self.assertEqual(succeeded["status"], "succeeded")
+        self.assertEqual(succeeded["progress"], 1.0)
+        self.assertEqual(succeeded["label"], "上下文检索完成")
+        self.assertIn("命中", succeeded["message"])
+
+    def test_context_engine_records_retrieval_diagnostics_in_success_trace(self) -> None:
+        from backend.app.knowledge.retrieval_pipeline import RetrievalDiagnostics, RetrievalPipelineResult
+        from backend.domain.knowledge.contracts import KnowledgeChunk, RetrievalResult
+        from backend.runtime.context_engine import ContextEngine, ContextRequest
+
+        class RetrievalWithDiagnostics:
+            def retrieve_with_diagnostics(self, query):
+                chunk = KnowledgeChunk(id="chunk-1", document_id="doc-1", content="产品 使用场景")
+                return RetrievalPipelineResult(
+                    results=[RetrievalResult(chunk=chunk, score=0.75, matched_terms=["产品"])],
+                    diagnostics=RetrievalDiagnostics(
+                        query_text=query.text,
+                        input_chunk_count=2,
+                        candidate_count=2,
+                        returned_count=1,
+                        candidate_chunk_ids=("chunk-1", "chunk-2"),
+                        reranked_chunk_ids=("chunk-1", "chunk-2"),
+                        returned_chunk_ids=("chunk-1",),
+                        top_score=0.75,
+                    ),
+                )
+
+        recorder = _FakeTraceRecorder()
+        engine = ContextEngine(
+            retrieval_service=RetrievalWithDiagnostics(),
+            trace_recorder=recorder,
+        )
+        engine.build_context(ContextRequest(session_id="session-1", message="产品"))
+
+        success_payload = recorder.events[-1].payload
+        self.assertEqual(success_payload["diagnostics"]["candidateCount"], 2)
+        self.assertEqual(success_payload["diagnostics"]["returnedChunkIds"], ["chunk-1"])
+        self.assertEqual(success_payload["diagnostics"]["topScore"], 0.75)
+
+    def test_context_engine_success_trace_top_score_uses_diagnostics(self) -> None:
+        from backend.app.knowledge.retrieval_pipeline import RetrievalDiagnostics, RetrievalPipelineResult
+        from backend.domain.knowledge.contracts import KnowledgeChunk, RetrievalResult
+        from backend.runtime.context_engine import ContextEngine, ContextRequest
+
+        class RetrievalWithUnsortedScores:
+            def retrieve_with_diagnostics(self, query):
+                low = KnowledgeChunk(id="chunk-low", document_id="doc-1", content="产品")
+                high = KnowledgeChunk(id="chunk-high", document_id="doc-1", content="使用场景")
+                return RetrievalPipelineResult(
+                    results=[
+                        RetrievalResult(chunk=low, score=0.2, matched_terms=["产品"]),
+                        RetrievalResult(chunk=high, score=0.9, matched_terms=["使用场景"]),
+                    ],
+                    diagnostics=RetrievalDiagnostics(
+                        query_text=query.text,
+                        input_chunk_count=2,
+                        candidate_count=2,
+                        returned_count=2,
+                        returned_chunk_ids=("chunk-low", "chunk-high"),
+                        top_score=0.9,
+                    ),
+                )
+
+        recorder = _FakeTraceRecorder()
+        engine = ContextEngine(
+            retrieval_service=RetrievalWithUnsortedScores(),
+            trace_recorder=recorder,
+        )
+        engine.build_context(ContextRequest(session_id="session-1", message="产品"))
+
+        self.assertEqual(recorder.events[-1].payload["topScore"], 0.9)
+
     def test_context_engine_surfaces_chunk_metadata_in_documents_and_citations(self) -> None:
         from backend.domain.knowledge.contracts import KnowledgeChunk, RetrievalResult
         from backend.runtime.context_engine import ContextEngine, ContextRequest
@@ -292,6 +606,11 @@ class RagFoundationContextEngineTests(RagFoundationDbTestCase):
 
         self.assertEqual(bundle.documents, [])
         self.assertEqual(recorder.events[-1].event_type, "rag_retrieval_failed")
+        stream = recorder.events[-1].payload["stream"]
+        self.assertEqual(stream["phase"], "context_retrieval")
+        self.assertEqual(stream["status"], "failed")
+        self.assertEqual(stream["progress"], 1.0)
+        self.assertEqual(stream["label"], "上下文检索失败")
 
     def test_context_engine_records_context_usage_when_db_is_available(self) -> None:
         from backend.app.knowledge.ingestion_service import KnowledgeIngestionService

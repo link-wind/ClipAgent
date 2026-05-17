@@ -5,9 +5,10 @@ from fastapi.concurrency import run_in_threadpool
 
 from backend.app.knowledge.source_delete_service import KnowledgeSourceDeleteService
 from backend.app.knowledge.source_read_service import KnowledgeSourceReadService
+from backend.app.knowledge.source_retry_service import KnowledgeSourceRetryService
 from backend.app.knowledge.upload_service import KnowledgeUploadService
 from backend.db import SessionLocal
-from backend.models.knowledge import KnowledgeSourceSummary
+from backend.models.knowledge import KnowledgeSourceDetail, KnowledgeSourceSummary, KnowledgeVersionSummary
 
 
 router = APIRouter()
@@ -15,8 +16,8 @@ router = APIRouter()
 
 def _validate_upload_filename(filename: str) -> str:
     normalized = (filename or "").strip()
-    if not normalized.endswith((".txt", ".md")):
-        raise HTTPException(status_code=400, detail="Only .txt and .md uploads are supported")
+    if not normalized.endswith((".txt", ".md", ".pdf", ".docx")):
+        raise HTTPException(status_code=400, detail="Only .txt, .md, .pdf, and .docx uploads are supported")
     return normalized
 
 
@@ -38,6 +39,41 @@ async def upload_knowledge_source(file: UploadFile = File(...)):
         return await run_in_threadpool(_upload)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
+
+
+@router.get("/knowledge-sources", response_model=list[KnowledgeSourceSummary])
+async def list_knowledge_sources():
+    read_service = KnowledgeSourceReadService(session_factory=SessionLocal)
+    return await run_in_threadpool(read_service.list_summaries)
+
+
+@router.get("/knowledge-sources/{source_id}/detail", response_model=KnowledgeSourceDetail)
+async def get_knowledge_source_detail(source_id: str):
+    try:
+        read_service = KnowledgeSourceReadService(session_factory=SessionLocal)
+        return await run_in_threadpool(read_service.get_detail, source_id)
+    except KeyError:
+        raise HTTPException(status_code=404, detail="Knowledge source not found")
+
+
+@router.get("/knowledge-sources/{source_id}/versions", response_model=list[KnowledgeVersionSummary])
+async def list_knowledge_source_versions(source_id: str):
+    try:
+        read_service = KnowledgeSourceReadService(session_factory=SessionLocal)
+        return await run_in_threadpool(read_service.list_versions, source_id)
+    except KeyError:
+        raise HTTPException(status_code=404, detail="Knowledge source not found")
+
+
+@router.post("/knowledge-sources/{source_id}/retry", response_model=KnowledgeSourceSummary)
+async def retry_knowledge_source(source_id: str):
+    try:
+        retry_service = KnowledgeSourceRetryService(session_factory=SessionLocal)
+        return await run_in_threadpool(retry_service.retry_source, source_id)
+    except KeyError:
+        raise HTTPException(status_code=404, detail="Knowledge source not found")
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc))
 
 
 @router.get("/knowledge-sources/{source_id}", response_model=KnowledgeSourceSummary)

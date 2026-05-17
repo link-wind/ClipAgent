@@ -69,6 +69,16 @@ export interface AgentTraceEvent {
   createdAt: string
 }
 
+export type AgentTraceStreamStatus = 'running' | 'succeeded' | 'failed'
+
+export interface AgentTraceStreamPayload {
+  phase: string
+  status: AgentTraceStreamStatus
+  progress: number
+  label: string
+  message: string
+}
+
 export interface AgentErrorInfo {
   message: string
   retryableStep?: string | null
@@ -299,6 +309,36 @@ const TERMINAL_TRACE_EVENTS = new Set(['run_succeeded', 'run_failed', 'job_succe
 
 export function isTerminalTraceEvent(eventType: string): boolean {
   return TERMINAL_TRACE_EVENTS.has(eventType)
+}
+
+function isTraceStreamStatus(value: unknown): value is AgentTraceStreamStatus {
+  return value === 'running' || value === 'succeeded' || value === 'failed'
+}
+
+export function extractTraceStreamPayload(event: AgentTraceEvent): AgentTraceStreamPayload | null {
+  const stream = event.payload.stream
+  if (!stream || typeof stream !== 'object') {
+    return null
+  }
+
+  const payload = stream as Record<string, unknown>
+  if (
+    typeof payload.phase !== 'string' ||
+    !isTraceStreamStatus(payload.status) ||
+    typeof payload.progress !== 'number' ||
+    typeof payload.label !== 'string' ||
+    typeof payload.message !== 'string'
+  ) {
+    return null
+  }
+
+  return {
+    phase: payload.phase,
+    status: payload.status,
+    progress: Math.max(0, Math.min(1, payload.progress)),
+    label: payload.label,
+    message: payload.message,
+  }
 }
 
 function parseSseJson<T>(event: MessageEvent<string>): T | null {

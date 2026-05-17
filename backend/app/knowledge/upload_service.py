@@ -25,6 +25,10 @@ def _infer_content_type(filename: str) -> str:
         return "text/markdown"
     if suffix == ".txt":
         return "text/plain"
+    if suffix == ".pdf":
+        return "application/pdf"
+    if suffix == ".docx":
+        return "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
     return "application/octet-stream"
 
 
@@ -32,6 +36,10 @@ def _infer_parser_type(filename: str) -> str:
     suffix = Path(filename).suffix.lower()
     if suffix == ".md":
         return "markdown"
+    if suffix == ".pdf":
+        return "pdf"
+    if suffix == ".docx":
+        return "docx"
     return "text"
 
 

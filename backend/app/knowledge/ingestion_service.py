@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session
 
 from backend.app.knowledge.chunking import ChunkDraft, chunk_markdown_text, chunk_text
 from backend.app.knowledge.storage import LocalKnowledgeStorage
+from backend.app.knowledge.text_extraction import extract_docx_text, extract_simple_pdf_text
 from backend.config import get_settings
 from backend.db.repositories import KnowledgeRepository
 
@@ -150,11 +151,16 @@ class KnowledgeIngestionService:
         source,
         content_bytes: bytes,
     ) -> list[ChunkDraft]:
-        content = content_bytes.decode("utf-8")
         parser_type = (version.parser_type or "").lower()
         filename = version.original_filename or source.name
         suffix = Path(filename).suffix.lower()
 
+        if parser_type == "docx" or suffix == ".docx":
+            return chunk_text(extract_docx_text(content_bytes))
+        if parser_type == "pdf" or suffix == ".pdf":
+            return chunk_text(extract_simple_pdf_text(content_bytes))
+
+        content = content_bytes.decode("utf-8")
         if parser_type == "markdown" or suffix == ".md":
             return chunk_markdown_text(content)
         return chunk_text(content)

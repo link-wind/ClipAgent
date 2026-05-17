@@ -3,8 +3,9 @@ from __future__ import annotations
 from sqlalchemy.orm import Session
 
 from backend.db.repositories import KnowledgeRepository
+from backend.app.knowledge.retrieval_pipeline import RetrievalPipeline, RetrievalPipelineResult
 from backend.domain.knowledge.contracts import KnowledgeChunk, RetrievalQuery, RetrievalResult
-from backend.infrastructure.vector import LightweightVectorIndex
+from backend.infrastructure.vector import VectorStore
 
 
 DEFAULT_SEED_CHUNKS = [
@@ -27,14 +28,21 @@ class KnowledgeRetrievalService:
     def __init__(
         self,
         db_session: Session | None = None,
-        index: LightweightVectorIndex | None = None,
+        index: VectorStore | None = None,
+        pipeline: RetrievalPipeline | None = None,
     ):
         self.db = db_session
-        self.index = index or LightweightVectorIndex()
+        # Prefer the full pipeline when provided; index remains for older call sites.
+        self.pipeline = pipeline or RetrievalPipeline(vector_store=index)
 
     def retrieve(self, query: RetrievalQuery) -> list[RetrievalResult]:
+        return self.retrieve_with_diagnostics(query).results
+
+    def retrieve_with_diagnostics(self, query: RetrievalQuery) -> RetrievalPipelineResult:
         chunks = self._load_chunks(query)
-        return self.index.search(query, chunks)
+        if hasattr(self.pipeline, "retrieve_with_diagnostics"):
+            return self.pipeline.retrieve_with_diagnostics(query, chunks)
+        return RetrievalPipelineResult(results=self.pipeline.retrieve(query, chunks))
 
     def _load_chunks(self, query: RetrievalQuery | None = None) -> list[KnowledgeChunk]:
         if self.db is None:

@@ -158,7 +158,9 @@ class AgentRuntimeArchitectureTests(unittest.TestCase):
         retrieval_service = importlib.import_module("backend.app.knowledge.retrieval_service")
         ingestion_service = importlib.import_module("backend.app.knowledge.ingestion_service")
         context_usage_service = importlib.import_module("backend.app.knowledge.context_usage_service")
+        retrieval_pipeline = importlib.import_module("backend.app.knowledge.retrieval_pipeline")
         lightweight_index = importlib.import_module("backend.infrastructure.vector.lightweight_index")
+        vector_store = importlib.import_module("backend.infrastructure.vector.store")
 
         self.assertTrue(hasattr(knowledge_contracts, "KnowledgeChunk"))
         self.assertTrue(hasattr(knowledge_contracts, "RetrievalResult"))
@@ -166,7 +168,13 @@ class AgentRuntimeArchitectureTests(unittest.TestCase):
         self.assertTrue(hasattr(retrieval_service, "KnowledgeRetrievalService"))
         self.assertTrue(hasattr(ingestion_service, "KnowledgeIngestionService"))
         self.assertTrue(hasattr(context_usage_service, "ContextUsageService"))
+        self.assertTrue(hasattr(retrieval_pipeline, "RetrievalDiagnostics"))
+        self.assertTrue(hasattr(retrieval_pipeline, "RetrievalPipelineResult"))
+        self.assertTrue(hasattr(retrieval_pipeline, "RetrievalPipeline"))
+        self.assertTrue(hasattr(retrieval_pipeline, "IdentityReranker"))
         self.assertTrue(hasattr(lightweight_index, "LightweightVectorIndex"))
+        self.assertTrue(hasattr(vector_store, "VectorStore"))
+        self.assertTrue(hasattr(vector_store, "KeywordVectorStore"))
 
     def test_skill_foundation_boundaries_import(self) -> None:
         skill_contracts = importlib.import_module("backend.domain.skills.contracts")

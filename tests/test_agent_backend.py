@@ -776,6 +776,42 @@ class AgentApiTests(unittest.TestCase):
         self.assertIn('"message":"规划完成"', body)
         self.assertIn("event: stream_closed\n", body)
 
+    def test_session_stream_preserves_trace_stream_payload_shape(self):
+        from backend.main import app
+
+        session = self.session_service.create_session("做一个科技短片")
+        with self.session_factory() as db:
+            session_record = db.get(AgentSessionRecord, session.id)
+            session_record.status = "done"
+            session_record.active_operation_type = "none"
+            session_record.active_operation_id = None
+            AgentTraceEventRepository(db).create(
+                id="trace-stream-1",
+                session_id=session.id,
+                event_type="rag_retrieval_succeeded",
+                message="上下文检索完成",
+                payload_json={
+                    "stream": {
+                        "phase": "context_retrieval",
+                        "status": "succeeded",
+                        "progress": 1.0,
+                        "label": "上下文检索完成",
+                        "message": "命中 1 条上下文。",
+                    }
+                },
+                actor_role="context",
+            )
+            db.commit()
+
+        client = _make_test_client(app)
+        with client.stream("GET", f"/api/agent/sessions/{session.id}/stream") as response:
+            body = "".join(response.iter_text())
+
+        self.assertIn("event: rag_retrieval_succeeded\n", body)
+        self.assertIn('"stream":{"phase":"context_retrieval"', body)
+        self.assertIn('"status":"succeeded"', body)
+        self.assertIn('"progress":1.0', body)
+
     def test_session_stream_respects_after_sequence(self):
         from backend.main import app
 
@@ -2523,6 +2559,32 @@ class FrontendClientContractTests(unittest.TestCase):
         self.assertIn("setEvents", store_source)
         self.assertIn("getAgentSessionEvents", api_source)
         self.assertIn("queued", api_source)
+
+    def test_frontend_trace_stream_payload_contract(self):
+        store_source = (ROOT / "src" / "stores" / "useAgentStore.ts").read_text(encoding="utf-8")
+        api_source = (ROOT / "src" / "lib" / "agentApi.ts").read_text(encoding="utf-8")
+
+        self.assertIn("export interface AgentTraceStreamPayload", api_source)
+        self.assertIn("extractTraceStreamPayload", api_source)
+        self.assertIn("payload.stream", api_source)
+        self.assertIn("currentTraceStream", store_source)
+        self.assertIn("extractTraceStreamPayload(event)", store_source)
+        self.assertIn("currentTraceStream: null", store_source)
+
+    def test_workspace_surfaces_current_trace_stream_state(self):
+        agent_workspace_source = (
+            ROOT / "src" / "components" / "agent" / "AgentWorkspace.tsx"
+        ).read_text(encoding="utf-8")
+        brief_workspace_source = (
+            ROOT / "src" / "components" / "workspace" / "BriefWorkspacePage.tsx"
+        ).read_text(encoding="utf-8")
+
+        for workspace_source in (agent_workspace_source, brief_workspace_source):
+            self.assertIn("currentTraceStream", workspace_source)
+            self.assertIn("currentTraceStream.label", workspace_source)
+            self.assertIn("currentTraceStream.message", workspace_source)
+            self.assertIn("currentTraceStream.progress", workspace_source)
+            self.assertIn("currentTraceStream.status", workspace_source)
 
     def test_dashboard_page_uses_marketing_hero_structure(self):
         dashboard_source = (

@@ -24,3 +24,19 @@ class KnowledgeSourceSummary(BaseModel):
     processingVersion: KnowledgeVersionSummary | None = None
     lastFailedVersion: KnowledgeVersionSummary | None = None
     deletionRequestedAt: str | None = None
+
+
+class KnowledgeChunkPreview(BaseModel):
+    id: str
+    versionId: str
+    chunkIndex: int
+    chunkType: str
+    titlePath: str | None = None
+    contentPreview: str
+    tokenCount: int
+    metadata: dict
+
+
+class KnowledgeSourceDetail(BaseModel):
+    source: KnowledgeSourceSummary
+    activeChunks: list[KnowledgeChunkPreview]

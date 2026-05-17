@@ -70,6 +70,16 @@ class KnowledgeRepository:
     def get_source(self, source_id: str) -> KnowledgeSourceRecord | None:
         return self.db.get(KnowledgeSourceRecord, source_id)
 
+    def list_sources(self, project_key: str = "default") -> list[KnowledgeSourceRecord]:
+        stmt = (
+            select(KnowledgeSourceRecord)
+            .where(KnowledgeSourceRecord.project_key == project_key)
+            .where(KnowledgeSourceRecord.status != "deleted")
+            .where(KnowledgeSourceRecord.deleted_at.is_(None))
+            .order_by(KnowledgeSourceRecord.updated_at.desc(), KnowledgeSourceRecord.id.desc())
+        )
+        return list(self.db.scalars(stmt))
+
     def create_version(self, **values) -> KnowledgeVersionRecord:
         record = KnowledgeVersionRecord(**values)
         self.db.add(record)

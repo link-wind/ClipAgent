@@ -50,6 +50,15 @@
   overflow-wrap: anywhere;
 }
 
+.headerStatus {
+  flex: 0 1 auto;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+}
+
 .statusPill {
   flex: 0 0 auto;
   min-width: 82px;
@@ -62,6 +71,85 @@
   text-align: center;
   font-size: 12px;
   font-weight: 800;
+}
+
+.traceStatus {
+  width: min(280px, 36vw);
+  min-width: 180px;
+  padding: 8px 10px;
+  border: 1px solid rgba(75, 191, 208, 0.34);
+  border-radius: 8px;
+  background: rgba(14, 34, 38, 0.72);
+}
+
+.traceStatus[data-status='succeeded'] {
+  border-color: rgba(127, 215, 168, 0.38);
+  background: rgba(30, 64, 47, 0.48);
+}
+
+.traceStatus[data-status='failed'] {
+  border-color: rgba(248, 113, 113, 0.44);
+  background: rgba(82, 32, 32, 0.52);
+}
+
+.traceStatusMeta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  color: var(--text-primary);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.traceStatusMeta span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.traceStatusMeta strong {
+  color: var(--accent);
+}
+
+.traceProgress {
+  height: 4px;
+  margin-top: 7px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.traceProgress span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, rgba(75, 191, 208, 0.95), rgba(239, 199, 94, 0.95));
+  transition: width 180ms ease;
+}
+
+.traceStatus p {
+  margin-top: 6px;
+  color: var(--text-secondary);
+  font-size: 11px;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.traceStatus p span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.traceStatus p strong {
+  flex: 0 0 auto;
+  color: var(--text-primary);
 }
 
 .main {
@@ -233,6 +321,17 @@
   .header {
     flex-direction: column;
     gap: 10px;
+  }
+
+  .headerStatus {
+    width: 100%;
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .traceStatus {
+    width: 100%;
+    min-width: 0;
   }
 
   .statusPill {

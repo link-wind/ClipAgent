@@ -42,6 +42,12 @@ const STEP_STATUS_LABELS: Record<string, string> = {
   skipped: '已跳过',
 };
 
+const TRACE_STATUS_LABELS: Record<string, string> = {
+  running: '进行中',
+  succeeded: '已完成',
+  failed: '失败',
+};
+
 function asRecord(value: unknown): Record<string, unknown> {
   return value && typeof value === 'object' && !Array.isArray(value) ? (value as Record<string, unknown>) : {};
 }
@@ -230,6 +236,7 @@ export default function BriefWorkspacePage() {
   const appendTraceEvent = useAgentStore((state) => state.appendTraceEvent);
   const lastTraceSequence = useAgentStore((state) => state.lastTraceSequence);
   const setStreamState = useAgentStore((state) => state.setStreamState);
+  const currentTraceStream = useAgentStore((state) => state.currentTraceStream);
 
   const [message, setMessage] = useState('');
   const [errorText, setErrorText] = useState('');
@@ -685,9 +692,35 @@ export default function BriefWorkspacePage() {
             <section className="flex min-h-full flex-col overflow-hidden rounded-[20px] border border-border bg-white" aria-label="方案工作会话">
               <div className="flex items-center justify-between gap-3 border-b border-bordersoft px-5 py-4">
                 <span className="text-sm font-semibold text-ink">Clip Chat</span>
-                <span className="w-fit rounded-full border border-[rgba(31,106,91,0.18)] bg-[#e7f1ec] px-3 py-1.5 text-xs font-semibold text-accentink">
-                  {getWorkspaceStatus(session)}
-                </span>
+                <div className="flex min-w-0 flex-wrap items-center justify-end gap-2">
+                  {currentTraceStream ? (
+                    <div
+                      className="grid min-w-[12rem] max-w-[18rem] gap-1.5 rounded-lg border border-[rgba(45,138,164,0.24)] bg-[#eef8f8] px-3 py-2 text-xs text-secondary"
+                      data-status={currentTraceStream.status}
+                      aria-label="实时执行状态"
+                    >
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="min-w-0 truncate font-semibold text-ink">{currentTraceStream.label}</span>
+                        <strong className="font-semibold text-accentink">
+                          {Math.round(currentTraceStream.progress * 100)}%
+                        </strong>
+                      </div>
+                      <div className="h-1.5 overflow-hidden rounded-full bg-white" aria-hidden="true">
+                        <span
+                          className="block h-full rounded-full bg-gradient-to-r from-accentstrong to-accent transition-[width] duration-200"
+                          style={{ width: `${Math.round(currentTraceStream.progress * 100)}%` }}
+                        />
+                      </div>
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="min-w-0 truncate">{currentTraceStream.message}</span>
+                        <span className="shrink-0 font-semibold">{TRACE_STATUS_LABELS[currentTraceStream.status] || currentTraceStream.status}</span>
+                      </div>
+                    </div>
+                  ) : null}
+                  <span className="w-fit rounded-full border border-[rgba(31,106,91,0.18)] bg-[#e7f1ec] px-3 py-1.5 text-xs font-semibold text-accentink">
+                    {getWorkspaceStatus(session)}
+                  </span>
+                </div>
               </div>
 
               <div className="grid flex-1 content-end gap-3.5 bg-[linear-gradient(180deg,rgba(31,106,91,0.05),transparent_280px),#ffffff] p-5" aria-label="对话消息">
