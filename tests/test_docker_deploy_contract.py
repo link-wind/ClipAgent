@@ -106,7 +106,7 @@ class DockerDeployContractTests(unittest.TestCase):
         self.assertIn("redis:6379", env_example)
         self.assertIn("CLIPFORGE_API_ORIGIN=http://api:8010", env_example)
         self.assertIn("docker compose up --build -d", readme)
-        self.assertIn("Docker 一键部署", readme)
+        self.assertIn("Docker 快速启动", readme)
         self.assertIn("docker compose ps", readme)
 
     def test_backend_requirements_keep_langchain_and_pydantic_compatible(self) -> None:

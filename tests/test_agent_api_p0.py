@@ -35,11 +35,11 @@ class InfrastructureDocsTests(unittest.TestCase):
 
         self.assertIn("postgres:", content)
         self.assertIn("image: postgres:16", content)
-        self.assertIn("5432:5432", content)
+        self.assertRegex(content, r'"\$\{POSTGRES_PORT:-5432\}:5432"|"?5432:5432"?')
         self.assertIn("clipforge", content)
         self.assertIn("redis:", content)
         self.assertIn("image: redis:7", content)
-        self.assertIn("6379:6379", content)
+        self.assertRegex(content, r'"\$\{REDIS_PORT:-6379\}:6379"|"?6379:6379"?')
 
     def test_env_example_contains_required_agent_persistence_variables(self):
         env_path = ROOT / ".env.example"
@@ -64,8 +64,8 @@ class InfrastructureDocsTests(unittest.TestCase):
         self.assertIn("Celery", content)
         self.assertIn("uvicorn backend.main:app", content)
         self.assertIn("npm run dev", content)
-        self.assertIn("只容器化 PostgreSQL 和 Redis", content)
-        self.assertIn("现在会真实投递 Celery 任务", content)
+        self.assertIn("docker compose up --build -d", content)
+        self.assertIn("docker compose ps", content)
         self.assertIn("worker --pool solo", content)
 
 
