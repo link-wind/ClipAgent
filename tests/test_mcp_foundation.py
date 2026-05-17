@@ -123,6 +123,384 @@ class MCPFoundationRegistryTests(unittest.TestCase):
 
 
 class MCPFoundationGatewayTests(unittest.TestCase):
+    def test_mcp_adapter_skips_when_client_is_not_configured(self) -> None:
+        from backend.domain.tools.contracts import ToolDefinition
+        from backend.infrastructure.tools.mcp_adapter import MCPToolAdapter
+        from backend.runtime.tool_gateway import ToolCallRequest
+
+        adapter = MCPToolAdapter()
+
+        result = adapter.call(
+            request=ToolCallRequest(
+                session_id="session-1",
+                run_id="run-1",
+                step_id="step-1",
+                tool_id="remote_search",
+                arguments={"query": "ClipForge"},
+                permission_scope="project",
+            ),
+            definition=ToolDefinition(
+                id="remote_search",
+                name="Remote Search",
+                description="Search remote docs through MCP.",
+                category="knowledge",
+                permissions={"scope": "project", "mode": "read_only"},
+                source_type="mcp",
+                mcp_server_id="docs-server",
+                tool_name="search_docs",
+            ),
+        )
+
+        self.assertEqual(result.status, "skipped")
+        self.assertIn("not configured", result.error_message)
+
+    def test_mcp_adapter_calls_injected_client_and_normalizes_result(self) -> None:
+        from backend.domain.tools.contracts import ToolDefinition
+        from backend.infrastructure.tools.mcp_adapter import MCPToolAdapter
+        from backend.runtime.tool_gateway import ToolCallRequest
+
+        class FakeMCPClient:
+            def __init__(self) -> None:
+                self.calls: list[dict[str, object]] = []
+
+            def call_tool(self, *, server_id: str, tool_name: str, arguments: dict[str, object], timeout_ms: int):
+                self.calls.append(
+                    {
+                        "server_id": server_id,
+                        "tool_name": tool_name,
+                        "arguments": arguments,
+                        "timeout_ms": timeout_ms,
+                    }
+                )
+                return {
+                    "summary": "Found 2 remote docs.",
+                    "result_ref": "mcp:docs-server/search_docs",
+                    "items": [{"title": "ClipForge MCP notes"}],
+                }
+
+        client = FakeMCPClient()
+        adapter = MCPToolAdapter(client=client)
+
+        result = adapter.call(
+            request=ToolCallRequest(
+                session_id="session-1",
+                run_id="run-1",
+                step_id="step-1",
+                tool_id="remote_search",
+                arguments={"query": "ClipForge"},
+                permission_scope="project",
+            ),
+            definition=ToolDefinition(
+                id="remote_search",
+                name="Remote Search",
+                description="Search remote docs through MCP.",
+                category="knowledge",
+                permissions={"scope": "project", "mode": "read_only"},
+                source_type="mcp",
+                mcp_server_id="docs-server",
+                tool_name="search_docs",
+                timeout_ms=1200,
+            ),
+        )
+
+        self.assertEqual(client.calls, [
+            {
+                "server_id": "docs-server",
+                "tool_name": "search_docs",
+                "arguments": {"query": "ClipForge"},
+                "timeout_ms": 1200,
+            }
+        ])
+        self.assertEqual(result.status, "succeeded")
+        self.assertEqual(result.data["items"], [{"title": "ClipForge MCP notes"}])
+        self.assertEqual(result.result_summary, "Found 2 remote docs.")
+        self.assertEqual(result.result_ref, "mcp:docs-server/search_docs")
+        self.assertEqual(result.error_message, "")
+
+    def test_mcp_adapter_normalizes_client_exception_as_failed_result(self) -> None:
+        from backend.domain.tools.contracts import ToolDefinition
+        from backend.infrastructure.tools.mcp_adapter import MCPToolAdapter
+        from backend.runtime.tool_gateway import ToolCallRequest
+
+        class FailingMCPClient:
+            def call_tool(self, *, server_id: str, tool_name: str, arguments: dict[str, object], timeout_ms: int):
+                raise RuntimeError(f"{server_id}:{tool_name} timeout")
+
+        adapter = MCPToolAdapter(client=FailingMCPClient())
+
+        result = adapter.call(
+            request=ToolCallRequest(
+                session_id="session-1",
+                run_id="run-1",
+                step_id="step-1",
+                tool_id="remote_search",
+                arguments={"query": "ClipForge"},
+                permission_scope="project",
+            ),
+            definition=ToolDefinition(
+                id="remote_search",
+                name="Remote Search",
+                description="Search remote docs through MCP.",
+                category="knowledge",
+                permissions={"scope": "project", "mode": "read_only"},
+                source_type="mcp",
+                mcp_server_id="docs-server",
+                tool_name="search_docs",
+                timeout_ms=1200,
+            ),
+        )
+
+        self.assertEqual(result.status, "failed")
+        self.assertEqual(result.result_summary, "MCP tool remote_search failed.")
+        self.assertEqual(result.result_ref, "mcp:docs-server/search_docs")
+        self.assertIn("docs-server:search_docs timeout", result.error_message)
+
+    def test_tool_gateway_records_mcp_tool_call_through_adapter(self) -> None:
+        from backend.app.tools.tool_call_service import ToolCallService
+        from backend.db.repositories.tool_calls import ToolCallRepository
+        from backend.domain.tools.contracts import ToolDefinition
+        from backend.infrastructure.tools.mcp_adapter import MCPToolAdapter
+        from backend.runtime.tool_gateway import ToolCallRequest, ToolGateway
+        from backend.runtime.trace_recorder import TraceRecorder
+
+        class FakeRegistry:
+            def get_definition(self, _tool_id: str) -> ToolDefinition:
+                return ToolDefinition(
+                    id="remote_search",
+                    name="Remote Search",
+                    description="Search remote docs through MCP.",
+                    category="knowledge",
+                    permissions={"scope": "project", "mode": "read_only"},
+                    source_type="mcp",
+                    mcp_server_id="docs-server",
+                    tool_name="search_docs",
+                    timeout_ms=1200,
+                )
+
+            def resolve_handler(self, _tool_id: str):
+                raise AssertionError("MCP tools must not resolve local handlers")
+
+        class FakeMCPClient:
+            def call_tool(self, *, server_id: str, tool_name: str, arguments: dict[str, object], timeout_ms: int):
+                return {
+                    "summary": f"{tool_name} on {server_id}",
+                    "result_ref": "mcp:docs-server/search_docs",
+                    "query": arguments["query"],
+                    "timeout_ms": timeout_ms,
+                }
+
+        engine = create_engine("sqlite+pysqlite:///:memory:", future=True)
+
+        @event.listens_for(engine, "connect")
+        def _set_sqlite_pragma(dbapi_connection, _connection_record):
+            cursor = dbapi_connection.cursor()
+            cursor.execute("PRAGMA foreign_keys=ON")
+            cursor.close()
+
+        Base.metadata.create_all(engine)
+        SessionLocal = sessionmaker(bind=engine, future=True)
+        db = SessionLocal()
+
+        from backend.db.models import AgentRunRecord, AgentSessionRecord
+
+        db.add(
+            AgentSessionRecord(
+                id="session-1",
+                status="active",
+                progress=0.0,
+                active_operation_type="none",
+                planner_trace_json={},
+            )
+        )
+        db.commit()
+        db.add(
+            AgentRunRecord(
+                id="run-1",
+                session_id="session-1",
+                trigger_type="planning",
+                status="running",
+            )
+        )
+        db.commit()
+        from backend.db.repositories import AgentStepRepository
+
+        step = AgentStepRepository(db).create(
+            id="step-record-1",
+            session_id="session-1",
+            run_id="run-1",
+            step_key="remote_search",
+            title="Remote search",
+            description="",
+            status="running",
+        )
+        db.commit()
+
+        gateway = ToolGateway(
+            registry=FakeRegistry(),
+            mcp_adapter=MCPToolAdapter(client=FakeMCPClient()),
+            tool_call_service=ToolCallService(
+                db_session=db,
+                tool_call_repository=ToolCallRepository(db),
+                trace_recorder=TraceRecorder(db),
+            ),
+        )
+
+        result = gateway.call_tool(
+            ToolCallRequest(
+                session_id="session-1",
+                run_id="run-1",
+                step_id=step.id,
+                tool_id="remote_search",
+                arguments={"query": "ClipForge"},
+                permission_scope="project",
+            )
+        )
+
+        self.assertEqual(result.status, "succeeded")
+        self.assertEqual(result.result_summary, "search_docs on docs-server")
+        self.assertEqual(result.result_ref, "mcp:docs-server/search_docs")
+
+        from backend.db.repositories import AgentTraceEventRepository
+        from backend.db.repositories.tool_calls import ToolCallRepository
+
+        tool_calls = ToolCallRepository(db).list_for_run("run-1")
+        self.assertEqual(len(tool_calls), 1)
+        self.assertEqual(tool_calls[0].tool_id, "remote_search")
+        self.assertEqual(tool_calls[0].status, "succeeded")
+        self.assertEqual(tool_calls[0].result_ref, "mcp:docs-server/search_docs")
+
+        events = AgentTraceEventRepository(db).list_for_session("session-1")
+        self.assertEqual(len(events), 1)
+        self.assertEqual(events[0].event_type, "tool_call_recorded")
+        self.assertEqual(events[0].payload_json["toolId"], "remote_search")
+        self.assertEqual(events[0].payload_json["status"], "succeeded")
+
+        db.close()
+        engine.dispose()
+
+    def test_tool_gateway_records_mcp_client_failure_through_adapter(self) -> None:
+        from backend.app.tools.tool_call_service import ToolCallService
+        from backend.db.repositories.tool_calls import ToolCallRepository
+        from backend.domain.tools.contracts import ToolDefinition
+        from backend.infrastructure.tools.mcp_adapter import MCPToolAdapter
+        from backend.runtime.tool_gateway import ToolCallRequest, ToolGateway
+        from backend.runtime.trace_recorder import TraceRecorder
+
+        class FakeRegistry:
+            def get_definition(self, _tool_id: str) -> ToolDefinition:
+                return ToolDefinition(
+                    id="remote_search",
+                    name="Remote Search",
+                    description="Search remote docs through MCP.",
+                    category="knowledge",
+                    permissions={"scope": "project", "mode": "read_only"},
+                    source_type="mcp",
+                    mcp_server_id="docs-server",
+                    tool_name="search_docs",
+                    timeout_ms=1200,
+                )
+
+            def resolve_handler(self, _tool_id: str):
+                raise AssertionError("MCP tools must not resolve local handlers")
+
+        class FailingMCPClient:
+            def call_tool(self, *, server_id: str, tool_name: str, arguments: dict[str, object], timeout_ms: int):
+                raise RuntimeError("remote MCP call timed out")
+
+        engine = create_engine("sqlite+pysqlite:///:memory:", future=True)
+
+        @event.listens_for(engine, "connect")
+        def _set_sqlite_pragma(dbapi_connection, _connection_record):
+            cursor = dbapi_connection.cursor()
+            cursor.execute("PRAGMA foreign_keys=ON")
+            cursor.close()
+
+        Base.metadata.create_all(engine)
+        SessionLocal = sessionmaker(bind=engine, future=True)
+        db = SessionLocal()
+
+        from backend.db.models import AgentRunRecord, AgentSessionRecord
+
+        db.add(
+            AgentSessionRecord(
+                id="session-1",
+                status="active",
+                progress=0.0,
+                active_operation_type="none",
+                planner_trace_json={},
+            )
+        )
+        db.commit()
+        db.add(
+            AgentRunRecord(
+                id="run-1",
+                session_id="session-1",
+                trigger_type="planning",
+                status="running",
+            )
+        )
+        db.commit()
+        from backend.db.repositories import AgentStepRepository
+
+        step = AgentStepRepository(db).create(
+            id="step-record-1",
+            session_id="session-1",
+            run_id="run-1",
+            step_key="remote_search",
+            title="Remote search",
+            description="",
+            status="running",
+        )
+        db.commit()
+
+        gateway = ToolGateway(
+            registry=FakeRegistry(),
+            mcp_adapter=MCPToolAdapter(client=FailingMCPClient()),
+            tool_call_service=ToolCallService(
+                db_session=db,
+                tool_call_repository=ToolCallRepository(db),
+                trace_recorder=TraceRecorder(db),
+            ),
+        )
+
+        result = gateway.call_tool(
+            ToolCallRequest(
+                session_id="session-1",
+                run_id="run-1",
+                step_id=step.id,
+                tool_id="remote_search",
+                arguments={"query": "ClipForge"},
+                permission_scope="project",
+            )
+        )
+
+        self.assertEqual(result.status, "failed")
+        self.assertEqual(result.result_summary, "MCP tool remote_search failed.")
+        self.assertEqual(result.result_ref, "mcp:docs-server/search_docs")
+        self.assertIn("remote MCP call timed out", result.error_message)
+
+        from backend.db.repositories import AgentTraceEventRepository
+        from backend.db.repositories.tool_calls import ToolCallRepository
+
+        tool_calls = ToolCallRepository(db).list_for_run("run-1")
+        self.assertEqual(len(tool_calls), 1)
+        self.assertEqual(tool_calls[0].tool_id, "remote_search")
+        self.assertEqual(tool_calls[0].status, "failed")
+        self.assertEqual(tool_calls[0].result_summary, "MCP tool remote_search failed.")
+        self.assertEqual(tool_calls[0].result_ref, "mcp:docs-server/search_docs")
+        self.assertIn("remote MCP call timed out", tool_calls[0].error_message)
+
+        events = AgentTraceEventRepository(db).list_for_session("session-1")
+        self.assertEqual(len(events), 1)
+        self.assertEqual(events[0].event_type, "tool_call_recorded")
+        self.assertEqual(events[0].payload_json["toolId"], "remote_search")
+        self.assertEqual(events[0].payload_json["status"], "failed")
+        self.assertEqual(events[0].payload_json["resultRef"], "mcp:docs-server/search_docs")
+        self.assertIn("remote MCP call timed out", events[0].payload_json["errorMessage"])
+
+        db.close()
+        engine.dispose()
+
     def test_tool_gateway_dispatches_builtin_tool_and_normalizes_result(self) -> None:
         from backend.app.tools.tool_call_service import ToolCallService
         from backend.db.repositories.tool_calls import ToolCallRepository
