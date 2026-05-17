@@ -1,7 +1,7 @@
 from dataclasses import dataclass, field
 from typing import Any, Literal
 
-from backend.app.tools import BuiltinToolRegistry, ToolCallService, ToolPermissionService
+from backend.app.tools import BuiltinToolRegistry, ToolCallService, ToolPermissionService, build_default_tool_registry
 from backend.domain.tools.contracts import ToolCallRequest as ToolCallRequestContract
 from backend.domain.tools.contracts import ToolCallResult as ToolCallResultContract
 from backend.domain.tools.contracts import ToolPermission
@@ -89,7 +89,7 @@ class ToolGateway:
         mcp_adapter: MCPToolAdapter | None = None,
         tool_call_service: ToolCallService | None = None,
     ) -> None:
-        self.registry = registry or BuiltinToolRegistry()
+        self.registry = registry or build_default_tool_registry()
         self.permission_service = permission_service or ToolPermissionService()
         self.local_adapter = local_adapter or LocalToolAdapter()
         self.mcp_adapter = mcp_adapter or MCPToolAdapter()

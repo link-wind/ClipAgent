@@ -239,6 +239,41 @@ class MCPFoundationRegistryTests(unittest.TestCase):
 
         self.assertTrue(callable(load_configured_mcp_tool_definitions))
 
+    def test_default_tool_registry_loads_runtime_configured_mcp_definitions(self) -> None:
+        from backend.app.tools import build_default_tool_registry
+        from backend.services.runtime_config_service import RuntimeConfigService
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            runtime_path = Path(temp_dir) / "runtime_config.local.json"
+            runtime_path.write_text(
+                json.dumps(
+                    {
+                        "CLIPFORGE_MCP_TOOLS_JSON": json.dumps(
+                            [
+                                {
+                                    "id": "remote_search",
+                                    "name": "Remote Search",
+                                    "description": "Search remote docs through MCP.",
+                                    "category": "knowledge",
+                                    "scope": "project",
+                                    "mcpServerId": "docs-server",
+                                    "toolName": "search_docs",
+                                }
+                            ]
+                        )
+                    }
+                ),
+                encoding="utf-8",
+            )
+            registry = build_default_tool_registry(RuntimeConfigService(config_path=runtime_path))
+
+        definition = registry.get_definition("remote_search")
+
+        self.assertEqual(definition.source_type, "mcp")
+        self.assertEqual(definition.mcp_server_id, "docs-server")
+        self.assertEqual(definition.tool_name, "search_docs")
+        self.assertIn("read_project_knowledge", [item.id for item in registry.list_definitions()])
+
     def test_tool_permission_service_allows_matching_read_only_scope(self) -> None:
         from backend.app.tools.permission_service import PermissionDecision, ToolPermissionService
         from backend.domain.tools.contracts import ToolPermission
@@ -300,6 +335,58 @@ class MCPFoundationGatewayTests(unittest.TestCase):
 
         self.assertEqual(result.status, "skipped")
         self.assertIn("not configured", result.error_message)
+
+    def test_tool_gateway_default_registry_can_dispatch_runtime_configured_mcp_tool(self) -> None:
+        import backend.app.tools.configured_definitions as configured_module
+        from backend.infrastructure.tools.mcp_adapter import MCPToolAdapter
+        from backend.runtime.tool_gateway import ToolCallRequest, ToolGateway
+
+        class FakeMCPClient:
+            def call_tool(self, *, server_id: str, tool_name: str, arguments: dict[str, object], timeout_ms: int):
+                return {
+                    "summary": f"{tool_name} on {server_id}",
+                    "result_ref": f"mcp:{server_id}/{tool_name}",
+                    "query": arguments["query"],
+                }
+
+        tools_json = json.dumps(
+            [
+                {
+                    "id": "remote_search",
+                    "name": "Remote Search",
+                    "description": "Search remote docs through MCP.",
+                    "category": "knowledge",
+                    "scope": "project",
+                    "mcpServerId": "docs-server",
+                    "toolName": "search_docs",
+                }
+            ]
+        )
+        with tempfile.TemporaryDirectory() as temp_dir, patch.dict(
+            os.environ,
+            {"CLIPFORGE_MCP_TOOLS_JSON": tools_json},
+            clear=False,
+        ), patch.object(
+            configured_module.runtime_config_service,
+            "config_path",
+            Path(temp_dir) / "runtime_config.local.json",
+        ):
+            gateway = ToolGateway(mcp_adapter=MCPToolAdapter(client=FakeMCPClient()))
+            result = gateway.call_tool(
+                ToolCallRequest(
+                    session_id="session-1",
+                    run_id="run-1",
+                    step_id="step-1",
+                    tool_id="remote_search",
+                    arguments={"query": "ClipForge"},
+                    permission_scope="project",
+                )
+            )
+
+        self.assertEqual(result.status, "succeeded")
+        self.assertEqual(result.result_summary, "search_docs on docs-server")
+        self.assertEqual(result.result_ref, "mcp:docs-server/search_docs")
+        self.assertEqual(result.data["query"], "ClipForge")
 
     def test_mcp_adapter_calls_injected_client_and_normalizes_result(self) -> None:
         from backend.domain.tools.contracts import ToolDefinition

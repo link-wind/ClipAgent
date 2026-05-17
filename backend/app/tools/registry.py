@@ -3,7 +3,9 @@ from __future__ import annotations
 from importlib import import_module
 from typing import Any
 
+from backend.app.tools.configured_definitions import load_configured_mcp_tool_definitions
 from backend.domain.tools.contracts import ToolDefinition
+from backend.services.runtime_config_service import RuntimeConfigService
 from backend.tools.builtin import BUILTIN_TOOL_DEFINITION_MODULES
 
 
@@ -46,3 +48,11 @@ class BuiltinToolRegistry:
                 definitions[definition.id] = definition
             self._definitions_by_id = definitions
         return self._definitions_by_id
+
+
+def build_default_tool_registry(config_service: RuntimeConfigService | None = None) -> BuiltinToolRegistry:
+    return BuiltinToolRegistry(
+        configured_definitions=load_configured_mcp_tool_definitions(config_service)
+        if config_service is not None
+        else load_configured_mcp_tool_definitions()
+    )
