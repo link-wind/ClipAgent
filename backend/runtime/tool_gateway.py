@@ -5,7 +5,7 @@ from backend.app.tools import BuiltinToolRegistry, ToolCallService, ToolPermissi
 from backend.domain.tools.contracts import ToolCallRequest as ToolCallRequestContract
 from backend.domain.tools.contracts import ToolCallResult as ToolCallResultContract
 from backend.domain.tools.contracts import ToolPermission
-from backend.infrastructure.tools import LocalToolAdapter, MCPToolAdapter
+from backend.infrastructure.tools import LocalToolAdapter, MCPToolAdapter, build_default_mcp_tool_adapter
 
 ToolCallStatus = Literal["succeeded", "failed", "skipped"]
 
@@ -92,7 +92,7 @@ class ToolGateway:
         self.registry = registry or build_default_tool_registry()
         self.permission_service = permission_service or ToolPermissionService()
         self.local_adapter = local_adapter or LocalToolAdapter()
-        self.mcp_adapter = mcp_adapter or MCPToolAdapter()
+        self.mcp_adapter = mcp_adapter or build_default_mcp_tool_adapter()
         self.tool_call_service = tool_call_service
 
     def call_tool(self, request: ToolCallRequest) -> ToolCallResult:

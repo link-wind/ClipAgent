@@ -305,6 +305,64 @@ class MCPFoundationRegistryTests(unittest.TestCase):
 
 
 class MCPFoundationGatewayTests(unittest.TestCase):
+    def test_default_mcp_tool_client_returns_skipped_without_network(self) -> None:
+        from backend.infrastructure.tools import build_default_mcp_tool_client
+
+        client = build_default_mcp_tool_client()
+
+        result = client.call_tool(
+            server_id="docs-server",
+            tool_name="search_docs",
+            arguments={"query": "ClipForge"},
+            timeout_ms=1200,
+        )
+
+        self.assertEqual(result.status, "skipped")
+        self.assertEqual(result.result_ref, "mcp:docs-server/search_docs")
+        self.assertIn("not configured", result.error_message)
+
+    def test_tool_gateway_default_mcp_adapter_uses_disabled_client(self) -> None:
+        import backend.app.tools.configured_definitions as configured_module
+        from backend.runtime.tool_gateway import ToolCallRequest, ToolGateway
+
+        tools_json = json.dumps(
+            [
+                {
+                    "id": "remote_search",
+                    "name": "Remote Search",
+                    "description": "Search remote docs through MCP.",
+                    "category": "knowledge",
+                    "scope": "project",
+                    "mcpServerId": "docs-server",
+                    "toolName": "search_docs",
+                }
+            ]
+        )
+        with tempfile.TemporaryDirectory() as temp_dir, patch.dict(
+            os.environ,
+            {"CLIPFORGE_MCP_TOOLS_JSON": tools_json},
+            clear=False,
+        ), patch.object(
+            configured_module.runtime_config_service,
+            "config_path",
+            Path(temp_dir) / "runtime_config.local.json",
+        ):
+            gateway = ToolGateway()
+            result = gateway.call_tool(
+                ToolCallRequest(
+                    session_id="session-1",
+                    run_id="run-1",
+                    step_id="step-1",
+                    tool_id="remote_search",
+                    arguments={"query": "ClipForge"},
+                    permission_scope="project",
+                )
+            )
+
+        self.assertEqual(result.status, "skipped")
+        self.assertEqual(result.result_ref, "mcp:docs-server/search_docs")
+        self.assertIn("not configured", result.error_message)
+
     def test_mcp_adapter_skips_when_client_is_not_configured(self) -> None:
         from backend.domain.tools.contracts import ToolDefinition
         from backend.infrastructure.tools.mcp_adapter import MCPToolAdapter

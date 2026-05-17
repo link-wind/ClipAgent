@@ -17,6 +17,22 @@ class MCPToolClient(Protocol):
         ...
 
 
+class DisabledMCPToolClient:
+    def call_tool(
+        self,
+        *,
+        server_id: str,
+        tool_name: str,
+        arguments: dict[str, Any],
+        timeout_ms: int,
+    ) -> ToolCallResult:
+        return ToolCallResult(
+            status="skipped",
+            result_ref=f"mcp:{server_id}/{tool_name}",
+            error_message="MCP client is not configured in this foundation.",
+        )
+
+
 def _normalize_mcp_result(tool_id: str, raw_result: ToolCallResult | dict[str, Any]) -> ToolCallResult:
     if isinstance(raw_result, ToolCallResult):
         return raw_result
@@ -82,3 +98,11 @@ class MCPToolAdapter:
                 error_message=str(exc),
             )
         return _normalize_mcp_result(definition.id, raw_result)
+
+
+def build_default_mcp_tool_client() -> MCPToolClient:
+    return DisabledMCPToolClient()
+
+
+def build_default_mcp_tool_adapter() -> MCPToolAdapter:
+    return MCPToolAdapter(client=build_default_mcp_tool_client())
