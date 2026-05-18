@@ -162,6 +162,40 @@ class AgentRuntimeArchitectureTests(unittest.TestCase):
         self.assertIn("from backend.app.execution.job_use_cases import AgentExecutionService", source)
         self.assertNotIn("from backend.services.agent_session_service import", source)
 
+    def test_application_layer_does_not_import_migrated_service_modules(self) -> None:
+        migrated_service_imports = {
+            "backend.services.agent_session_service",
+            "backend.services.agent_read_service",
+            "backend.services.planner_orchestrator",
+            "backend.services.render_service",
+        }
+        app_files = [
+            path for path in (ROOT / "backend" / "app").rglob("*.py")
+            if "__pycache__" not in path.parts
+        ]
+
+        for path in app_files:
+            source = path.read_text(encoding="utf-8")
+            for import_path in migrated_service_imports:
+                self.assertNotIn(import_path, source, f"{path} imports migrated service {import_path}")
+
+    def test_infrastructure_layer_does_not_import_migrated_service_modules(self) -> None:
+        infrastructure_files = [
+            path for path in (ROOT / "backend" / "infrastructure").rglob("*.py")
+            if "__pycache__" not in path.parts
+        ]
+        forbidden = {
+            "backend.services.render_service",
+            "backend.services.agent_session_service",
+            "backend.services.agent_read_service",
+            "backend.services.planner_orchestrator",
+        }
+
+        for path in infrastructure_files:
+            source = path.read_text(encoding="utf-8")
+            for import_path in forbidden:
+                self.assertNotIn(import_path, source, f"{path} imports migrated service {import_path}")
+
     def test_mcp_foundation_boundaries_import(self) -> None:
         tool_contracts = importlib.import_module("backend.domain.tools.contracts")
         tool_registry = importlib.import_module("backend.app.tools.registry")
