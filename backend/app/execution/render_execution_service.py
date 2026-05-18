@@ -5,9 +5,27 @@ class RenderExecutionService:
     def __init__(self, render_runner=None):
         self.render_runner = render_runner
 
-    def execute(self, *, progress_service, session_id: str, job_id: str, clips) -> str:
-        progress_service.mark_render_started(session_id, job_id)
-        progress_service.db.commit()
+    def execute(
+        self,
+        *,
+        job_state_service,
+        event_service,
+        artifact_service,
+        step_lifecycle,
+        session_id: str,
+        job_id: str,
+        clips,
+    ) -> str:
+        job_state_service.mark_render_started(session_id, job_id)
+        self._commit(job_state_service)
+        step_lifecycle.ensure_step(
+            session_id=session_id,
+            job_id=job_id,
+            step_key="render_video",
+            title="渲染视频",
+            description="调用渲染流程，生成视频产物或失败原因。",
+            sequence=8,
+        )
 
         render_runner = self.render_runner
         if render_runner is None:
@@ -16,7 +34,7 @@ class RenderExecutionService:
             render_runner = render_video
 
         def on_render_progress(event_type: str, message: str, progress: float) -> None:
-            progress_service.record_event(
+            event_service.record_event(
                 session_id=session_id,
                 job_id=job_id,
                 event_type=event_type,
@@ -24,7 +42,7 @@ class RenderExecutionService:
                 message=message,
                 progress=progress,
             )
-            progress_service.db.commit()
+            self._commit(event_service)
 
         video_url = asyncio.run(
             render_runner(
@@ -34,7 +52,7 @@ class RenderExecutionService:
                 progress_callback=on_render_progress,
             )
         )
-        progress_service.create_artifact(
+        artifact_service.create_artifact(
             session_id=session_id,
             job_id=job_id,
             artifact_type="video",
@@ -42,3 +60,9 @@ class RenderExecutionService:
             public_url=video_url,
         )
         return video_url
+
+    @staticmethod
+    def _commit(service) -> None:
+        db = getattr(service, "db", None)
+        if db is not None:
+            db.commit()

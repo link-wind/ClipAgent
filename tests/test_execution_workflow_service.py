@@ -1,5 +1,6 @@
 import unittest
 from types import SimpleNamespace
+from unittest.mock import Mock, patch
 
 from sqlalchemy import create_engine, event
 from sqlalchemy.orm import sessionmaker
@@ -313,6 +314,131 @@ class ExecutionWorkflowServiceTests(unittest.TestCase):
             self.assertEqual(len(steps), 1)
             self.assertEqual(steps[0].step_key, "search_assets")
             self.assertEqual(steps[0].status, "running")
+
+    def test_asset_executor_execute_uses_explicit_services(self):
+        from backend.app.execution.asset_execution_service import AssetExecutionService
+        from backend.models.agent import ClipInfo
+
+        clip = ClipInfo(
+            sceneId=1,
+            sourceUrl="https://example.com/1",
+            localPath="backend/downloads/1.mp4",
+            publicUrl="/downloads/1.mp4",
+            duration=4,
+            caption="字幕",
+            sourceDuration=8,
+            trimStart=0,
+            trimDuration=4,
+        )
+        job_state_service = Mock()
+        artifact_service = Mock()
+        step_service = Mock()
+        search_step = SimpleNamespace(id="search-step", status="running")
+        prepare_step = SimpleNamespace(id="prepare-step", status="running")
+        step_lifecycle = Mock()
+        step_lifecycle.ensure_step.side_effect = [search_step, prepare_step]
+        step_lifecycle.step_service = step_service
+
+        async def fake_search_runner(_session_id, _scenes):
+            return [clip]
+
+        with patch(
+            "backend.app.execution.asset_execution_service.pop_clip_metadata",
+            return_value={"provider": "pexels"},
+        ):
+            clips = AssetExecutionService(search_runner=fake_search_runner).execute(
+                job_state_service=job_state_service,
+                artifact_service=artifact_service,
+                step_lifecycle=step_lifecycle,
+                session_id="session-1",
+                job_id="job-1",
+                plan=SimpleNamespace(scenes=[SimpleNamespace(id=1)]),
+            )
+
+        self.assertEqual(clips, [clip])
+        job_state_service.mark_clips_ready.assert_called_once_with("session-1", "job-1", 1)
+        artifact_service.create_artifact.assert_called_once_with(
+            session_id="session-1",
+            job_id="job-1",
+            artifact_type="clip",
+            scene_id="1",
+            source_url="https://example.com/1",
+            local_path="backend/downloads/1.mp4",
+            public_url="/downloads/1.mp4",
+            duration=4,
+            metadata={
+                "provider": "pexels",
+                "caption": "字幕",
+                "sourceDuration": 8,
+                "trimStart": 0,
+                "trimDuration": 4,
+            },
+        )
+        self.assertEqual(step_lifecycle.ensure_step.call_count, 2)
+        step_service.succeed_step.assert_any_call(
+            "search-step",
+            summary="已找到 1 段素材",
+            result={"selectedCount": 1},
+        )
+        step_service.succeed_step.assert_any_call(
+            "prepare-step",
+            summary="素材已准备完成，共 1 段",
+            result={"clipCount": 1},
+        )
+
+    def test_render_executor_execute_uses_explicit_services(self):
+        from backend.app.execution.render_execution_service import RenderExecutionService
+
+        job_state_service = Mock()
+        event_service = Mock()
+        artifact_service = Mock()
+        render_step = SimpleNamespace(id="render-step", status="running")
+        step_lifecycle = Mock()
+        step_lifecycle.ensure_step.return_value = render_step
+        db = Mock()
+        job_state_service.db = db
+        event_service.db = db
+
+        async def fake_render_runner(_session_id, _clips, _output_filename, progress_callback=None):
+            progress_callback("render_captioning", "正在合成字幕", 82)
+            return "/output/final.mp4"
+
+        video_url = RenderExecutionService(render_runner=fake_render_runner).execute(
+            job_state_service=job_state_service,
+            event_service=event_service,
+            artifact_service=artifact_service,
+            step_lifecycle=step_lifecycle,
+            session_id="session-1",
+            job_id="job-1",
+            clips=[SimpleNamespace(sceneId=1)],
+        )
+
+        self.assertEqual(video_url, "/output/final.mp4")
+        job_state_service.mark_render_started.assert_called_once_with("session-1", "job-1")
+        self.assertEqual(db.commit.call_count, 2)
+        event_service.record_event.assert_called_once_with(
+            session_id="session-1",
+            job_id="job-1",
+            event_type="render_captioning",
+            step="rendering",
+            message="正在合成字幕",
+            progress=82,
+        )
+        artifact_service.create_artifact.assert_called_once_with(
+            session_id="session-1",
+            job_id="job-1",
+            artifact_type="video",
+            local_path="backend/output/session-1.mp4",
+            public_url="/output/final.mp4",
+        )
+        step_lifecycle.ensure_step.assert_called_once_with(
+            session_id="session-1",
+            job_id="job-1",
+            step_key="render_video",
+            title="渲染视频",
+            description="调用渲染流程，生成视频产物或失败原因。",
+            sequence=8,
+        )
 
 
 if __name__ == "__main__":
