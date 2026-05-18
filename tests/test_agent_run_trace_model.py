@@ -734,7 +734,7 @@ class AgentRunTraceModelTests(unittest.TestCase):
         self.assertEqual(runs[-1].status, "succeeded")
 
     def test_progress_service_updates_execution_steps_and_finishes_job_operation(self):
-        from backend.services.agent_progress_service import AgentProgressService
+        from backend.app.execution.progress_service import AgentProgressService
 
         session_service = AgentSessionService(session_factory=self.SessionLocal)
         session = session_service.create_session("做一个 30 秒产品介绍视频")
@@ -762,7 +762,7 @@ class AgentRunTraceModelTests(unittest.TestCase):
         self.assertEqual(status_by_key["render_video"], "succeeded")
 
     def test_progress_service_requeues_replacement_job_as_active_operation(self):
-        from backend.services.agent_progress_service import AgentProgressService
+        from backend.app.execution.progress_service import AgentProgressService
 
         session_service = AgentSessionService(session_factory=self.SessionLocal)
         session = session_service.create_session("做一个 30 秒产品介绍视频")
@@ -787,7 +787,7 @@ class AgentRunTraceModelTests(unittest.TestCase):
         self.assertEqual(session_record.active_job_id, replacement_job.id)
 
     def test_progress_service_fails_execution_step_and_clears_job_operation(self):
-        from backend.services.agent_progress_service import AgentProgressService
+        from backend.app.execution.progress_service import AgentProgressService
 
         session_service = AgentSessionService(session_factory=self.SessionLocal)
         session = session_service.create_session("做一个 30 秒产品介绍视频")
