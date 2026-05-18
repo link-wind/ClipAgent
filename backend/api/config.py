@@ -3,7 +3,7 @@ from typing import Any
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 
-from backend.services.runtime_config_service import RuntimeConfigService, runtime_config_service
+from backend.infrastructure.config.runtime_config_service import RuntimeConfigService, runtime_config_service
 
 
 class SettingsUpdateRequest(BaseModel):

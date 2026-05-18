@@ -5,7 +5,7 @@ from typing import Any
 
 from backend.app.tools.configured_definitions import load_configured_mcp_tool_definitions
 from backend.domain.tools.contracts import ToolDefinition
-from backend.services.runtime_config_service import RuntimeConfigService
+from backend.infrastructure.config.runtime_config_service import RuntimeConfigService
 from backend.tools.builtin import BUILTIN_TOOL_DEFINITION_MODULES
 
 

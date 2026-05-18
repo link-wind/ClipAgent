@@ -4,7 +4,7 @@ import json
 from typing import Any
 
 from backend.domain.tools.contracts import ToolDefinition
-from backend.services.runtime_config_service import RuntimeConfigService, runtime_config_service
+from backend.infrastructure.config.runtime_config_service import RuntimeConfigService, runtime_config_service
 
 
 MCP_TOOLS_JSON_KEY = "CLIPFORGE_MCP_TOOLS_JSON"

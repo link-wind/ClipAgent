@@ -2,7 +2,7 @@ import os
 from dataclasses import dataclass
 from functools import lru_cache
 
-from backend.services.runtime_config_service import (
+from backend.infrastructure.config.runtime_config_service import (
     DEFAULT_DATABASE_URL,
     DEFAULT_REDIS_URL,
     runtime_config_service,
