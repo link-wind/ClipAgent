@@ -235,6 +235,25 @@ class AgentRuntimeArchitectureTests(unittest.TestCase):
         self.assertNotIn("from backend.services.agent_session_service import", source)
         self.assertNotIn("from backend.services.agent_execution_service import", source)
 
+    def test_execution_workflow_service_does_not_import_legacy_progress_service(self) -> None:
+        source = (ROOT / "backend" / "app" / "execution" / "workflow_service.py").read_text(encoding="utf-8")
+
+        self.assertNotIn("from backend.services.agent_progress_service import", source)
+        self.assertNotIn("import backend.services.agent_progress_service", source)
+
+    def test_api_runtime_and_tasks_do_not_import_legacy_progress_service(self) -> None:
+        for relative_path in [
+            "backend/api/agent.py",
+            "backend/runtime/agent_runtime.py",
+            "backend/tasks/agent_tasks.py",
+        ]:
+            source = (ROOT / relative_path).read_text(encoding="utf-8")
+            self.assertNotIn(
+                "backend.services.agent_progress_service",
+                source,
+                f"{relative_path} should not import legacy progress service",
+            )
+
     def test_application_layer_does_not_import_migrated_service_modules(self) -> None:
         migrated_service_imports = {
             "backend.services.agent_session_service",
