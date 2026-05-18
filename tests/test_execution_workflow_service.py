@@ -190,6 +190,67 @@ class ExecutionWorkflowServiceTests(unittest.TestCase):
             job = AgentJobRepository(db).get(job_id)
             self.assertEqual(job.status, "failed")
 
+    def test_job_state_service_marks_job_running_and_syncs_session_fields(self):
+        from backend.app.execution.job_state_service import JobStateService
+        from backend.db.repositories import AgentEventRepository
+
+        session_id, job_id = self._create_job()
+
+        with self.SessionLocal() as db:
+            JobStateService(db).mark_job_running(session_id=session_id, job_id=job_id)
+            db.commit()
+
+        with self.SessionLocal() as db:
+            job = AgentJobRepository(db).get(job_id)
+            session = AgentSessionRepository(db).get(session_id)
+            events = AgentEventRepository(db).list_for_job(job_id)
+
+            self.assertEqual(job.status, "running")
+            self.assertEqual(job.progress, 35)
+            self.assertEqual(job.current_step, "正在搜索素材")
+            self.assertIsNotNone(job.started_at)
+
+            self.assertEqual(session.status, "searching")
+            self.assertEqual(session.progress, 35)
+            self.assertEqual(session.current_step, "正在搜索素材")
+            self.assertIsNone(session.error_message)
+            self.assertIsNone(session.error_retryable_step)
+
+            self.assertEqual(events[-1].event_type, "job_started")
+            self.assertEqual(events[-1].step, "searching")
+            self.assertEqual(events[-1].progress, 35)
+
+    def test_step_lifecycle_ensure_step_reuses_existing_job_step(self):
+        from backend.app.execution.step_lifecycle import StepLifecycleService
+        from backend.db.repositories import AgentStepRepository
+
+        session_id, job_id = self._create_job()
+
+        with self.SessionLocal() as db:
+            service = StepLifecycleService(db)
+            first = service.ensure_step(
+                session_id=session_id,
+                job_id=job_id,
+                step_key="search_assets",
+                title="搜索素材",
+                description="根据最终方案搜索候选素材并记录搜索结果。",
+                sequence=6,
+            )
+            second = service.ensure_step(
+                session_id=session_id,
+                job_id=job_id,
+                step_key="search_assets",
+                title="搜索素材",
+                description="根据最终方案搜索候选素材并记录搜索结果。",
+                sequence=6,
+            )
+            steps = AgentStepRepository(db).list_for_job(job_id)
+
+            self.assertEqual(first.id, second.id)
+            self.assertEqual(len(steps), 1)
+            self.assertEqual(steps[0].step_key, "search_assets")
+            self.assertEqual(steps[0].status, "running")
+
 
 if __name__ == "__main__":
     unittest.main()
