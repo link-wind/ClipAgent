@@ -192,7 +192,7 @@ class ExecutionWorkflowServiceTests(unittest.TestCase):
 
     def test_job_state_service_marks_job_running_and_syncs_session_fields(self):
         from backend.app.execution.job_state_service import JobStateService
-        from backend.db.repositories import AgentEventRepository
+        from backend.db.repositories import AgentEventRepository, AgentStepRepository
 
         session_id, job_id = self._create_job()
 
@@ -204,6 +204,7 @@ class ExecutionWorkflowServiceTests(unittest.TestCase):
             job = AgentJobRepository(db).get(job_id)
             session = AgentSessionRepository(db).get(session_id)
             events = AgentEventRepository(db).list_for_job(job_id)
+            steps = AgentStepRepository(db).list_for_job(job_id)
 
             self.assertEqual(job.status, "running")
             self.assertEqual(job.progress, 35)
@@ -215,10 +216,72 @@ class ExecutionWorkflowServiceTests(unittest.TestCase):
             self.assertEqual(session.current_step, "正在搜索素材")
             self.assertIsNone(session.error_message)
             self.assertIsNone(session.error_retryable_step)
+            self.assertEqual(events, [])
+            self.assertEqual(steps, [])
 
-            self.assertEqual(events[-1].event_type, "job_started")
-            self.assertEqual(events[-1].step, "searching")
-            self.assertEqual(events[-1].progress, 35)
+    def test_event_service_records_execution_event(self):
+        from backend.app.execution.event_service import ExecutionEventService
+        from backend.db.repositories import AgentEventRepository
+
+        session_id, job_id = self._create_job()
+
+        with self.SessionLocal() as db:
+            record = ExecutionEventService(db).record_event(
+                session_id=session_id,
+                job_id=job_id,
+                event_type="job_started",
+                step="searching",
+                message="任务开始执行",
+                progress=35,
+                payload={"source": "workflow"},
+            )
+            record_id = record.id
+            db.commit()
+
+        with self.SessionLocal() as db:
+            events = AgentEventRepository(db).list_for_job(job_id)
+
+            self.assertEqual(len(events), 1)
+            self.assertEqual(events[0].id, record_id)
+            self.assertEqual(events[0].event_type, "job_started")
+            self.assertEqual(events[0].step, "searching")
+            self.assertEqual(events[0].message, "任务开始执行")
+            self.assertEqual(events[0].progress, 35)
+            self.assertEqual(events[0].payload_json, {"source": "workflow"})
+
+    def test_artifact_service_creates_execution_artifact(self):
+        from backend.app.execution.artifact_service import ExecutionArtifactService
+        from backend.db.repositories import AgentArtifactRepository
+
+        session_id, job_id = self._create_job()
+
+        with self.SessionLocal() as db:
+            record = ExecutionArtifactService(db).create_artifact(
+                session_id=session_id,
+                job_id=job_id,
+                artifact_type="candidate_visual",
+                public_url="/downloads/clip-1.mp4",
+                local_path="backend/downloads/clip-1.mp4",
+                scene_id="scene-1",
+                source_url="https://example.com/clip-1",
+                duration=4,
+                metadata={"provider": "pexels"},
+            )
+            record_id = record.id
+            db.commit()
+
+        with self.SessionLocal() as db:
+            artifacts = AgentArtifactRepository(db).list_for_job(job_id)
+
+            self.assertEqual(len(artifacts), 1)
+            self.assertEqual(artifacts[0].id, record_id)
+            self.assertEqual(artifacts[0].artifact_type, "candidate_visual")
+            self.assertEqual(artifacts[0].public_url, "/downloads/clip-1.mp4")
+            self.assertEqual(artifacts[0].local_path, "backend/downloads/clip-1.mp4")
+            self.assertEqual(artifacts[0].scene_id, "scene-1")
+            self.assertEqual(artifacts[0].source_url, "https://example.com/clip-1")
+            self.assertEqual(artifacts[0].duration, 4)
+            self.assertEqual(artifacts[0].metadata_json, {"provider": "pexels"})
 
     def test_step_lifecycle_ensure_step_reuses_existing_job_step(self):
         from backend.app.execution.step_lifecycle import StepLifecycleService
