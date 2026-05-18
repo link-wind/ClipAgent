@@ -259,6 +259,13 @@ class AgentRuntimeArchitectureTests(unittest.TestCase):
                 f"{relative_path} should not import legacy progress service",
             )
 
+    def test_api_does_not_import_legacy_agent_service(self) -> None:
+        source = (ROOT / "backend" / "api" / "agent.py").read_text(encoding="utf-8")
+
+        self.assertNotIn("from backend.services.agent_service import", source)
+        self.assertNotIn("import backend.services.agent_service", source)
+        self.assertNotIn("agent_service.sync_session(", source)
+
     def test_application_layer_does_not_import_migrated_service_modules(self) -> None:
         migrated_service_imports = {
             "backend.services.agent_session_service",

@@ -23,7 +23,6 @@ from backend.models.agent import (
     AgentTraceEvent,
 )
 from backend.runtime.agent_runtime import build_agent_runtime
-from backend.services.agent_service import agent_service
 
 
 router = APIRouter()
@@ -106,8 +105,7 @@ class GroundingConfirmRequest(BaseModel):
 async def create_session(request: SessionCreateRequest):
     try:
         runtime = _runtime()
-        session = await run_in_threadpool(runtime.create_session, request.message)
-        return agent_service.sync_session(session)
+        return await run_in_threadpool(runtime.create_session, request.message)
     except HTTPException:
         raise
     except Exception as exc:
@@ -117,8 +115,7 @@ async def create_session(request: SessionCreateRequest):
 @router.get("/sessions/{session_id}", response_model=AgentSession)
 async def get_session(session_id: str):
     try:
-        session = await run_in_threadpool(session_service.get_session, session_id)
-        return agent_service.sync_session(session)
+        return await run_in_threadpool(session_service.get_session, session_id)
     except KeyError:
         raise HTTPException(status_code=404, detail="Session not found")
 
@@ -127,8 +124,7 @@ async def get_session(session_id: str):
 async def add_message(session_id: str, request: MessageRequest):
     try:
         runtime = _runtime()
-        session = await run_in_threadpool(runtime.submit_message, session_id, request.message)
-        return agent_service.sync_session(session)
+        return await run_in_threadpool(runtime.submit_message, session_id, request.message)
     except KeyError:
         raise HTTPException(status_code=404, detail="Session not found")
     except ActiveOperationConflict as exc:
@@ -143,12 +139,11 @@ async def add_message(session_id: str, request: MessageRequest):
 async def confirm_grounding_candidates(session_id: str, request: GroundingConfirmRequest):
     try:
         runtime = _runtime()
-        session = await run_in_threadpool(
+        return await run_in_threadpool(
             runtime.confirm_grounding,
             session_id,
             request.candidateIds,
         )
-        return agent_service.sync_session(session)
     except KeyError:
         raise HTTPException(status_code=404, detail="Session not found")
     except ActiveOperationConflict as exc:
@@ -163,8 +158,7 @@ async def confirm_grounding_candidates(session_id: str, request: GroundingConfir
 async def confirm_session(session_id: str):
     try:
         runtime = _runtime()
-        session = await run_in_threadpool(runtime.confirm_plan, session_id)
-        return agent_service.sync_session(session)
+        return await run_in_threadpool(runtime.confirm_plan, session_id)
     except KeyError:
         raise HTTPException(status_code=404, detail="Session not found")
     except ActiveOperationConflict as exc:

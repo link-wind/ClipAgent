@@ -18,7 +18,6 @@ from backend.db.repositories import (
 from backend.main import app
 from backend.app.execution.execution_service import AgentExecutionService
 from backend.app.agent.read_service import AgentReadService
-from backend.services.agent_service import agent_service
 from backend.app.agent.session_service import AgentSessionService
 from backend.app.execution.task_read_service import AgentTaskReadService
 
@@ -87,7 +86,6 @@ class AgentApiP0ContractTests(unittest.TestCase):
         )
         self.session_service = AgentSessionService(session_factory=self.session_factory)
         self.read_service = AgentReadService(session_factory=self.session_factory)
-        agent_service.sessions.clear()
 
     def tearDown(self):
         self.engine.dispose()
