@@ -6,9 +6,11 @@ from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
+from backend.app.agent.run_service import ActiveOperationConflict
 from backend.app.agent.session_use_cases import AgentReadService, AgentSessionService
 from backend.app.agent.stream_service import AgentStreamService, format_sse_event
-from backend.app.execution.job_use_cases import AgentExecutionService, AgentTaskReadService
+from backend.app.execution.execution_service import AgentExecutionService
+from backend.app.execution.task_read_service import AgentTaskReadService
 from backend.db import SessionLocal
 from backend.db.repositories import AgentRunRepository, AgentSessionRepository, AgentTraceEventRepository
 from backend.models.agent import (
@@ -22,7 +24,6 @@ from backend.models.agent import (
 )
 from backend.runtime.agent_runtime import build_agent_runtime
 from backend.services.agent_service import agent_service
-from backend.services.agent_run_service import ActiveOperationConflict
 
 
 router = APIRouter()

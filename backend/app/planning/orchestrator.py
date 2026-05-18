@@ -13,7 +13,7 @@ from backend.domain.skills.contracts import PlannerRequest, SkillRunSummary, Ski
 from backend.runtime.context_engine import ContextBundle, ContextEngine, ContextRequest
 from backend.runtime.skill_engine import SkillEngine
 from backend.runtime.trace_recorder import TraceEvent, TraceRecorder
-from backend.services.agent_step_service import AgentStepService
+from backend.app.agent.step_service import AgentStepService
 from backend.services.planner_graph import (
     run_execution_feedback_replan,
     run_grounding_replan,

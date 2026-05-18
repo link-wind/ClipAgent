@@ -8,9 +8,9 @@ from backend.db.repositories import (
 )
 from backend.models.agent import AgentSession, EditPlan, PlanScene
 from backend.app.agent.read_service import AgentReadService
+from backend.app.agent.run_service import AgentRunService
+from backend.app.agent.step_service import AgentStepService
 from backend.app.planning.orchestrator import PlannerOrchestrator
-from backend.services.agent_run_service import AgentRunService
-from backend.services.agent_step_service import AgentStepService
 from backend.services.grounding_service import grounding_service
 from backend.services.planner_projection import execution_plan_to_edit_plan
 

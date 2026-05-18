@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from backend.services.agent_step_snapshot_service import AgentStepSnapshotService
+from backend.app.agent.step_snapshot_service import AgentStepSnapshotService
 
 
 VISIBLE_SESSION_STEP_KEYS = (

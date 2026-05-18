@@ -136,6 +136,37 @@ class AgentRuntimeArchitectureTests(unittest.TestCase):
                 f"{class_name} must be implemented in backend.app.agent.{source_path.stem}",
             )
 
+    def test_agent_run_step_and_snapshot_services_live_in_app_agent_boundary(self) -> None:
+        expected_classes = {
+            "run_service.py": "AgentRunService",
+            "step_service.py": "AgentStepService",
+            "step_snapshot_service.py": "AgentStepSnapshotService",
+        }
+
+        for filename, class_name in expected_classes.items():
+            source_path = ROOT / "backend" / "app" / "agent" / filename
+            self.assertTrue(source_path.is_file(), str(source_path))
+            module = ast.parse(source_path.read_text(encoding="utf-8"))
+            self.assertTrue(
+                any(isinstance(node, ast.ClassDef) and node.name == class_name for node in module.body),
+                f"{class_name} must be implemented in backend.app.agent.{source_path.stem}",
+            )
+
+    def test_execution_entry_and_task_read_services_live_in_app_execution_boundary(self) -> None:
+        expected_classes = {
+            "execution_service.py": "AgentExecutionService",
+            "task_read_service.py": "AgentTaskReadService",
+        }
+
+        for filename, class_name in expected_classes.items():
+            source_path = ROOT / "backend" / "app" / "execution" / filename
+            self.assertTrue(source_path.is_file(), str(source_path))
+            module = ast.parse(source_path.read_text(encoding="utf-8"))
+            self.assertTrue(
+                any(isinstance(node, ast.ClassDef) and node.name == class_name for node in module.body),
+                f"{class_name} must be implemented in backend.app.execution.{source_path.stem}",
+            )
+
     def test_legacy_agent_service_modules_are_shims(self) -> None:
         shim_modules = {
             "agent_read_service.py": (
@@ -149,6 +180,26 @@ class AgentRuntimeArchitectureTests(unittest.TestCase):
             "agent_stream_service.py": (
                 "AgentStreamService",
                 "from backend.app.agent.stream_service import",
+            ),
+            "agent_run_service.py": (
+                "AgentRunService",
+                "from backend.app.agent.run_service import",
+            ),
+            "agent_step_service.py": (
+                "AgentStepService",
+                "from backend.app.agent.step_service import AgentStepService",
+            ),
+            "agent_step_snapshot_service.py": (
+                "AgentStepSnapshotService",
+                "from backend.app.agent.step_snapshot_service import",
+            ),
+            "agent_execution_service.py": (
+                "AgentExecutionService",
+                "from backend.app.execution.execution_service import AgentExecutionService",
+            ),
+            "agent_task_read_service.py": (
+                "AgentTaskReadService",
+                "from backend.app.execution.task_read_service import AgentTaskReadService",
             ),
         }
 
@@ -179,15 +230,22 @@ class AgentRuntimeArchitectureTests(unittest.TestCase):
         source = (ROOT / "backend" / "runtime" / "agent_runtime.py").read_text(encoding="utf-8")
 
         self.assertIn("from backend.app.agent.session_service import AgentSessionService", source)
-        self.assertIn("from backend.app.execution.job_use_cases import AgentExecutionService", source)
+        self.assertIn("from backend.app.execution.execution_service import AgentExecutionService", source)
+        self.assertNotIn("from backend.app.execution.job_use_cases import AgentExecutionService", source)
         self.assertNotIn("from backend.services.agent_session_service import", source)
+        self.assertNotIn("from backend.services.agent_execution_service import", source)
 
     def test_application_layer_does_not_import_migrated_service_modules(self) -> None:
         migrated_service_imports = {
             "backend.services.agent_session_service",
             "backend.services.agent_read_service",
+            "backend.services.agent_execution_service",
+            "backend.services.agent_task_read_service",
             "backend.services.planner_orchestrator",
             "backend.services.render_service",
+            "backend.services.agent_run_service",
+            "backend.services.agent_step_service",
+            "backend.services.agent_step_snapshot_service",
         }
         app_files = [
             path for path in (ROOT / "backend" / "app").rglob("*.py")
@@ -293,14 +351,25 @@ class AgentRuntimeArchitectureTests(unittest.TestCase):
             source,
         )
         self.assertIn(
-            "from backend.app.execution.job_use_cases import AgentExecutionService, AgentTaskReadService",
+            "from backend.app.execution.execution_service import AgentExecutionService",
+            source,
+        )
+        self.assertIn(
+            "from backend.app.execution.task_read_service import AgentTaskReadService",
+            source,
+        )
+        self.assertIn(
+            "from backend.app.agent.run_service import ActiveOperationConflict",
             source,
         )
         self.assertIn(
             "from backend.app.agent.stream_service import AgentStreamService, format_sse_event",
             source,
         )
+        self.assertNotIn("from backend.app.execution.job_use_cases import AgentExecutionService", source)
         self.assertNotIn("from backend.services.agent_execution_service import", source)
+        self.assertNotIn("from backend.services.agent_task_read_service import", source)
+        self.assertNotIn("from backend.services.agent_run_service import", source)
         self.assertNotIn("from backend.services.agent_session_service import", source)
         self.assertNotIn("from backend.services.agent_stream_service import", source)
 

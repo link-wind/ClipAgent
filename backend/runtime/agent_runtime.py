@@ -45,7 +45,7 @@ def build_agent_runtime(
 
     if session_service is None or execution_service is None:
         from backend.app.agent.session_service import AgentSessionService
-        from backend.app.execution.job_use_cases import AgentExecutionService
+        from backend.app.execution.execution_service import AgentExecutionService
         from backend.app.planning.orchestrator import PlannerOrchestrator
         from backend.db import SessionLocal
 

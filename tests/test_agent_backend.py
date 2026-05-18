@@ -22,9 +22,9 @@ from backend.config import get_settings
 from backend.db.base import Base
 from backend.db.models import AgentPlanRecord, AgentSessionRecord
 from backend.db.repositories import AgentRunRepository, AgentStepRepository, AgentTraceEventRepository
-from backend.services.agent_execution_service import AgentExecutionService
-from backend.services.agent_read_service import AgentReadService
-from backend.services.agent_session_service import AgentSessionService
+from backend.app.execution.execution_service import AgentExecutionService
+from backend.app.agent.read_service import AgentReadService
+from backend.app.agent.session_service import AgentSessionService
 
 
 ROOT = Path(__file__).resolve().parents[1]

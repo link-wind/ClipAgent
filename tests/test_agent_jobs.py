@@ -14,7 +14,7 @@ from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
 from backend.db.base import Base
-from backend.services.agent_session_service import AgentSessionService
+from backend.app.agent.session_service import AgentSessionService
 
 
 def _load_render_service():
@@ -359,7 +359,7 @@ class ArtifactTrimMetadataTests(unittest.TestCase):
         self.engine.dispose()
 
     def _create_queued_job(self) -> tuple[str, str]:
-        from backend.services.agent_execution_service import AgentExecutionService
+        from backend.app.execution.execution_service import AgentExecutionService
 
         session = self.session_service.create_session("做一个智能剪辑 agent 演示视频")
         execution_service = AgentExecutionService(
@@ -932,14 +932,14 @@ class ConfirmFlowContractTests(unittest.TestCase):
         cursor.close()
 
     def test_execution_service_exposes_confirm_session(self):
-        from backend.services.agent_execution_service import AgentExecutionService
+        from backend.app.execution.execution_service import AgentExecutionService
 
         self.assertTrue(callable(getattr(AgentExecutionService, "confirm_session", None)))
 
     def test_confirm_session_queues_job_and_records_event(self):
         from backend.db.repositories import AgentEventRepository, AgentJobRepository
         from backend.models.agent import AgentStatus
-        from backend.services.agent_execution_service import AgentExecutionService
+        from backend.app.execution.execution_service import AgentExecutionService
 
         queued_job_ids: list[str] = []
         session = self.session_service.create_session("做一个智能剪辑演示视频")
@@ -975,7 +975,7 @@ class ConfirmFlowContractTests(unittest.TestCase):
             self.assertEqual(event_rows[0].event_type, "job_queued")
 
     def test_confirm_session_rejects_unconfirmed_grounding_state(self):
-        from backend.services.agent_execution_service import AgentExecutionService
+        from backend.app.execution.execution_service import AgentExecutionService
 
         session = self.session_service.create_session()
         self.session_service.add_user_message(session.id, "给 Notion AI 做一个 30 秒产品亮点视频")
@@ -992,7 +992,7 @@ class ConfirmFlowContractTests(unittest.TestCase):
 
     def test_confirm_grounding_rejects_repeat_confirmation_after_job_is_queued(self):
         from backend.db.repositories import AgentPlanRepository
-        from backend.services.agent_execution_service import AgentExecutionService
+        from backend.app.execution.execution_service import AgentExecutionService
 
         session = self.session_service.create_session()
         awaiting = self.session_service.add_user_message(session.id, "给 Notion AI 做一个 30 秒产品亮点视频")
@@ -1018,7 +1018,7 @@ class ConfirmFlowContractTests(unittest.TestCase):
         import backend.api.agent as agent_api_module
         from backend.main import app
         from backend.models.agent import AgentStatus
-        from backend.services.agent_execution_service import AgentExecutionService
+        from backend.app.execution.execution_service import AgentExecutionService
 
         session = self.session_service.create_session("做一个品牌展示短片")
         execution_service = AgentExecutionService(
@@ -1066,7 +1066,7 @@ class AgentExecutionWorkerTests(unittest.TestCase):
         self.engine.dispose()
 
     def _create_queued_job(self) -> tuple[str, str]:
-        from backend.services.agent_execution_service import AgentExecutionService
+        from backend.app.execution.execution_service import AgentExecutionService
 
         session = self.session_service.create_session("做一个智能剪辑 agent 演示视频")
         execution_service = AgentExecutionService(
@@ -1103,7 +1103,7 @@ class AgentExecutionWorkerTests(unittest.TestCase):
     def test_run_agent_job_persists_success_state_events_and_artifacts(self):
         from backend.db.repositories import AgentArtifactRepository, AgentEventRepository, AgentJobRepository
         from backend.models.agent import AgentStatus
-        from backend.services.agent_read_service import AgentReadService
+        from backend.app.agent.read_service import AgentReadService
         from backend.tasks.agent_tasks import run_agent_job
 
         session_id, job_id = self._create_queued_job()
@@ -1194,7 +1194,7 @@ class AgentExecutionWorkerTests(unittest.TestCase):
     def test_run_agent_job_persists_failure_state(self):
         from backend.db.repositories import AgentEventRepository, AgentJobRepository
         from backend.models.agent import AgentStatus
-        from backend.services.agent_read_service import AgentReadService
+        from backend.app.agent.read_service import AgentReadService
         from backend.tasks.agent_tasks import run_agent_job
 
         session_id, job_id = self._create_queued_job()
@@ -1230,7 +1230,7 @@ class AgentExecutionWorkerTests(unittest.TestCase):
     def test_run_agent_job_requeues_replanned_job_after_retryable_search_failure(self):
         from backend.db.repositories import AgentEventRepository, AgentJobRepository, AgentPlanRepository
         from backend.models.agent import AgentStatus
-        from backend.services.agent_read_service import AgentReadService
+        from backend.app.agent.read_service import AgentReadService
         from backend.tasks.agent_tasks import run_agent_job
 
         session_id, job_id = self._create_queued_job()
@@ -1569,7 +1569,7 @@ class AgentExecutionWorkerTests(unittest.TestCase):
 
     def test_run_agent_job_truncates_failed_current_step_but_keeps_full_error_message(self):
         from backend.db.repositories import AgentJobRepository
-        from backend.services.agent_read_service import AgentReadService
+        from backend.app.agent.read_service import AgentReadService
         from backend.tasks.agent_tasks import run_agent_job
 
         session_id, job_id = self._create_queued_job()
@@ -1599,7 +1599,7 @@ class AgentExecutionWorkerTests(unittest.TestCase):
     def test_run_agent_job_persists_failure_state_when_render_service_import_fails(self):
         from backend.db.repositories import AgentEventRepository, AgentJobRepository
         from backend.models.agent import AgentStatus
-        from backend.services.agent_read_service import AgentReadService
+        from backend.app.agent.read_service import AgentReadService
         from backend.tasks.agent_tasks import run_agent_job
 
         session_id, job_id = self._create_queued_job()

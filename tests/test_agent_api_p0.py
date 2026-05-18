@@ -16,11 +16,11 @@ from backend.db.repositories import (
     AgentSessionRepository,
 )
 from backend.main import app
-from backend.services.agent_execution_service import AgentExecutionService
-from backend.services.agent_read_service import AgentReadService
+from backend.app.execution.execution_service import AgentExecutionService
+from backend.app.agent.read_service import AgentReadService
 from backend.services.agent_service import agent_service
-from backend.services.agent_session_service import AgentSessionService
-from backend.services.agent_task_read_service import AgentTaskReadService
+from backend.app.agent.session_service import AgentSessionService
+from backend.app.execution.task_read_service import AgentTaskReadService
 
 
 ROOT = Path(__file__).resolve().parents[1]

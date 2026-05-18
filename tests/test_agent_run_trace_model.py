@@ -24,11 +24,11 @@ from backend.models.agent import AgentRunSummary, AgentTraceEvent as AgentTraceE
 from backend.domain.skills.contracts import PlannerRequest, SkillRunSummary, SkillSelection
 from backend.runtime.skill_engine import PlannerRequestBuildResult
 from backend.runtime.trace_recorder import TraceEvent, TraceRecorder
-from backend.services.agent_execution_service import AgentExecutionService
-from backend.services.agent_read_service import AgentReadService
-from backend.services.agent_run_service import ActiveOperationConflict, AgentRunService
-from backend.services.agent_session_service import AgentSessionService
-from backend.services.agent_step_service import AgentStepService
+from backend.app.execution.execution_service import AgentExecutionService
+from backend.app.agent.read_service import AgentReadService
+from backend.app.agent.run_service import ActiveOperationConflict, AgentRunService
+from backend.app.agent.session_service import AgentSessionService
+from backend.app.agent.step_service import AgentStepService
 from backend.services.planner_orchestrator import PlannerOrchestrator
 
 
