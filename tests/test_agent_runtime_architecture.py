@@ -96,6 +96,22 @@ class AgentRuntimeArchitectureTests(unittest.TestCase):
         self.assertIn("PlannerOrchestrator", session_source)
         self.assertIn("StepProjectionService", read_source)
 
+    def test_app_agent_contains_real_stream_service_implementation(self) -> None:
+        source_path = ROOT / "backend" / "app" / "agent" / "stream_service.py"
+        self.assertTrue(source_path.is_file(), str(source_path))
+        source = source_path.read_text(encoding="utf-8")
+        module = ast.parse(source)
+
+        self.assertTrue(
+            any(isinstance(node, ast.ClassDef) and node.name == "AgentStreamService" for node in module.body),
+            "AgentStreamService must be implemented in backend.app.agent.stream_service",
+        )
+        self.assertTrue(
+            any(isinstance(node, ast.FunctionDef) and node.name == "format_sse_event" for node in module.body),
+            "format_sse_event must be implemented in backend.app.agent.stream_service",
+        )
+        self.assertTrue(hasattr(importlib.import_module("backend.app.agent.stream_service"), "TraceBatch"))
+
     def test_migrated_agent_services_are_compatibility_shims(self) -> None:
         session_source = (ROOT / "backend" / "services" / "agent_session_service.py").read_text(encoding="utf-8")
         read_source = (ROOT / "backend" / "services" / "agent_read_service.py").read_text(encoding="utf-8")
@@ -129,6 +145,10 @@ class AgentRuntimeArchitectureTests(unittest.TestCase):
             "agent_session_service.py": (
                 "AgentSessionService",
                 "from backend.app.agent.session_service import AgentSessionService",
+            ),
+            "agent_stream_service.py": (
+                "AgentStreamService",
+                "from backend.app.agent.stream_service import",
             ),
         }
 
@@ -276,8 +296,13 @@ class AgentRuntimeArchitectureTests(unittest.TestCase):
             "from backend.app.execution.job_use_cases import AgentExecutionService, AgentTaskReadService",
             source,
         )
+        self.assertIn(
+            "from backend.app.agent.stream_service import AgentStreamService, format_sse_event",
+            source,
+        )
         self.assertNotIn("from backend.services.agent_execution_service import", source)
         self.assertNotIn("from backend.services.agent_session_service import", source)
+        self.assertNotIn("from backend.services.agent_stream_service import", source)
 
     def test_readme_documents_agent_runtime_architecture(self) -> None:
         readme = (ROOT / "README.md").read_text(encoding="utf-8")

@@ -187,7 +187,60 @@ class SkillSelectionServiceTests(unittest.TestCase):
         self.assertEqual(selection.version, "0.1.0")
         self.assertIn("execution_feedback_replan", selection.reason)
 
-    def test_selection_service_rejects_unknown_run_type(self) -> None:
+    def test_selection_service_raises_when_default_planning_skill_is_misconfigured(self) -> None:
+        from backend.app.skills.selection_service import SkillSelectionService
+        from backend.domain.skills.contracts import SkillDefinition
+        from backend.domain.skills.contracts import SkillSelectionRequest
+
+        class RegistryWithoutDefault:
+            def list_definitions(self):
+                return [
+                    SkillDefinition(
+                        id="builtin.other",
+                        version="0.1.0",
+                        name="Other",
+                        description="Other skill.",
+                        trigger_conditions={"runTypes": ["other_run_type"]},
+                    )
+                ]
+
+            def get_definition(self, skill_id: str):
+                raise LookupError(f"Unknown builtin skill: {skill_id}")
+
+        service = SkillSelectionService(registry=RegistryWithoutDefault())
+
+        with self.assertRaisesRegex(LookupError, "builtin.product_intro_video"):
+            service.select_skill(
+                SkillSelectionRequest(
+                    session_id="session-1",
+                    run_id="run-5",
+                    run_type="general_planning",
+                    user_message="test",
+                )
+            )
+
+    def test_selection_service_falls_back_general_planning_to_product_intro_skill(self) -> None:
+        from backend.app.skills.registry import BuiltinSkillRegistry
+        from backend.app.skills.selection_service import SkillSelectionService
+        from backend.domain.skills.contracts import SkillSelectionRequest
+
+        service = SkillSelectionService(registry=BuiltinSkillRegistry())
+
+        selection = service.select_skill(
+            SkillSelectionRequest(
+                session_id="session-1",
+                run_id="run-6",
+                run_type="general_planning",
+                user_message="帮我规划一个视频",
+            )
+        )
+
+        self.assertEqual(selection.skill_id, "builtin.product_intro_video")
+        self.assertEqual(selection.version, "0.1.0")
+        self.assertIn("fallback", selection.reason.lower())
+        self.assertIn("general_planning", selection.reason)
+
+    def test_selection_service_rejects_unregistered_run_type(self) -> None:
         from backend.app.skills.registry import BuiltinSkillRegistry
         from backend.app.skills.selection_service import SkillSelectionService
         from backend.domain.skills.contracts import SkillSelectionRequest
@@ -198,7 +251,7 @@ class SkillSelectionServiceTests(unittest.TestCase):
             service.select_skill(
                 SkillSelectionRequest(
                     session_id="session-1",
-                    run_id="run-5",
+                    run_id="run-7",
                     run_type="unknown_run_type",
                     user_message="test",
                 )
@@ -272,6 +325,30 @@ class SkillEngineTests(unittest.TestCase):
         self.assertEqual(result.summary.skill_id, "builtin.broken")
         self.assertEqual(result.summary.status, "failed")
         self.assertIn("handler import failed", result.summary.error_message)
+
+    def test_skill_engine_fallback_handler_builds_general_planning_request(self) -> None:
+        from backend.domain.skills.contracts import PlannerRequest, SkillSelectionRequest
+        from backend.runtime.skill_engine import SkillEngine
+
+        result = SkillEngine().build_planner_request(
+            SkillSelectionRequest(
+                session_id="session-1",
+                run_id="run-6",
+                run_type="general_planning",
+                user_message="帮我规划一个视频",
+                context={"plannerContext": "开头需要明确产品使用场景。"},
+            )
+        )
+
+        self.assertEqual(result.selection.skill_id, "builtin.product_intro_video")
+        self.assertIn("fallback", result.selection.reason.lower())
+        self.assertIsInstance(result.planner_request, PlannerRequest)
+        self.assertEqual(result.planner_request.action, "general_planning")
+        self.assertEqual(
+            result.planner_request.context_items,
+            [{"type": "plannerContext", "value": "开头需要明确产品使用场景。"}],
+        )
+        self.assertEqual(result.summary.status, "succeeded")
 
 
 class BuiltinSkillHandlerTests(unittest.TestCase):

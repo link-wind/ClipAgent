@@ -34,6 +34,11 @@ def format_context_for_planner(message: str, context: ContextBundle) -> str:
     return "\n".join(lines).strip()
 
 
+def _build_user_revision_context_payload(message: str, context: ContextBundle) -> dict:
+    planner_context = format_context_for_planner(message, context)
+    return {"plannerContext": planner_context} if planner_context else {}
+
+
 class PlannerOrchestrator:
     def __init__(
         self,
@@ -202,13 +207,25 @@ class PlannerOrchestrator:
         if latest_plan is None:
             raise RuntimeError("User revision replan requires an existing plan version")
 
+        context = self._build_context(
+            db=db,
+            session_record=session_record,
+            message_record=message_record,
+            run_id=run_id,
+            scope="user_revision",
+        )
+        context_payload = _build_user_revision_context_payload(message_record.content, context)
+        skill_context = {
+            **({"sceneKeywordUpdates": scene_keyword_updates} if scene_keyword_updates else {}),
+            **context_payload,
+        }
         self._record_skill_observability(
             db=db,
             session_record=session_record,
             run_id=run_id,
             run_type="user_revision",
             user_message=message_record.content,
-            context={"sceneKeywordUpdates": scene_keyword_updates} if scene_keyword_updates else {},
+            context=skill_context,
         )
         state = run_user_revision_replan(
             session_id=session_record.id,
@@ -218,6 +235,7 @@ class PlannerOrchestrator:
                 "message": message_record.content,
                 "sceneKeywordUpdates": scene_keyword_updates,
                 "revisionSource": "user_message",
+                **context_payload,
             },
         )
 

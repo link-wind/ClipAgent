@@ -1,8 +1,11 @@
 from __future__ import annotations
 
 import sqlite3
+import tempfile
 import unittest
 from datetime import datetime
+from pathlib import Path
+from unittest.mock import patch
 
 from sqlalchemy import create_engine, event, inspect, text
 from sqlalchemy.orm import sessionmaker
@@ -416,15 +419,20 @@ class RagFoundationRetrievalTests(RagFoundationDbTestCase):
         from backend.app.knowledge.context_usage_service import ContextUsageService
         from backend.app.knowledge.ingestion_service import KnowledgeIngestionService
         from backend.app.knowledge.retrieval_service import KnowledgeRetrievalService
+        from backend.app.knowledge.storage import LocalKnowledgeStorage
         from backend.db.repositories import AgentSessionRepository, KnowledgeRepository
         from backend.domain.knowledge.contracts import RetrievalQuery
 
         session = AgentSessionRepository(self.db).create(status="active")
-        chunk_ids = KnowledgeIngestionService(self.db).ingest_text(
-            source_type="seed",
-            title="产品开头原则",
-            content="产品介绍短视频开头需要快速说明使用场景和核心卖点。",
-        )
+        with tempfile.TemporaryDirectory() as tmpdir:
+            chunk_ids = KnowledgeIngestionService(
+                self.db,
+                storage=LocalKnowledgeStorage(Path(tmpdir)),
+            ).ingest_text(
+                source_type="seed",
+                title="产品开头原则",
+                content="产品介绍短视频开头需要快速说明使用场景和核心卖点。",
+            )
 
         results = KnowledgeRetrievalService(self.db).retrieve(
             RetrievalQuery(text="产品 使用场景", top_k=3)
@@ -452,6 +460,126 @@ class _FakeTraceRecorder:
 
 
 class RagFoundationContextEngineTests(RagFoundationDbTestCase):
+    def test_user_revision_context_payload_includes_planner_context_when_documents_match(self) -> None:
+        from backend.app.planning.orchestrator import _build_user_revision_context_payload
+        from backend.runtime.context_engine import ContextBundle
+
+        payload = _build_user_revision_context_payload(
+            "把开头改得更强调产品场景",
+            ContextBundle(
+                documents=[
+                    {
+                        "content": "开头 3 秒需要明确产品和使用场景。",
+                        "score": 0.9,
+                    }
+                ]
+            ),
+        )
+
+        self.assertIn("plannerContext", payload)
+        self.assertIn("开头 3 秒需要明确产品和使用场景", payload["plannerContext"])
+
+    def test_user_revision_context_payload_is_empty_without_documents(self) -> None:
+        from backend.app.planning.orchestrator import _build_user_revision_context_payload
+        from backend.runtime.context_engine import ContextBundle
+
+        payload = _build_user_revision_context_payload(
+            "把开头改得更强调产品场景",
+            ContextBundle(),
+        )
+
+        self.assertEqual(payload, {})
+
+    def test_user_revision_replan_builds_context_with_scope_and_run_id(self) -> None:
+        from backend.app.planning import orchestrator as orchestrator_module
+        from backend.app.planning.orchestrator import PlannerOrchestrator
+        from backend.db.repositories import (
+            AgentMessageRepository,
+            AgentPlanRepository,
+            AgentRunRepository,
+            AgentSessionRepository,
+        )
+        from backend.runtime.context_engine import ContextBundle
+
+        class RecordingContextEngine:
+            def __init__(self) -> None:
+                self.requests = []
+
+            def build_context(self, request):
+                self.requests.append(request)
+                return ContextBundle(documents=[{"content": "用户修改时优先保留产品使用场景。"}])
+
+        captured_revision_feedback = {}
+
+        def fake_run_user_revision_replan(**kwargs):
+            captured_revision_feedback.update(kwargs["revision_feedback"])
+            return {
+                "status": "ready",
+                "triggerType": "user_revision",
+                "changeSummary": "updated",
+                "executionPlan": {
+                    "title": "Updated plan",
+                    "targetDuration": 30,
+                    "style": "clean",
+                },
+                "agentPlan": {"replanHistory": []},
+            }
+
+        session = AgentSessionRepository(self.db).create(status="active")
+        message = AgentMessageRepository(self.db).create(
+            session_id=session.id,
+            role="user",
+            content="把第 1 个场景改得更贴近使用场景",
+        )
+        latest_plan = AgentPlanRepository(self.db).create(
+            session_id=session.id,
+            version=1,
+            parent_plan_id=None,
+            trigger_type="initial_brief",
+            planner_mode="deterministic",
+            planner_model="test-model",
+            title="Initial plan",
+            target_duration=30,
+            style="clean",
+            plan_json={"scenes": []},
+            execution_plan_json={"title": "Initial plan", "targetDuration": 30, "style": "clean"},
+            change_summary="initial",
+            status="ready",
+        )
+        session.current_plan_id = latest_plan.id
+        run = AgentRunRepository(self.db).create(
+            session_id=session.id,
+            trigger_type="planning",
+            status="running",
+        )
+        self.db.flush()
+        context_engine = RecordingContextEngine()
+        orchestrator = PlannerOrchestrator(context_engine=context_engine)
+
+        with patch.object(
+            orchestrator_module,
+            "run_user_revision_replan",
+            side_effect=fake_run_user_revision_replan,
+        ):
+            orchestrator.persist_user_revision_replan(
+                self.db,
+                session,
+                message,
+                scene_keyword_updates={1: ["使用场景"]},
+                run_id=run.id,
+            )
+
+        self.assertEqual(context_engine.requests[0].scope, "user_revision")
+        self.assertEqual(context_engine.requests[0].run_id, run.id)
+        self.assertIn("plannerContext", captured_revision_feedback)
+        self.assertIn("用户修改时优先保留产品使用场景", captured_revision_feedback["plannerContext"])
+        refreshed_run = AgentRunRepository(self.db).get(run.id)
+        self.assertIn("plannerContext", refreshed_run.input_json["skillSelectionRequest"]["context"])
+        self.assertEqual(
+            refreshed_run.input_json["skillSelectionRequest"]["context"]["sceneKeywordUpdates"],
+            {"1": ["使用场景"]},
+        )
+
     def test_context_engine_returns_documents_and_records_trace(self) -> None:
         from backend.runtime.context_engine import ContextEngine, ContextRequest
 
@@ -614,6 +742,7 @@ class RagFoundationContextEngineTests(RagFoundationDbTestCase):
 
     def test_context_engine_records_context_usage_when_db_is_available(self) -> None:
         from backend.app.knowledge.ingestion_service import KnowledgeIngestionService
+        from backend.app.knowledge.storage import LocalKnowledgeStorage
         from backend.db.repositories import AgentRunRepository, AgentSessionRepository, KnowledgeRepository
         from backend.runtime.context_engine import ContextEngine, ContextRequest
         from backend.runtime.trace_recorder import TraceRecorder
@@ -623,11 +752,15 @@ class RagFoundationContextEngineTests(RagFoundationDbTestCase):
             session_id=session.id,
             trigger_type="user_message",
         )
-        KnowledgeIngestionService(self.db).ingest_text(
-            source_type="seed",
-            title="产品开头原则",
-            content="产品介绍短视频开头需要快速说明使用场景和核心卖点。",
-        )
+        with tempfile.TemporaryDirectory() as tmpdir:
+            KnowledgeIngestionService(
+                self.db,
+                storage=LocalKnowledgeStorage(Path(tmpdir)),
+            ).ingest_text(
+                source_type="seed",
+                title="产品开头原则",
+                content="产品介绍短视频开头需要快速说明使用场景和核心卖点。",
+            )
         recorder = TraceRecorder(self.db)
         engine = ContextEngine(db_session=self.db, trace_recorder=recorder)
 

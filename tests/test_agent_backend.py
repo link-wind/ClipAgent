@@ -678,9 +678,17 @@ class AgentApiTests(unittest.TestCase):
         )
         event_types = [event.event_type for event in trace_events]
         self.assertEqual(
-            event_types[:8],
+            event_types[:3],
             [
                 "run_started",
+                "rag_retrieval_started",
+                "rag_retrieval_succeeded",
+            ],
+        )
+        skill_start = event_types.index("step_started", 1)
+        self.assertEqual(
+            event_types[skill_start : skill_start + 7],
+            [
                 "step_started",
                 "skill_selected",
                 "step_succeeded",
@@ -2570,6 +2578,25 @@ class FrontendClientContractTests(unittest.TestCase):
         self.assertIn("currentTraceStream", store_source)
         self.assertIn("extractTraceStreamPayload(event)", store_source)
         self.assertIn("currentTraceStream: null", store_source)
+
+    def test_frontend_trace_stream_listens_for_runtime_event_contract(self):
+        api_source = (ROOT / "src" / "lib" / "agentApi.ts").read_text(encoding="utf-8")
+
+        expected_event_types = [
+            "rag_retrieval_started",
+            "rag_retrieval_succeeded",
+            "rag_retrieval_failed",
+            "skill_selected",
+            "skill_run_started",
+            "skill_run_succeeded",
+            "skill_run_failed",
+            "mcp_tool_call_started",
+            "mcp_tool_call_succeeded",
+            "mcp_tool_call_failed",
+        ]
+
+        for event_type in expected_event_types:
+            self.assertIn(f"'{event_type}'", api_source)
 
     def test_workspace_surfaces_current_trace_stream_state(self):
         agent_workspace_source = (

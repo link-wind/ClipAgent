@@ -4,6 +4,10 @@ from backend.app.skills.registry import BuiltinSkillRegistry, Handler
 from backend.domain.skills.contracts import SkillSelection, SkillSelectionRequest
 
 
+DEFAULT_PLANNING_SKILL_ID = "builtin.product_intro_video"
+FALLBACK_PLANNING_RUN_TYPES = {"general_planning"}
+
+
 class SkillSelectionService:
     def __init__(self, registry: BuiltinSkillRegistry | None = None) -> None:
         self._registry = registry or BuiltinSkillRegistry()
@@ -17,6 +21,13 @@ class SkillSelectionService:
                     version=definition.version,
                     reason=f"run_type={request.run_type} matched {definition.id}",
                 )
+        if request.run_type in FALLBACK_PLANNING_RUN_TYPES:
+            default_definition = self._registry.get_definition(DEFAULT_PLANNING_SKILL_ID)
+            return SkillSelection(
+                skill_id=default_definition.id,
+                version=default_definition.version,
+                reason=f"fallback: run_type={request.run_type} used {default_definition.id}",
+            )
         raise LookupError(request.run_type)
 
     def resolve_handler(self, skill_id: str) -> Handler:

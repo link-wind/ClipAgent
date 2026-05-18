@@ -7,6 +7,7 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
 from backend.app.agent.session_use_cases import AgentReadService, AgentSessionService
+from backend.app.agent.stream_service import AgentStreamService, format_sse_event
 from backend.app.execution.job_use_cases import AgentExecutionService, AgentTaskReadService
 from backend.db import SessionLocal
 from backend.db.repositories import AgentRunRepository, AgentSessionRepository, AgentTraceEventRepository
@@ -22,7 +23,6 @@ from backend.models.agent import (
 from backend.runtime.agent_runtime import build_agent_runtime
 from backend.services.agent_service import agent_service
 from backend.services.agent_run_service import ActiveOperationConflict
-from backend.services.agent_stream_service import AgentStreamService, format_sse_event
 
 
 router = APIRouter()
