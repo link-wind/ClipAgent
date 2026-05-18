@@ -155,6 +155,7 @@ class AgentRuntimeArchitectureTests(unittest.TestCase):
     def test_execution_entry_and_task_read_services_live_in_app_execution_boundary(self) -> None:
         expected_classes = {
             "execution_service.py": "AgentExecutionService",
+            "progress_service.py": "AgentProgressService",
             "task_read_service.py": "AgentTaskReadService",
         }
 
@@ -200,6 +201,10 @@ class AgentRuntimeArchitectureTests(unittest.TestCase):
             "agent_task_read_service.py": (
                 "AgentTaskReadService",
                 "from backend.app.execution.task_read_service import AgentTaskReadService",
+            ),
+            "agent_progress_service.py": (
+                "AgentProgressService",
+                "from backend.app.execution.progress_service import AgentProgressService",
             ),
         }
 
