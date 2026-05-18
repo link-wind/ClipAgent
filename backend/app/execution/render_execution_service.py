@@ -8,6 +8,7 @@ class RenderExecutionService:
     def execute(
         self,
         *,
+        commit,
         job_state_service,
         event_service,
         artifact_service,
@@ -17,7 +18,14 @@ class RenderExecutionService:
         clips,
     ) -> str:
         job_state_service.mark_render_started(session_id, job_id)
-        self._commit(job_state_service)
+        event_service.record_event(
+            session_id=session_id,
+            job_id=job_id,
+            event_type="render_started",
+            step="rendering",
+            message="开始合成视频",
+            progress=80,
+        )
         step_lifecycle.ensure_step(
             session_id=session_id,
             job_id=job_id,
@@ -26,6 +34,7 @@ class RenderExecutionService:
             description="调用渲染流程，生成视频产物或失败原因。",
             sequence=8,
         )
+        commit()
 
         render_runner = self.render_runner
         if render_runner is None:
@@ -42,7 +51,7 @@ class RenderExecutionService:
                 message=message,
                 progress=progress,
             )
-            self._commit(event_service)
+            commit()
 
         video_url = asyncio.run(
             render_runner(
@@ -60,9 +69,3 @@ class RenderExecutionService:
             public_url=video_url,
         )
         return video_url
-
-    @staticmethod
-    def _commit(service) -> None:
-        db = getattr(service, "db", None)
-        if db is not None:
-            db.commit()

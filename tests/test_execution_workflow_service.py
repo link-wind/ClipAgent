@@ -1,6 +1,6 @@
 import unittest
 from types import SimpleNamespace
-from unittest.mock import Mock, patch
+from unittest.mock import Mock, call, patch
 
 from sqlalchemy import create_engine, event
 from sqlalchemy.orm import sessionmaker
@@ -38,7 +38,18 @@ class _FakeRenderExecutor:
         self.video_url = video_url
         self.calls = []
 
-    def execute(self, *, job_state_service, event_service, artifact_service, step_lifecycle, session_id, job_id, clips):
+    def execute(
+        self,
+        *,
+        commit,
+        job_state_service,
+        event_service,
+        artifact_service,
+        step_lifecycle,
+        session_id,
+        job_id,
+        clips,
+    ):
         self.calls.append(
             (
                 session_id,
@@ -180,7 +191,7 @@ class ExecutionWorkflowServiceTests(unittest.TestCase):
         self.assertEqual(asset_executor.calls[0][:3], (session_id, job_id, "执行链路测试"))
         self.assertEqual(
             asset_executor.calls[0][3:],
-            ("_WorkflowJobStateAdapter", "ExecutionArtifactService", "StepLifecycleService"),
+            ("JobStateService", "ExecutionArtifactService", "StepLifecycleService"),
         )
         self.assertEqual(
             render_executor.calls,
@@ -189,7 +200,7 @@ class ExecutionWorkflowServiceTests(unittest.TestCase):
                     session_id,
                     job_id,
                     1,
-                    "_WorkflowJobStateAdapter",
+                    "JobStateService",
                     "ExecutionEventService",
                     "ExecutionArtifactService",
                     "StepLifecycleService",
@@ -221,7 +232,7 @@ class ExecutionWorkflowServiceTests(unittest.TestCase):
             self.assertEqual(job.error_message, "素材检索失败")
         self.assertEqual(
             replan_service.calls,
-            [(job_id, "素材检索失败", "searching", "_WorkflowJobStateAdapter", "ExecutionEventService")],
+            [(job_id, "素材检索失败", "searching", "JobStateService", "ExecutionEventService")],
         )
 
     def test_workflow_can_request_replan_for_search_failure(self):
@@ -240,7 +251,7 @@ class ExecutionWorkflowServiceTests(unittest.TestCase):
 
         self.assertEqual(
             replan_service.calls,
-            [(job_id, "素材检索失败", "searching", "_WorkflowJobStateAdapter", "ExecutionEventService")],
+            [(job_id, "素材检索失败", "searching", "JobStateService", "ExecutionEventService")],
         )
         with self.SessionLocal() as db:
             job = AgentJobRepository(db).get(job_id)
@@ -450,15 +461,14 @@ class ExecutionWorkflowServiceTests(unittest.TestCase):
         render_step = SimpleNamespace(id="render-step", status="running")
         step_lifecycle = Mock()
         step_lifecycle.ensure_step.return_value = render_step
-        db = Mock()
-        job_state_service.db = db
-        event_service.db = db
+        commit = Mock()
 
         async def fake_render_runner(_session_id, _clips, _output_filename, progress_callback=None):
             progress_callback("render_captioning", "正在合成字幕", 82)
             return "/output/final.mp4"
 
         video_url = RenderExecutionService(render_runner=fake_render_runner).execute(
+            commit=commit,
             job_state_service=job_state_service,
             event_service=event_service,
             artifact_service=artifact_service,
@@ -470,14 +480,27 @@ class ExecutionWorkflowServiceTests(unittest.TestCase):
 
         self.assertEqual(video_url, "/output/final.mp4")
         job_state_service.mark_render_started.assert_called_once_with("session-1", "job-1")
-        self.assertEqual(db.commit.call_count, 2)
-        event_service.record_event.assert_called_once_with(
-            session_id="session-1",
-            job_id="job-1",
-            event_type="render_captioning",
-            step="rendering",
-            message="正在合成字幕",
-            progress=82,
+        self.assertEqual(commit.call_count, 2)
+        self.assertEqual(
+            event_service.record_event.call_args_list,
+            [
+                call(
+                    session_id="session-1",
+                    job_id="job-1",
+                    event_type="render_started",
+                    step="rendering",
+                    message="开始合成视频",
+                    progress=80,
+                ),
+                call(
+                    session_id="session-1",
+                    job_id="job-1",
+                    event_type="render_captioning",
+                    step="rendering",
+                    message="正在合成字幕",
+                    progress=82,
+                ),
+            ],
         )
         artifact_service.create_artifact.assert_called_once_with(
             session_id="session-1",

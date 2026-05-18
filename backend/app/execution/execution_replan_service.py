@@ -91,10 +91,21 @@ class ExecutionReplanService:
             current_step="任务已重新入队",
             max_attempts=job_record.max_attempts,
         )
-        _ = event_service
         job_state_service.mark_job_requeued_after_replan(
             session_id=job_record.session_id,
             failed_job_id=job_record.id,
             replacement_job_id=replacement_job.id,
+        )
+        event_service.record_event(
+            session_id=job_record.session_id,
+            job_id=replacement_job.id,
+            event_type="job_requeued_after_replan",
+            step="queued",
+            message="执行失败后已自动重规划并重新入队",
+            progress=25,
+            payload={
+                "failedJobId": job_record.id,
+                "replacementJobId": replacement_job.id,
+            },
         )
         return replacement_job.id
