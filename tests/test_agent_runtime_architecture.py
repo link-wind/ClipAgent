@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import importlib
+import ast
 import unittest
 from pathlib import Path
 
@@ -46,6 +47,61 @@ class AgentRuntimeArchitectureTests(unittest.TestCase):
         self.assertTrue(hasattr(job_use_cases, "AgentExecutionService"))
         self.assertTrue(hasattr(job_use_cases, "AgentTaskReadService"))
         self.assertTrue(hasattr(planning_orchestrator, "PlannerOrchestrator"))
+
+    def test_app_agent_contains_real_session_and_read_implementations(self) -> None:
+        session_source = (ROOT / "backend" / "app" / "agent" / "session_service.py").read_text(encoding="utf-8")
+        read_source = (ROOT / "backend" / "app" / "agent" / "read_service.py").read_text(encoding="utf-8")
+
+        self.assertIn("class AgentSessionService", session_source)
+        self.assertIn("class AgentReadService", read_source)
+        self.assertIn("PlannerOrchestrator", session_source)
+        self.assertIn("StepProjectionService", read_source)
+
+    def test_migrated_agent_services_are_compatibility_shims(self) -> None:
+        session_source = (ROOT / "backend" / "services" / "agent_session_service.py").read_text(encoding="utf-8")
+        read_source = (ROOT / "backend" / "services" / "agent_read_service.py").read_text(encoding="utf-8")
+
+        self.assertIn("from backend.app.agent.session_service import AgentSessionService", session_source)
+        self.assertIn("from backend.app.agent.read_service import AgentReadService", read_source)
+        self.assertNotIn("class AgentSessionService", session_source)
+        self.assertNotIn("class AgentReadService", read_source)
+
+    def test_agent_session_and_read_services_live_in_app_agent_boundary(self) -> None:
+        expected_classes = {
+            "read_service.py": "AgentReadService",
+            "session_service.py": "AgentSessionService",
+        }
+
+        for filename, class_name in expected_classes.items():
+            source_path = ROOT / "backend" / "app" / "agent" / filename
+            self.assertTrue(source_path.is_file(), str(source_path))
+            module = ast.parse(source_path.read_text(encoding="utf-8"))
+            self.assertTrue(
+                any(isinstance(node, ast.ClassDef) and node.name == class_name for node in module.body),
+                f"{class_name} must be implemented in backend.app.agent.{source_path.stem}",
+            )
+
+    def test_legacy_agent_service_modules_are_shims(self) -> None:
+        shim_modules = {
+            "agent_read_service.py": (
+                "AgentReadService",
+                "from backend.app.agent.read_service import AgentReadService",
+            ),
+            "agent_session_service.py": (
+                "AgentSessionService",
+                "from backend.app.agent.session_service import AgentSessionService",
+            ),
+        }
+
+        for filename, (class_name, expected_import) in shim_modules.items():
+            source_path = ROOT / "backend" / "services" / filename
+            source = source_path.read_text(encoding="utf-8")
+            module = ast.parse(source)
+            self.assertIn(expected_import, source)
+            self.assertFalse(
+                any(isinstance(node, ast.ClassDef) and node.name == class_name for node in module.body),
+                f"backend.services.{source_path.stem} must remain a shim",
+            )
 
     def test_runtime_contracts_import_without_side_effects(self) -> None:
         context_engine = importlib.import_module("backend.runtime.context_engine")

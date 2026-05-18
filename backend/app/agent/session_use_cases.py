@@ -1,5 +1,5 @@
-from backend.services.agent_read_service import AgentReadService
-from backend.services.agent_session_service import AgentSessionService
+from backend.app.agent.read_service import AgentReadService
+from backend.app.agent.session_service import AgentSessionService
 
 
 __all__ = [
