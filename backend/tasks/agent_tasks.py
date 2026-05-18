@@ -11,7 +11,7 @@ from backend.app.execution.execution_replan_service import (
 from backend.app.execution.execution_replan_service import (
     should_attempt_execution_replan as _should_attempt_execution_replan,
 )
-from backend.services.search_service import search_and_download_agent_clips
+from backend.infrastructure.media.search_service import search_and_download_agent_clips
 from backend.tasks.celery_app import celery_app
 
 
@@ -42,4 +42,3 @@ def run_agent_job(job_id: str) -> None:
         dispatch_job=dispatch_agent_job,
     )
     workflow.run_job(job_id)
-

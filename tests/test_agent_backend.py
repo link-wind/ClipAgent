@@ -1203,7 +1203,7 @@ class AgentExecutionContractTests(unittest.TestCase):
 
     def test_render_shortform_video_uses_agent_local_path_as_segment_input(self):
         from backend.models.agent import ClipInfo
-        from backend.services.render_service import render_shortform_video
+        from backend.infrastructure.media.render_service import render_shortform_video
 
         clip = ClipInfo(
             sceneId=1,
@@ -1213,9 +1213,9 @@ class AgentExecutionContractTests(unittest.TestCase):
             duration=6,
         )
 
-        with patch("backend.services.render_service._render_segment") as mock_render_segment:
-            with patch("backend.services.render_service._concat_segments"):
-                with patch("backend.services.render_service._mix_background_music"):
+        with patch("backend.infrastructure.media.render_service._render_segment") as mock_render_segment:
+            with patch("backend.infrastructure.media.render_service._concat_segments"):
+                with patch("backend.infrastructure.media.render_service._mix_background_music"):
                     result = render_shortform_video([clip], "out.mp4")
 
         segment = mock_render_segment.call_args.args[0]

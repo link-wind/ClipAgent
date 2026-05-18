@@ -11,7 +11,7 @@ class RenderExecutionService:
 
         render_runner = self.render_runner
         if render_runner is None:
-            from backend.services.render_service import render_video
+            from backend.infrastructure.media.render_service import render_video
 
             render_runner = render_video
 

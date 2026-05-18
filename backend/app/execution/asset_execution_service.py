@@ -1,8 +1,8 @@
 import asyncio
 
 from backend.models.agent import ClipInfo
-from backend.services.asset_providers.metadata import pop_clip_metadata
-from backend.services.search_service import search_and_download_agent_clips
+from backend.infrastructure.media.asset_providers.metadata import pop_clip_metadata
+from backend.infrastructure.media.search_service import search_and_download_agent_clips
 
 
 class AssetExecutionService:

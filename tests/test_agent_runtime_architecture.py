@@ -75,6 +75,18 @@ class AgentRuntimeArchitectureTests(unittest.TestCase):
             "backend.services.planner_orchestrator must remain a shim",
         )
 
+    def test_media_infrastructure_does_not_reexport_services_render_module(self) -> None:
+        render_source = (ROOT / "backend" / "infrastructure" / "media" / "render_service.py").read_text(encoding="utf-8")
+
+        self.assertNotIn("from backend.services.render_service import", render_source)
+
+    def test_execution_services_use_media_infrastructure_adapters(self) -> None:
+        asset_source = (ROOT / "backend" / "app" / "execution" / "asset_execution_service.py").read_text(encoding="utf-8")
+        render_source = (ROOT / "backend" / "app" / "execution" / "render_execution_service.py").read_text(encoding="utf-8")
+
+        self.assertIn("backend.infrastructure.media.search_service", asset_source)
+        self.assertIn("backend.infrastructure.media.render_service", render_source)
+
     def test_app_agent_contains_real_session_and_read_implementations(self) -> None:
         session_source = (ROOT / "backend" / "app" / "agent" / "session_service.py").read_text(encoding="utf-8")
         read_source = (ROOT / "backend" / "app" / "agent" / "read_service.py").read_text(encoding="utf-8")

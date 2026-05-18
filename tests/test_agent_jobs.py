@@ -21,10 +21,10 @@ def _load_render_service():
     fake_ffmpeg = types.SimpleNamespace(Error=Exception)
     fake_websocket = types.ModuleType("backend.utils.websocket")
     fake_websocket.ws_manager = types.SimpleNamespace()
-    services_pkg = importlib.import_module("backend.services")
-    original_render_service = sys.modules.pop("backend.services.render_service", None)
-    original_parent_render_service = getattr(services_pkg, "render_service", None)
-    parent_had_render_service = hasattr(services_pkg, "render_service")
+    media_pkg = importlib.import_module("backend.infrastructure.media")
+    original_render_service = sys.modules.pop("backend.infrastructure.media.render_service", None)
+    original_parent_render_service = getattr(media_pkg, "render_service", None)
+    parent_had_render_service = hasattr(media_pkg, "render_service")
     try:
         with patch.dict(
             sys.modules,
@@ -33,15 +33,15 @@ def _load_render_service():
                 "backend.utils.websocket": fake_websocket,
             },
         ):
-            return importlib.import_module("backend.services.render_service")
+            return importlib.import_module("backend.infrastructure.media.render_service")
     finally:
-        sys.modules.pop("backend.services.render_service", None)
+        sys.modules.pop("backend.infrastructure.media.render_service", None)
         if original_render_service is not None:
-            sys.modules["backend.services.render_service"] = original_render_service
+            sys.modules["backend.infrastructure.media.render_service"] = original_render_service
         if parent_had_render_service:
-            services_pkg.render_service = original_parent_render_service
-        elif hasattr(services_pkg, "render_service"):
-            delattr(services_pkg, "render_service")
+            media_pkg.render_service = original_parent_render_service
+        elif hasattr(media_pkg, "render_service"):
+            delattr(media_pkg, "render_service")
 
 
 class _FakeStream:
@@ -878,30 +878,30 @@ class RenderBehaviorTests(unittest.TestCase):
 
 class RenderServiceImportIsolationTests(unittest.TestCase):
     def test_load_render_service_restores_parent_package_reference(self):
-        import backend.services as services_pkg
+        import backend.infrastructure.media as media_pkg
 
-        preexisting_render_service = sys.modules.get("backend.services.render_service")
-        original_render_service = types.ModuleType("backend.services.render_service")
+        preexisting_render_service = sys.modules.get("backend.infrastructure.media.render_service")
+        original_render_service = types.ModuleType("backend.infrastructure.media.render_service")
         original_render_service.marker = "original"
-        original_parent_value = getattr(services_pkg, "render_service", None)
-        parent_had_render_service = hasattr(services_pkg, "render_service")
-        sys.modules["backend.services.render_service"] = original_render_service
-        services_pkg.render_service = original_render_service
+        original_parent_value = getattr(media_pkg, "render_service", None)
+        parent_had_render_service = hasattr(media_pkg, "render_service")
+        sys.modules["backend.infrastructure.media.render_service"] = original_render_service
+        media_pkg.render_service = original_render_service
 
         try:
             loaded = _load_render_service()
             self.assertIsNot(loaded, original_render_service)
-            self.assertIs(sys.modules["backend.services.render_service"], original_render_service)
-            self.assertIs(services_pkg.render_service, original_render_service)
+            self.assertIs(sys.modules["backend.infrastructure.media.render_service"], original_render_service)
+            self.assertIs(media_pkg.render_service, original_render_service)
         finally:
             if parent_had_render_service:
-                services_pkg.render_service = original_parent_value
-            elif hasattr(services_pkg, "render_service"):
-                delattr(services_pkg, "render_service")
+                media_pkg.render_service = original_parent_value
+            elif hasattr(media_pkg, "render_service"):
+                delattr(media_pkg, "render_service")
             if preexisting_render_service is not None:
-                sys.modules["backend.services.render_service"] = preexisting_render_service
+                sys.modules["backend.infrastructure.media.render_service"] = preexisting_render_service
             else:
-                sys.modules.pop("backend.services.render_service", None)
+                sys.modules.pop("backend.infrastructure.media.render_service", None)
 
 
 class ConfirmFlowContractTests(unittest.TestCase):
@@ -1619,7 +1619,7 @@ class AgentExecutionWorkerTests(unittest.TestCase):
         real_import = __import__
 
         def blocking_import(name, globals=None, locals=None, fromlist=(), level=0):
-            if name == "backend.services.render_service":
+            if name == "backend.infrastructure.media.render_service":
                 raise ModuleNotFoundError("mocked missing render dependency")
             return real_import(name, globals, locals, fromlist, level)
 
