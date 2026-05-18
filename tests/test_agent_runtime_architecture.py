@@ -75,6 +75,31 @@ class AgentRuntimeArchitectureTests(unittest.TestCase):
             "backend.services.planner_orchestrator must remain a shim",
         )
 
+    def test_planning_projection_lives_in_app_planning_boundary(self) -> None:
+        source_path = ROOT / "backend" / "app" / "planning" / "projection.py"
+        self.assertTrue(source_path.is_file(), str(source_path))
+        source = source_path.read_text(encoding="utf-8")
+        module = ast.parse(source)
+
+        self.assertTrue(
+            any(isinstance(node, ast.FunctionDef) and node.name == "execution_plan_to_edit_plan" for node in module.body),
+            "execution_plan_to_edit_plan must be implemented in backend.app.planning.projection",
+        )
+
+    def test_legacy_planner_projection_module_is_shim(self) -> None:
+        source_path = ROOT / "backend" / "services" / "planner_projection.py"
+        source = source_path.read_text(encoding="utf-8")
+        module = ast.parse(source)
+
+        self.assertIn(
+            "from backend.app.planning.projection import execution_plan_to_edit_plan",
+            source,
+        )
+        self.assertFalse(
+            any(isinstance(node, ast.FunctionDef) and node.name == "execution_plan_to_edit_plan" for node in module.body),
+            "backend.services.planner_projection must remain a shim",
+        )
+
     def test_media_infrastructure_does_not_reexport_services_render_module(self) -> None:
         render_source = (ROOT / "backend" / "infrastructure" / "media" / "render_service.py").read_text(encoding="utf-8")
 
@@ -273,6 +298,7 @@ class AgentRuntimeArchitectureTests(unittest.TestCase):
             "backend.services.agent_execution_service",
             "backend.services.agent_task_read_service",
             "backend.services.planner_orchestrator",
+            "backend.services.planner_projection",
             "backend.services.render_service",
             "backend.services.agent_run_service",
             "backend.services.agent_step_service",

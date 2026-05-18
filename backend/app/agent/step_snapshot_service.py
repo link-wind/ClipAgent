@@ -2,7 +2,7 @@ from dataclasses import dataclass
 from typing import Any, Optional
 
 from backend.models.agent import AgentStep, AgentStepError, AgentStepId, EditPlan
-from backend.services.planner_projection import execution_plan_to_edit_plan
+from backend.app.planning.projection import execution_plan_to_edit_plan
 
 
 @dataclass(frozen=True)

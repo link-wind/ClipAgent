@@ -9,9 +9,9 @@ from backend.app.execution.job_claim_service import JobClaimService
 from backend.app.execution.job_state_service import JobStateService
 from backend.app.execution.render_execution_service import RenderExecutionService
 from backend.app.execution.step_lifecycle import StepLifecycleService
+from backend.app.planning.projection import execution_plan_to_edit_plan
 from backend.db.repositories import AgentJobRepository, AgentPlanRepository
 from backend.models.agent import EditPlan
-from backend.services.planner_projection import execution_plan_to_edit_plan
 
 STEP_DEFINITIONS = {
     "search_assets": ("搜索素材", "根据最终方案搜索候选素材并记录搜索结果。", 6),

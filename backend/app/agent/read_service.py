@@ -19,8 +19,8 @@ from backend.models.agent import (
     ClipInfo,
     EditPlan,
 )
+from backend.app.planning.projection import execution_plan_to_edit_plan
 from backend.services.agent_diagnostic_service import AgentDiagnosticService
-from backend.services.planner_projection import execution_plan_to_edit_plan
 
 
 class AgentReadService:
