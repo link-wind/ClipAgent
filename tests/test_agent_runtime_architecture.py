@@ -48,6 +48,33 @@ class AgentRuntimeArchitectureTests(unittest.TestCase):
         self.assertTrue(hasattr(job_use_cases, "AgentTaskReadService"))
         self.assertTrue(hasattr(planning_orchestrator, "PlannerOrchestrator"))
 
+    def test_planning_orchestrator_lives_in_app_planning_boundary(self) -> None:
+        source_path = ROOT / "backend" / "app" / "planning" / "orchestrator.py"
+        source = source_path.read_text(encoding="utf-8")
+        module = ast.parse(source)
+
+        self.assertTrue(
+            any(isinstance(node, ast.ClassDef) and node.name == "PlannerOrchestrator" for node in module.body),
+            "PlannerOrchestrator must be implemented in backend.app.planning.orchestrator",
+        )
+        self.assertIn("ContextEngine", source)
+        self.assertIn("SkillEngine", source)
+        self.assertIn("run_initial_planning", source)
+
+    def test_legacy_planner_orchestrator_module_is_shim(self) -> None:
+        source_path = ROOT / "backend" / "services" / "planner_orchestrator.py"
+        source = source_path.read_text(encoding="utf-8")
+        module = ast.parse(source)
+
+        self.assertIn(
+            "from backend.app.planning.orchestrator import PlannerOrchestrator",
+            source,
+        )
+        self.assertFalse(
+            any(isinstance(node, ast.ClassDef) and node.name == "PlannerOrchestrator" for node in module.body),
+            "backend.services.planner_orchestrator must remain a shim",
+        )
+
     def test_app_agent_contains_real_session_and_read_implementations(self) -> None:
         session_source = (ROOT / "backend" / "app" / "agent" / "session_service.py").read_text(encoding="utf-8")
         read_source = (ROOT / "backend" / "app" / "agent" / "read_service.py").read_text(encoding="utf-8")

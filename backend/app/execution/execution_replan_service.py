@@ -1,5 +1,5 @@
 from backend.db.repositories import AgentJobRepository, AgentSessionRepository
-from backend.services.planner_orchestrator import PlannerOrchestrator
+from backend.app.planning.orchestrator import PlannerOrchestrator
 
 
 def should_attempt_execution_replan(retryable_step: str) -> bool:
