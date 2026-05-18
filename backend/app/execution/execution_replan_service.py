@@ -59,7 +59,16 @@ class ExecutionReplanService:
     def __init__(self, planner_orchestrator: PlannerOrchestrator | None = None):
         self.planner_orchestrator = planner_orchestrator or PlannerOrchestrator()
 
-    def attempt_replan(self, *, db, progress_service, job_record, exc: Exception, retryable_step: str) -> str | None:
+    def attempt_replan(
+        self,
+        *,
+        db,
+        job_state_service,
+        event_service,
+        job_record,
+        exc: Exception,
+        retryable_step: str,
+    ) -> str | None:
         if not should_attempt_execution_replan(retryable_step):
             return None
 
@@ -82,7 +91,8 @@ class ExecutionReplanService:
             current_step="任务已重新入队",
             max_attempts=job_record.max_attempts,
         )
-        progress_service.mark_job_requeued_after_replan(
+        _ = event_service
+        job_state_service.mark_job_requeued_after_replan(
             session_id=job_record.session_id,
             failed_job_id=job_record.id,
             replacement_job_id=replacement_job.id,

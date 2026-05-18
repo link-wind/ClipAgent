@@ -17,8 +17,17 @@ class _FakeAssetExecutor:
         self.error = error
         self.calls = []
 
-    def execute(self, *, progress_service, session_id, job_id, plan):
-        self.calls.append((session_id, job_id, plan.title))
+    def execute(self, *, job_state_service, artifact_service, step_lifecycle, session_id, job_id, plan):
+        self.calls.append(
+            (
+                session_id,
+                job_id,
+                plan.title,
+                type(job_state_service).__name__,
+                type(artifact_service).__name__,
+                type(step_lifecycle).__name__,
+            )
+        )
         if self.error is not None:
             raise self.error
         return list(self.clips)
@@ -29,8 +38,18 @@ class _FakeRenderExecutor:
         self.video_url = video_url
         self.calls = []
 
-    def execute(self, *, progress_service, session_id, job_id, clips):
-        self.calls.append((session_id, job_id, len(clips)))
+    def execute(self, *, job_state_service, event_service, artifact_service, step_lifecycle, session_id, job_id, clips):
+        self.calls.append(
+            (
+                session_id,
+                job_id,
+                len(clips),
+                type(job_state_service).__name__,
+                type(event_service).__name__,
+                type(artifact_service).__name__,
+                type(step_lifecycle).__name__,
+            )
+        )
         return self.video_url
 
 
@@ -39,8 +58,16 @@ class _FakeReplanService:
         self.replacement_job_id = replacement_job_id
         self.calls = []
 
-    def attempt_replan(self, *, db, progress_service, job_record, exc, retryable_step):
-        self.calls.append((job_record.id, str(exc), retryable_step))
+    def attempt_replan(self, *, db, job_state_service, event_service, job_record, exc, retryable_step):
+        self.calls.append(
+            (
+                job_record.id,
+                str(exc),
+                retryable_step,
+                type(job_state_service).__name__,
+                type(event_service).__name__,
+            )
+        )
         return self.replacement_job_id
 
 
@@ -120,6 +147,11 @@ class ExecutionWorkflowServiceTests(unittest.TestCase):
         self.assertEqual(asset_executor.calls, [])
         self.assertEqual(render_executor.calls, [])
 
+    def test_workflow_service_module_does_not_import_legacy_progress_service(self):
+        import backend.app.execution.workflow_service as workflow_module
+
+        self.assertFalse(hasattr(workflow_module, "AgentProgressService"))
+
     def test_workflow_runs_search_then_render_for_claimed_job(self):
         from backend.app.execution.workflow_service import ExecutionWorkflowService
 
@@ -145,8 +177,25 @@ class ExecutionWorkflowServiceTests(unittest.TestCase):
             replan_service=_FakeReplanService(),
         ).run_job(job_id)
 
-        self.assertEqual(asset_executor.calls[0][0], session_id)
-        self.assertEqual(render_executor.calls, [(session_id, job_id, 1)])
+        self.assertEqual(asset_executor.calls[0][:3], (session_id, job_id, "执行链路测试"))
+        self.assertEqual(
+            asset_executor.calls[0][3:],
+            ("_WorkflowJobStateAdapter", "ExecutionArtifactService", "StepLifecycleService"),
+        )
+        self.assertEqual(
+            render_executor.calls,
+            [
+                (
+                    session_id,
+                    job_id,
+                    1,
+                    "_WorkflowJobStateAdapter",
+                    "ExecutionEventService",
+                    "ExecutionArtifactService",
+                    "StepLifecycleService",
+                )
+            ],
+        )
         with self.SessionLocal() as db:
             job = AgentJobRepository(db).get(job_id)
             self.assertEqual(job.status, "succeeded")
@@ -170,7 +219,10 @@ class ExecutionWorkflowServiceTests(unittest.TestCase):
             job = AgentJobRepository(db).get(job_id)
             self.assertEqual(job.status, "failed")
             self.assertEqual(job.error_message, "素材检索失败")
-        self.assertEqual(replan_service.calls, [(job_id, "素材检索失败", "searching")])
+        self.assertEqual(
+            replan_service.calls,
+            [(job_id, "素材检索失败", "searching", "_WorkflowJobStateAdapter", "ExecutionEventService")],
+        )
 
     def test_workflow_can_request_replan_for_search_failure(self):
         from backend.app.execution.workflow_service import ExecutionWorkflowService
@@ -186,7 +238,10 @@ class ExecutionWorkflowServiceTests(unittest.TestCase):
             replan_service=replan_service,
         ).run_job(job_id)
 
-        self.assertEqual(replan_service.calls, [(job_id, "素材检索失败", "searching")])
+        self.assertEqual(
+            replan_service.calls,
+            [(job_id, "素材检索失败", "searching", "_WorkflowJobStateAdapter", "ExecutionEventService")],
+        )
         with self.SessionLocal() as db:
             job = AgentJobRepository(db).get(job_id)
             self.assertEqual(job.status, "failed")

@@ -1077,16 +1077,16 @@ class AgentExecutionWorkerTests(unittest.TestCase):
         return session.id, confirmed.activeJobId
 
     def test_progress_service_exposes_required_methods(self):
-        from backend.services.agent_progress_service import AgentProgressService
+        import backend.app.execution.workflow_service as workflow_module
+
+        from backend.app.execution.execution_replan_service import ExecutionReplanService
         from backend.app.execution.asset_execution_service import AssetExecutionService
         from backend.app.execution.render_execution_service import RenderExecutionService
 
-        self.assertTrue(callable(getattr(AgentProgressService, "record_event", None)))
-        self.assertTrue(callable(getattr(AgentProgressService, "mark_job_running", None)))
-        self.assertTrue(callable(getattr(AgentProgressService, "mark_job_failed", None)))
-        self.assertTrue(callable(getattr(AgentProgressService, "mark_job_succeeded", None)))
         self.assertNotIn("progress_service", AssetExecutionService.execute.__code__.co_varnames)
         self.assertNotIn("progress_service", RenderExecutionService.execute.__code__.co_varnames)
+        self.assertNotIn("progress_service", ExecutionReplanService.attempt_replan.__code__.co_varnames)
+        self.assertFalse(hasattr(workflow_module, "AgentProgressService"))
 
     def test_run_agent_job_delegates_to_execution_workflow_service(self):
         from backend.tasks.agent_tasks import run_agent_job
