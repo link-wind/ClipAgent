@@ -4,7 +4,7 @@ from unittest.mock import Mock, patch
 
 class PlannerGraphTests(unittest.TestCase):
     def test_build_plan_graph_returns_initial_plan_state(self):
-        from backend.services.planner_graph import run_initial_planning
+        from backend.app.planning.graph import run_initial_planning
         from backend.services.planner_runtime_deterministic import DeterministicPlannerRuntime
 
         agent_plan, execution_plan = DeterministicPlannerRuntime().build_plan_from_brief(
@@ -14,7 +14,7 @@ class PlannerGraphTests(unittest.TestCase):
         fake_runtime.build_plan_from_brief.return_value = (agent_plan, execution_plan)
 
         with patch(
-            "backend.services.planner_graph.get_planner_runtime",
+            "backend.app.planning.graph.get_planner_runtime",
             return_value=fake_runtime,
         ):
             state = run_initial_planning(
@@ -27,13 +27,13 @@ class PlannerGraphTests(unittest.TestCase):
         self.assertIn("executionPlan", state)
 
     def test_run_grounding_replan_returns_replanning_complete_state(self):
-        from backend.services.planner_graph import run_grounding_replan
+        from backend.app.planning.graph import run_grounding_replan
         from backend.services.planner_runtime_deterministic import DeterministicPlannerRuntime
 
         runtime = DeterministicPlannerRuntime()
         current_agent, current_execution = runtime.build_plan_from_brief("做一个产品视频")
         with patch(
-            "backend.services.planner_graph.get_planner_runtime",
+            "backend.app.planning.graph.get_planner_runtime",
             return_value=runtime,
         ):
             state = run_grounding_replan(
@@ -56,14 +56,14 @@ class PlannerGraphTests(unittest.TestCase):
         self.assertIn("changeSummary", state)
 
     def test_run_user_revision_replan_returns_replanning_complete_state(self):
-        from backend.services.planner_graph import run_user_revision_replan
+        from backend.app.planning.graph import run_user_revision_replan
         from backend.services.planner_runtime_deterministic import DeterministicPlannerRuntime
 
         runtime = DeterministicPlannerRuntime()
         current_agent, current_execution = runtime.build_plan_from_brief("做一个产品视频")
 
         with patch(
-            "backend.services.planner_graph.get_planner_runtime",
+            "backend.app.planning.graph.get_planner_runtime",
             return_value=runtime,
         ):
             state = run_user_revision_replan(
@@ -82,7 +82,7 @@ class PlannerGraphTests(unittest.TestCase):
         self.assertIn("changeSummary", state)
 
     def test_run_user_revision_replan_uses_runtime_result_shape_without_changing_trigger(self):
-        from backend.services.planner_graph import run_user_revision_replan
+        from backend.app.planning.graph import run_user_revision_replan
         from backend.services.planner_runtime_deterministic import DeterministicPlannerRuntime
 
         runtime = DeterministicPlannerRuntime()
@@ -105,7 +105,7 @@ class PlannerGraphTests(unittest.TestCase):
         )
 
         with patch(
-            "backend.services.planner_graph.get_planner_runtime",
+            "backend.app.planning.graph.get_planner_runtime",
             return_value=fake_runtime,
         ):
             state = run_user_revision_replan(
@@ -126,14 +126,14 @@ class PlannerGraphTests(unittest.TestCase):
         self.assertEqual(state["executionPlan"], next_execution.model_dump.return_value)
 
     def test_run_execution_feedback_replan_returns_replanning_complete_state(self):
-        from backend.services.planner_graph import run_execution_feedback_replan
+        from backend.app.planning.graph import run_execution_feedback_replan
         from backend.services.planner_runtime_deterministic import DeterministicPlannerRuntime
 
         runtime = DeterministicPlannerRuntime()
         current_agent, current_execution = runtime.build_plan_from_brief("做一个产品视频")
 
         with patch(
-            "backend.services.planner_graph.get_planner_runtime",
+            "backend.app.planning.graph.get_planner_runtime",
             return_value=runtime,
         ):
             state = run_execution_feedback_replan(

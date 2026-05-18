@@ -75,6 +75,46 @@ class AgentRuntimeArchitectureTests(unittest.TestCase):
             "backend.services.planner_orchestrator must remain a shim",
         )
 
+    def test_planning_graph_lives_in_app_planning_boundary(self) -> None:
+        source_path = ROOT / "backend" / "app" / "planning" / "graph.py"
+        self.assertTrue(source_path.is_file(), str(source_path))
+        source = source_path.read_text(encoding="utf-8")
+        module = ast.parse(source)
+
+        expected_functions = {
+            "build_planning_graph",
+            "build_grounding_replan_graph",
+            "build_user_revision_replan_graph",
+            "build_execution_feedback_replan_graph",
+            "run_initial_planning",
+            "run_grounding_replan",
+            "run_user_revision_replan",
+            "run_execution_feedback_replan",
+        }
+        implemented = {
+            node.name
+            for node in module.body
+            if isinstance(node, ast.FunctionDef)
+        }
+        self.assertTrue(
+            expected_functions.issubset(implemented),
+            "planner graph entrypoints must be implemented in backend.app.planning.graph",
+        )
+
+    def test_legacy_planner_graph_module_is_shim(self) -> None:
+        source_path = ROOT / "backend" / "services" / "planner_graph.py"
+        source = source_path.read_text(encoding="utf-8")
+        module = ast.parse(source)
+
+        self.assertIn(
+            "from backend.app.planning.graph import",
+            source,
+        )
+        self.assertFalse(
+            any(isinstance(node, ast.FunctionDef) and node.name == "run_initial_planning" for node in module.body),
+            "backend.services.planner_graph must remain a shim",
+        )
+
     def test_planning_projection_lives_in_app_planning_boundary(self) -> None:
         source_path = ROOT / "backend" / "app" / "planning" / "projection.py"
         self.assertTrue(source_path.is_file(), str(source_path))
@@ -323,6 +363,7 @@ class AgentRuntimeArchitectureTests(unittest.TestCase):
             "backend.services.agent_execution_service",
             "backend.services.agent_task_read_service",
             "backend.services.planner_orchestrator",
+            "backend.services.planner_graph",
             "backend.services.planner_projection",
             "backend.services.runtime_config_service",
             "backend.services.render_service",

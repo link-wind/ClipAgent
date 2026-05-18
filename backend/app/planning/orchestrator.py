@@ -14,7 +14,7 @@ from backend.runtime.context_engine import ContextBundle, ContextEngine, Context
 from backend.runtime.skill_engine import SkillEngine
 from backend.runtime.trace_recorder import TraceEvent, TraceRecorder
 from backend.app.agent.step_service import AgentStepService
-from backend.services.planner_graph import (
+from backend.app.planning.graph import (
     run_execution_feedback_replan,
     run_grounding_replan,
     run_initial_planning,
