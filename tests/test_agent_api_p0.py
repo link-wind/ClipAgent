@@ -105,6 +105,18 @@ class AgentApiP0ContractTests(unittest.TestCase):
         self.assertIn("/sessions/{session_id}/confirm", paths)
         self.assertIn("/sessions/{session_id}/events", paths)
 
+    def test_confirm_session_and_task_reads_continue_to_use_app_execution_services(self):
+        source = (ROOT / "backend" / "api" / "agent.py").read_text(encoding="utf-8")
+
+        self.assertIn(
+            "from backend.app.execution.execution_service import AgentExecutionService",
+            source,
+        )
+        self.assertIn(
+            "from backend.app.execution.task_read_service import AgentTaskReadService",
+            source,
+        )
+
     def test_agent_dashboard_and_task_response_models_can_be_instantiated(self):
         from backend.models.agent import AgentDashboardSummary, AgentTaskDetail, AgentTaskSummary
 

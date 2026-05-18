@@ -1082,7 +1082,12 @@ class AgentExecutionWorkerTests(unittest.TestCase):
         from backend.app.execution.execution_replan_service import ExecutionReplanService
         from backend.app.execution.asset_execution_service import AssetExecutionService
         from backend.app.execution.render_execution_service import RenderExecutionService
+        from backend.services.agent_progress_service import AgentProgressService
 
+        self.assertTrue(callable(getattr(AgentProgressService, "record_event", None)))
+        self.assertTrue(callable(getattr(AgentProgressService, "mark_job_running", None)))
+        self.assertTrue(callable(getattr(AgentProgressService, "mark_job_failed", None)))
+        self.assertTrue(callable(getattr(AgentProgressService, "mark_job_succeeded", None)))
         self.assertNotIn("progress_service", AssetExecutionService.execute.__code__.co_varnames)
         self.assertNotIn("progress_service", RenderExecutionService.execute.__code__.co_varnames)
         self.assertNotIn("progress_service", ExecutionReplanService.attempt_replan.__code__.co_varnames)
