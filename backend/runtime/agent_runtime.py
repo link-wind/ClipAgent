@@ -38,19 +38,33 @@ def build_agent_runtime(
     tool_gateway: ToolGateway | None = None,
     trace_recorder: TraceRecorder | None = None,
 ) -> AgentRuntime:
+    context_engine = context_engine or ContextEngine()
+    skill_engine = skill_engine or SkillEngine()
+    tool_gateway = tool_gateway or ToolGateway()
+    trace_recorder = trace_recorder or TraceRecorder()
+
     if session_service is None or execution_service is None:
-        from backend.app.agent.session_use_cases import AgentSessionService
+        from backend.app.agent.session_service import AgentSessionService
         from backend.app.execution.job_use_cases import AgentExecutionService
+        from backend.app.planning.orchestrator import PlannerOrchestrator
         from backend.db import SessionLocal
 
-        session_service = session_service or AgentSessionService(session_factory=SessionLocal)
+        planner_orchestrator = PlannerOrchestrator(
+            context_engine=context_engine,
+            skill_engine=skill_engine,
+            trace_recorder=trace_recorder,
+        )
+        session_service = session_service or AgentSessionService(
+            session_factory=SessionLocal,
+            planner_orchestrator=planner_orchestrator,
+        )
         execution_service = execution_service or AgentExecutionService(session_factory=SessionLocal)
 
     return AgentRuntime(
         session_service=session_service,
         execution_service=execution_service,
-        context_engine=context_engine or ContextEngine(),
-        skill_engine=skill_engine or SkillEngine(),
-        tool_gateway=tool_gateway or ToolGateway(),
-        trace_recorder=trace_recorder or TraceRecorder(),
+        context_engine=context_engine,
+        skill_engine=skill_engine,
+        tool_gateway=tool_gateway,
+        trace_recorder=trace_recorder,
     )

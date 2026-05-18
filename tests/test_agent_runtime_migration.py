@@ -24,6 +24,15 @@ class AgentRuntimeMigrationTests(unittest.TestCase):
         self.assertTrue(hasattr(runtime, "tool_gateway"))
         self.assertTrue(hasattr(runtime, "trace_recorder"))
 
+    def test_build_agent_runtime_injects_shared_runtime_components_into_session_service(self):
+        from backend.runtime.agent_runtime import build_agent_runtime
+
+        runtime = build_agent_runtime()
+
+        self.assertIs(runtime.session_service.planner_orchestrator.context_engine, runtime.context_engine)
+        self.assertIs(runtime.session_service.planner_orchestrator.skill_engine, runtime.skill_engine)
+        self.assertIs(runtime.session_service.planner_orchestrator.trace_recorder, runtime.trace_recorder)
+
     def test_agent_api_routes_create_session_through_runtime(self):
         import backend.api.agent as agent_api
 

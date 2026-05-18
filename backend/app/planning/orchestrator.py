@@ -40,21 +40,21 @@ class PlannerOrchestrator:
         *,
         skill_engine: SkillEngine | None = None,
         skill_registry: BuiltinSkillRegistry | None = None,
+        context_engine: ContextEngine | None = None,
+        trace_recorder: TraceRecorder | None = None,
     ) -> None:
         self.skill_engine = skill_engine or SkillEngine()
         self.skill_registry = skill_registry or BuiltinSkillRegistry()
+        self.context_engine = context_engine
+        self.trace_recorder = trace_recorder
 
     def persist_initial_plan(self, db, session_record, message_record, run_id: str | None = None):
-        context = ContextEngine(
-            db_session=db,
-            trace_recorder=TraceRecorder(db),
-        ).build_context(
-            ContextRequest(
-                session_id=session_record.id,
-                message=message_record.content,
-                scope="planning",
-                run_id=run_id,
-            )
+        context = self._build_context(
+            db=db,
+            session_record=session_record,
+            message_record=message_record,
+            run_id=run_id,
+            scope="planning",
         )
         planner_context = format_context_for_planner(message_record.content, context)
         self._record_skill_observability(
@@ -104,6 +104,20 @@ class PlannerOrchestrator:
             "plannedAt": datetime.now(timezone.utc).isoformat(),
         }
         return plan_record
+
+    def _build_context(self, db, session_record, message_record, run_id: str | None, scope: str) -> ContextBundle:
+        context_engine = self.context_engine or ContextEngine(
+            db_session=db,
+            trace_recorder=self.trace_recorder or TraceRecorder(db),
+        )
+        return context_engine.build_context(
+            ContextRequest(
+                session_id=session_record.id,
+                message=message_record.content,
+                scope=scope,
+                run_id=run_id,
+            )
+        )
 
     def persist_grounding_replan(self, db, session_record, candidate_ids: list[str], run_id: str | None = None):
         plan_repo = AgentPlanRepository(db)

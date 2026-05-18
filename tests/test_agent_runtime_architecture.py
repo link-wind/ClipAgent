@@ -155,6 +155,13 @@ class AgentRuntimeArchitectureTests(unittest.TestCase):
         self.assertTrue(hasattr(trace_recorder, "TraceRecorder"))
         self.assertTrue(hasattr(agent_runtime, "AgentRuntime"))
 
+    def test_runtime_factory_builds_app_layer_services_not_service_layer_directly(self) -> None:
+        source = (ROOT / "backend" / "runtime" / "agent_runtime.py").read_text(encoding="utf-8")
+
+        self.assertIn("from backend.app.agent.session_service import AgentSessionService", source)
+        self.assertIn("from backend.app.execution.job_use_cases import AgentExecutionService", source)
+        self.assertNotIn("from backend.services.agent_session_service import", source)
+
     def test_mcp_foundation_boundaries_import(self) -> None:
         tool_contracts = importlib.import_module("backend.domain.tools.contracts")
         tool_registry = importlib.import_module("backend.app.tools.registry")
