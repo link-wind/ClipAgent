@@ -776,6 +776,27 @@ class AgentRuntimeArchitectureTests(unittest.TestCase):
                 f"{relative_path} still imports retired service aliases: {disallowed_imports}",
             )
 
+    def test_task2_runtime_tests_do_not_import_legacy_deterministic_runtime_aliases(self) -> None:
+        target_files = [
+            "tests/test_planner_runtime.py",
+            "tests/test_planner_graph.py",
+        ]
+        forbidden_snippets = [
+            "from backend.services.planner_runtime_deterministic import",
+            "from backend.services.planner_runtime_openai import",
+            "from backend.services.planner_runtime import",
+            "import backend.services.planner_runtime as",
+        ]
+
+        for relative_path in target_files:
+            source = (ROOT / relative_path).read_text(encoding="utf-8")
+            for snippet in forbidden_snippets:
+                self.assertNotIn(
+                    snippet,
+                    source,
+                    f"{relative_path} still imports deterministic runtime alias via {snippet}",
+                )
+
     def test_infrastructure_layer_does_not_import_migrated_service_modules(self) -> None:
         infrastructure_files = [
             path for path in (ROOT / "backend" / "infrastructure").rglob("*.py")

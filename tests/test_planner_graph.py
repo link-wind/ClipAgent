@@ -5,7 +5,7 @@ from unittest.mock import Mock, patch
 class PlannerGraphTests(unittest.TestCase):
     def test_build_plan_graph_returns_initial_plan_state(self):
         from backend.app.planning.graph import run_initial_planning
-        from backend.services.planner_runtime_deterministic import DeterministicPlannerRuntime
+        from backend.app.planning.runtime_deterministic import DeterministicPlannerRuntime
 
         agent_plan, execution_plan = DeterministicPlannerRuntime().build_plan_from_brief(
             "给 Notion AI 做一个 30 秒产品视频"
@@ -28,7 +28,7 @@ class PlannerGraphTests(unittest.TestCase):
 
     def test_run_grounding_replan_returns_replanning_complete_state(self):
         from backend.app.planning.graph import run_grounding_replan
-        from backend.services.planner_runtime_deterministic import DeterministicPlannerRuntime
+        from backend.app.planning.runtime_deterministic import DeterministicPlannerRuntime
 
         runtime = DeterministicPlannerRuntime()
         current_agent, current_execution = runtime.build_plan_from_brief("做一个产品视频")
@@ -57,7 +57,7 @@ class PlannerGraphTests(unittest.TestCase):
 
     def test_run_user_revision_replan_returns_replanning_complete_state(self):
         from backend.app.planning.graph import run_user_revision_replan
-        from backend.services.planner_runtime_deterministic import DeterministicPlannerRuntime
+        from backend.app.planning.runtime_deterministic import DeterministicPlannerRuntime
 
         runtime = DeterministicPlannerRuntime()
         current_agent, current_execution = runtime.build_plan_from_brief("做一个产品视频")
@@ -83,7 +83,7 @@ class PlannerGraphTests(unittest.TestCase):
 
     def test_run_user_revision_replan_uses_runtime_result_shape_without_changing_trigger(self):
         from backend.app.planning.graph import run_user_revision_replan
-        from backend.services.planner_runtime_deterministic import DeterministicPlannerRuntime
+        from backend.app.planning.runtime_deterministic import DeterministicPlannerRuntime
 
         runtime = DeterministicPlannerRuntime()
         current_agent, current_execution = runtime.build_plan_from_brief("做一个产品视频")
@@ -127,7 +127,7 @@ class PlannerGraphTests(unittest.TestCase):
 
     def test_run_execution_feedback_replan_returns_replanning_complete_state(self):
         from backend.app.planning.graph import run_execution_feedback_replan
-        from backend.services.planner_runtime_deterministic import DeterministicPlannerRuntime
+        from backend.app.planning.runtime_deterministic import DeterministicPlannerRuntime
 
         runtime = DeterministicPlannerRuntime()
         current_agent, current_execution = runtime.build_plan_from_brief("做一个产品视频")

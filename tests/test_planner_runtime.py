@@ -9,7 +9,7 @@ from unittest.mock import Mock, patch
 import openai
 import httpx
 
-from backend.services.planner_models import InitialPlanningResult
+from backend.domain.planning.contracts import InitialPlanningResult
 
 
 class _FakeStructuredPlanner:
@@ -417,8 +417,8 @@ class PlannerRuntimeTests(unittest.TestCase):
         deterministic_delegate.replan_after_grounding.assert_called_once()
 
     def test_langchain_runtime_replans_after_user_revision_with_patch_merge(self):
-        from backend.services.planner_models import RevisionPlanningResult, UserRevisionFeedback
-        from backend.services.planner_runtime_deterministic import DeterministicPlannerRuntime
+        from backend.domain.planning.contracts import RevisionPlanningResult, UserRevisionFeedback
+        from backend.app.planning.runtime_deterministic import DeterministicPlannerRuntime
         from backend.services.planner_runtime_langchain import LangChainPlannerRuntime
 
         current_agent, current_execution = DeterministicPlannerRuntime().build_plan_from_brief(
@@ -467,8 +467,8 @@ class PlannerRuntimeTests(unittest.TestCase):
         self.assertEqual(next_agent.replanHistory[-1]["runtime"], "langchain")
 
     def test_langchain_runtime_preserves_explicit_scene_keyword_updates_over_model_patch(self):
-        from backend.services.planner_models import RevisionPlanningResult, UserRevisionFeedback
-        from backend.services.planner_runtime_deterministic import DeterministicPlannerRuntime
+        from backend.domain.planning.contracts import RevisionPlanningResult, UserRevisionFeedback
+        from backend.app.planning.runtime_deterministic import DeterministicPlannerRuntime
         from backend.services.planner_runtime_langchain import LangChainPlannerRuntime
 
         current_agent, current_execution = DeterministicPlannerRuntime().build_plan_from_brief(
@@ -508,8 +508,8 @@ class PlannerRuntimeTests(unittest.TestCase):
         self.assertEqual(next_agent.scenes[0].description, "城市与车流开场，建立商务节奏")
 
     def test_langchain_runtime_allows_revision_result_to_clear_open_issues(self):
-        from backend.services.planner_models import RevisionPlanningResult, UserRevisionFeedback
-        from backend.services.planner_runtime_deterministic import DeterministicPlannerRuntime
+        from backend.domain.planning.contracts import RevisionPlanningResult, UserRevisionFeedback
+        from backend.app.planning.runtime_deterministic import DeterministicPlannerRuntime
         from backend.services.planner_runtime_langchain import LangChainPlannerRuntime
 
         deterministic_delegate = Mock()
@@ -547,8 +547,8 @@ class PlannerRuntimeTests(unittest.TestCase):
         deterministic_delegate.replan_after_user_revision.assert_not_called()
 
     def test_langchain_runtime_preserves_open_issues_when_revision_result_omits_open_issues(self):
-        from backend.services.planner_models import RevisionPlanningResult, UserRevisionFeedback
-        from backend.services.planner_runtime_deterministic import DeterministicPlannerRuntime
+        from backend.domain.planning.contracts import RevisionPlanningResult, UserRevisionFeedback
+        from backend.app.planning.runtime_deterministic import DeterministicPlannerRuntime
         from backend.services.planner_runtime_langchain import LangChainPlannerRuntime
 
         deterministic_delegate = Mock()
@@ -584,8 +584,8 @@ class PlannerRuntimeTests(unittest.TestCase):
         deterministic_delegate.replan_after_user_revision.assert_not_called()
 
     def test_langchain_runtime_falls_back_when_scene_keyword_override_is_explicitly_empty(self):
-        from backend.services.planner_models import RevisionPlanningResult, UserRevisionFeedback
-        from backend.services.planner_runtime_deterministic import DeterministicPlannerRuntime
+        from backend.domain.planning.contracts import RevisionPlanningResult, UserRevisionFeedback
+        from backend.app.planning.runtime_deterministic import DeterministicPlannerRuntime
         from backend.services.planner_runtime_langchain import LangChainPlannerRuntime
 
         deterministic_delegate = Mock()
@@ -629,8 +629,8 @@ class PlannerRuntimeTests(unittest.TestCase):
         deterministic_delegate.replan_after_user_revision.assert_called_once()
 
     def test_langchain_runtime_falls_back_when_scene_keyword_override_targets_unknown_scene(self):
-        from backend.services.planner_models import RevisionPlanningResult, UserRevisionFeedback
-        from backend.services.planner_runtime_deterministic import DeterministicPlannerRuntime
+        from backend.domain.planning.contracts import RevisionPlanningResult, UserRevisionFeedback
+        from backend.app.planning.runtime_deterministic import DeterministicPlannerRuntime
         from backend.services.planner_runtime_langchain import LangChainPlannerRuntime
 
         deterministic_delegate = Mock()
@@ -674,8 +674,8 @@ class PlannerRuntimeTests(unittest.TestCase):
         deterministic_delegate.replan_after_user_revision.assert_called_once()
 
     def test_langchain_runtime_falls_back_to_deterministic_revision_when_patch_targets_unknown_scene(self):
-        from backend.services.planner_models import RevisionPlanningResult, UserRevisionFeedback
-        from backend.services.planner_runtime_deterministic import DeterministicPlannerRuntime
+        from backend.domain.planning.contracts import RevisionPlanningResult, UserRevisionFeedback
+        from backend.app.planning.runtime_deterministic import DeterministicPlannerRuntime
         from backend.services.planner_runtime_langchain import LangChainPlannerRuntime
 
         deterministic_delegate = Mock()
@@ -723,8 +723,8 @@ class PlannerRuntimeTests(unittest.TestCase):
         deterministic_delegate.replan_after_user_revision.assert_called_once()
 
     def test_langchain_runtime_falls_back_to_deterministic_revision_when_scene_patch_ids_repeat(self):
-        from backend.services.planner_models import RevisionPlanningResult, UserRevisionFeedback
-        from backend.services.planner_runtime_deterministic import DeterministicPlannerRuntime
+        from backend.domain.planning.contracts import RevisionPlanningResult, UserRevisionFeedback
+        from backend.app.planning.runtime_deterministic import DeterministicPlannerRuntime
         from backend.services.planner_runtime_langchain import LangChainPlannerRuntime
 
         deterministic_delegate = Mock()
@@ -778,8 +778,8 @@ class PlannerRuntimeTests(unittest.TestCase):
         deterministic_delegate.replan_after_user_revision.assert_called_once()
 
     def test_langchain_runtime_falls_back_to_deterministic_revision_when_model_raises(self):
-        from backend.services.planner_models import UserRevisionFeedback
-        from backend.services.planner_runtime_deterministic import DeterministicPlannerRuntime
+        from backend.domain.planning.contracts import UserRevisionFeedback
+        from backend.app.planning.runtime_deterministic import DeterministicPlannerRuntime
         from backend.services.planner_runtime_langchain import LangChainPlannerRuntime
 
         deterministic_delegate = Mock()
@@ -810,8 +810,8 @@ class PlannerRuntimeTests(unittest.TestCase):
         deterministic_delegate.replan_after_user_revision.assert_called_once()
 
     def test_langchain_runtime_does_not_fall_back_when_revision_runnable_construction_fails(self):
-        from backend.services.planner_models import UserRevisionFeedback
-        from backend.services.planner_runtime_deterministic import DeterministicPlannerRuntime
+        from backend.domain.planning.contracts import UserRevisionFeedback
+        from backend.app.planning.runtime_deterministic import DeterministicPlannerRuntime
         from backend.services.planner_runtime_langchain import LangChainPlannerRuntime
 
         deterministic_delegate = Mock()
@@ -839,8 +839,8 @@ class PlannerRuntimeTests(unittest.TestCase):
         deterministic_delegate.replan_after_user_revision.assert_not_called()
 
     def test_langchain_runtime_does_not_fall_back_when_revision_message_construction_fails(self):
-        from backend.services.planner_models import UserRevisionFeedback
-        from backend.services.planner_runtime_deterministic import DeterministicPlannerRuntime
+        from backend.domain.planning.contracts import UserRevisionFeedback
+        from backend.app.planning.runtime_deterministic import DeterministicPlannerRuntime
         from backend.services.planner_runtime_langchain import LangChainPlannerRuntime
 
         deterministic_delegate = Mock()
@@ -868,8 +868,8 @@ class PlannerRuntimeTests(unittest.TestCase):
         deterministic_delegate.replan_after_user_revision.assert_not_called()
 
     def test_langchain_runtime_does_not_swallow_unexpected_revision_merge_errors(self):
-        from backend.services.planner_models import RevisionPlanningResult, UserRevisionFeedback
-        from backend.services.planner_runtime_deterministic import DeterministicPlannerRuntime
+        from backend.domain.planning.contracts import RevisionPlanningResult, UserRevisionFeedback
+        from backend.app.planning.runtime_deterministic import DeterministicPlannerRuntime
         from backend.services.planner_runtime_langchain import LangChainPlannerRuntime
 
         deterministic_delegate = Mock()
@@ -914,7 +914,7 @@ class PlannerRuntimeTests(unittest.TestCase):
         deterministic_delegate.replan_after_user_revision.assert_not_called()
 
     def test_deterministic_runtime_builds_stable_two_scene_plan(self):
-        from backend.services.planner_runtime_deterministic import (
+        from backend.app.planning.runtime_deterministic import (
             DeterministicPlannerRuntime,
         )
 
@@ -929,7 +929,7 @@ class PlannerRuntimeTests(unittest.TestCase):
         self.assertEqual(execution_plan.scenes[1].searchQuery, "feature workflow")
 
     def test_deterministic_runtime_uses_brief_keywords_for_coffee_brief(self):
-        from backend.services.planner_runtime_deterministic import (
+        from backend.app.planning.runtime_deterministic import (
             DeterministicPlannerRuntime,
         )
 
@@ -944,7 +944,7 @@ class PlannerRuntimeTests(unittest.TestCase):
         self.assertEqual(execution_plan.scenes[1].searchQuery, "barista coffee lifestyle")
 
     def test_deterministic_runtime_uses_brief_keywords_for_city_brief(self):
-        from backend.services.planner_runtime_deterministic import (
+        from backend.app.planning.runtime_deterministic import (
             DeterministicPlannerRuntime,
         )
 
@@ -959,7 +959,7 @@ class PlannerRuntimeTests(unittest.TestCase):
         self.assertEqual(execution_plan.scenes[1].searchQuery, "夜景 霓虹 城市")
 
     def test_deterministic_runtime_uses_default_goal_for_blank_brief(self):
-        from backend.services.planner_runtime_deterministic import (
+        from backend.app.planning.runtime_deterministic import (
             DeterministicPlannerRuntime,
         )
 
@@ -971,7 +971,7 @@ class PlannerRuntimeTests(unittest.TestCase):
     def test_selector_returns_langchain_runtime_by_default(self):
         with patch.dict("os.environ", {}, clear=True):
             from backend.config import get_settings
-            from backend.services.planner_runtime import get_planner_runtime
+            from backend.app.planning.runtime_factory import get_planner_runtime
             import backend.app.planning.runtime_langchain as planner_runtime_langchain
 
             class LangChainPlannerRuntime:
@@ -991,7 +991,7 @@ class PlannerRuntimeTests(unittest.TestCase):
     def test_selector_returns_deterministic_runtime_when_overridden(self):
         with patch.dict("os.environ", {"CLIPFORGE_PLANNER_MODE": "deterministic"}, clear=True):
             from backend.config import get_settings
-            from backend.services.planner_runtime import get_planner_runtime
+            from backend.app.planning.runtime_factory import get_planner_runtime
 
             get_settings.cache_clear()
             runtime = get_planner_runtime()
@@ -999,7 +999,7 @@ class PlannerRuntimeTests(unittest.TestCase):
             get_settings.cache_clear()
 
     def test_selector_reads_current_settings_after_backend_config_reload(self):
-        import backend.services.planner_runtime as planner_runtime
+        import backend.app.planning.runtime_factory as planner_runtime
         import backend.app.planning.runtime_langchain as planner_runtime_langchain
 
         class LangChainPlannerRuntime:
@@ -1061,11 +1061,11 @@ class PlannerRuntimeTests(unittest.TestCase):
             self.assertEqual(captured["model"], "gpt-4o-mini")
 
     def test_deterministic_runtime_replans_after_grounding(self):
-        from backend.services.planner_models import (
+        from backend.domain.planning.contracts import (
             CandidateConfirmationFeedback,
             GroundingFeedback,
         )
-        from backend.services.planner_runtime_deterministic import (
+        from backend.app.planning.runtime_deterministic import (
             DeterministicPlannerRuntime,
         )
 
@@ -1099,8 +1099,8 @@ class PlannerRuntimeTests(unittest.TestCase):
         self.assertGreaterEqual(len(next_agent.replanHistory), 1)
 
     def test_deterministic_runtime_replans_after_user_revision(self):
-        from backend.services.planner_models import UserRevisionFeedback
-        from backend.services.planner_runtime_deterministic import (
+        from backend.domain.planning.contracts import UserRevisionFeedback
+        from backend.app.planning.runtime_deterministic import (
             DeterministicPlannerRuntime,
         )
 
@@ -1126,8 +1126,8 @@ class PlannerRuntimeTests(unittest.TestCase):
         self.assertGreaterEqual(len(next_agent.replanHistory), 1)
 
     def test_deterministic_runtime_replans_after_execution_feedback(self):
-        from backend.services.planner_models import SearchExecutionFeedback
-        from backend.services.planner_runtime_deterministic import (
+        from backend.domain.planning.contracts import SearchExecutionFeedback
+        from backend.app.planning.runtime_deterministic import (
             DeterministicPlannerRuntime,
         )
 
@@ -1155,8 +1155,8 @@ class PlannerRuntimeTests(unittest.TestCase):
         self.assertGreaterEqual(len(next_agent.replanHistory), 1)
 
     def test_deterministic_runtime_prefers_structured_diagnostics_for_rewrite(self):
-        from backend.services.planner_models import SearchExecutionFeedback
-        from backend.services.planner_runtime_deterministic import (
+        from backend.domain.planning.contracts import SearchExecutionFeedback
+        from backend.app.planning.runtime_deterministic import (
             DeterministicPlannerRuntime,
         )
 
@@ -1189,8 +1189,8 @@ class PlannerRuntimeTests(unittest.TestCase):
         self.assertEqual(next_agent.replanHistory[-1]["rewriteStrategy"], "stock_footage_fallback")
 
     def test_deterministic_runtime_uses_structured_failure_category_before_text_reason(self):
-        from backend.services.planner_models import SearchExecutionFeedback
-        from backend.services.planner_runtime_deterministic import (
+        from backend.domain.planning.contracts import SearchExecutionFeedback
+        from backend.app.planning.runtime_deterministic import (
             DeterministicPlannerRuntime,
         )
 
@@ -1223,8 +1223,8 @@ class PlannerRuntimeTests(unittest.TestCase):
         self.assertEqual(next_agent.replanHistory[-1]["rewriteStrategy"], "inventory_broaden")
 
     def test_deterministic_runtime_derives_rewrite_from_structured_failure_category_without_hint(self):
-        from backend.services.planner_models import SearchExecutionFeedback
-        from backend.services.planner_runtime_deterministic import (
+        from backend.domain.planning.contracts import SearchExecutionFeedback
+        from backend.app.planning.runtime_deterministic import (
             DeterministicPlannerRuntime,
         )
 
@@ -1256,8 +1256,8 @@ class PlannerRuntimeTests(unittest.TestCase):
         self.assertEqual(next_agent.replanHistory[-1]["rewriteStrategy"], "stock_footage_fallback")
 
     def test_deterministic_runtime_falls_back_when_structured_values_are_unknown(self):
-        from backend.services.planner_models import SearchExecutionFeedback
-        from backend.services.planner_runtime_deterministic import (
+        from backend.domain.planning.contracts import SearchExecutionFeedback
+        from backend.app.planning.runtime_deterministic import (
             DeterministicPlannerRuntime,
         )
 
@@ -1290,8 +1290,8 @@ class PlannerRuntimeTests(unittest.TestCase):
         self.assertEqual(next_agent.replanHistory[-1]["rewriteStrategy"], "inventory_broaden")
 
     def test_deterministic_runtime_rewrites_platform_blocked_scene_to_stock_fallback_query(self):
-        from backend.services.planner_models import SearchExecutionFeedback
-        from backend.services.planner_runtime_deterministic import (
+        from backend.domain.planning.contracts import SearchExecutionFeedback
+        from backend.app.planning.runtime_deterministic import (
             DeterministicPlannerRuntime,
         )
 
@@ -1322,8 +1322,8 @@ class PlannerRuntimeTests(unittest.TestCase):
         self.assertEqual(next_agent.replanHistory[-1]["rewriteStrategy"], "stock_footage_fallback")
 
     def test_deterministic_runtime_platform_blocked_partial_keyword_match_uses_conservative_fallback(self):
-        from backend.services.planner_models import SearchExecutionFeedback
-        from backend.services.planner_runtime_deterministic import (
+        from backend.domain.planning.contracts import SearchExecutionFeedback
+        from backend.app.planning.runtime_deterministic import (
             DeterministicPlannerRuntime,
         )
 
@@ -1369,8 +1369,8 @@ class PlannerRuntimeTests(unittest.TestCase):
         self.assertEqual(next_execution.scenes[0].searchQuery, "product stock footage")
 
     def test_deterministic_runtime_broadens_no_inventory_scene_without_dropping_core_intent(self):
-        from backend.services.planner_models import SearchExecutionFeedback
-        from backend.services.planner_runtime_deterministic import (
+        from backend.domain.planning.contracts import SearchExecutionFeedback
+        from backend.app.planning.runtime_deterministic import (
             DeterministicPlannerRuntime,
         )
 
@@ -1401,8 +1401,8 @@ class PlannerRuntimeTests(unittest.TestCase):
         self.assertEqual(next_agent.replanHistory[-1]["rewriteStrategy"], "inventory_broaden")
 
     def test_deterministic_runtime_only_rewrites_failed_scenes_after_execution_feedback(self):
-        from backend.services.planner_models import SearchExecutionFeedback
-        from backend.services.planner_runtime_deterministic import (
+        from backend.domain.planning.contracts import SearchExecutionFeedback
+        from backend.app.planning.runtime_deterministic import (
             DeterministicPlannerRuntime,
         )
 
