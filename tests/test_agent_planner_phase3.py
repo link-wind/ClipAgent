@@ -11,7 +11,7 @@ from backend.db.repositories import (
     AgentPlanRepository,
     AgentSessionRepository,
 )
-from backend.services.agent_session_service import AgentSessionService
+from backend.app.agent.session_service import AgentSessionService
 
 
 class AgentPlannerPhase3Tests(unittest.TestCase):
@@ -108,7 +108,7 @@ class AgentPlannerPhase3Tests(unittest.TestCase):
         service = AgentSessionService(session_factory=self.session_factory)
 
         with patch(
-            "backend.services.planner_graph.get_planner_runtime",
+            "backend.app.planning.graph.get_planner_runtime",
             return_value=_FakeRevisionRuntime(),
         ):
             session = service.create_session("给 Notion AI 做一个 30 秒产品亮点视频")
@@ -192,7 +192,7 @@ class AgentPlannerPhase3Tests(unittest.TestCase):
         service = AgentSessionService(session_factory=self.session_factory)
 
         with patch(
-            "backend.services.planner_graph.get_planner_runtime",
+            "backend.app.planning.graph.get_planner_runtime",
             return_value=_FakeRevisionRuntime(),
         ):
             session = service.create_session("给 Notion AI 做一个 30 秒产品亮点视频")

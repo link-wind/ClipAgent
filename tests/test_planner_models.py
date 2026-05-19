@@ -1,11 +1,11 @@
 import unittest
 
-from backend.services.planner_models import AgentObservation, AgentPlan, ExecutionPlan
+from backend.domain.planning.contracts import AgentObservation, AgentPlan, ExecutionPlan
 
 
 class PlannerModelTests(unittest.TestCase):
     def test_initial_planning_result_wraps_agent_and_execution_plan(self):
-        from backend.services.planner_models import InitialPlanningResult
+        from backend.domain.planning.contracts import InitialPlanningResult
 
         result = InitialPlanningResult(
             agentPlan={
@@ -83,7 +83,7 @@ class PlannerModelTests(unittest.TestCase):
         self.assertEqual(observation.payload["message"], "做一个产品视频")
 
     def test_grounding_feedback_contract_defaults(self):
-        from backend.services.planner_models import (
+        from backend.domain.planning.contracts import (
             CandidateConfirmationFeedback,
             GroundingFeedback,
         )
@@ -104,7 +104,7 @@ class PlannerModelTests(unittest.TestCase):
         self.assertEqual(confirmation.confirmationSource, "user_select")
 
     def test_user_revision_feedback_defaults(self):
-        from backend.services.planner_models import UserRevisionFeedback
+        from backend.domain.planning.contracts import UserRevisionFeedback
 
         feedback = UserRevisionFeedback(
             message="整体再商务一点，品牌感再强一点",
@@ -116,7 +116,7 @@ class PlannerModelTests(unittest.TestCase):
         self.assertEqual(feedback.revisionSource, "user_message")
 
     def test_revision_scene_patch_defaults(self):
-        from backend.services.planner_models import RevisionScenePatch
+        from backend.domain.planning.contracts import RevisionScenePatch
 
         patch = RevisionScenePatch(id=1)
 
@@ -126,7 +126,7 @@ class PlannerModelTests(unittest.TestCase):
         self.assertEqual(patch.searchQuery, "")
 
     def test_revision_planning_result_wraps_scene_patches(self):
-        from backend.services.planner_models import RevisionPlanningResult
+        from backend.domain.planning.contracts import RevisionPlanningResult
 
         result = RevisionPlanningResult(
             summary="整体更偏商务演示",
@@ -149,7 +149,7 @@ class PlannerModelTests(unittest.TestCase):
         self.assertEqual(result.scenePatches[0].searchQuery, "city traffic dusk")
 
     def test_search_execution_feedback_defaults(self):
-        from backend.services.planner_models import SearchExecutionFeedback
+        from backend.domain.planning.contracts import SearchExecutionFeedback
 
         feedback = SearchExecutionFeedback(
             failedSceneIds=[1, 2],
@@ -162,7 +162,7 @@ class PlannerModelTests(unittest.TestCase):
         self.assertEqual(feedback.feedbackSource, "worker_failure")
 
     def test_search_execution_feedback_supports_structured_diagnostics(self):
-        from backend.services.planner_models import SearchExecutionFeedback
+        from backend.domain.planning.contracts import SearchExecutionFeedback
 
         feedback = SearchExecutionFeedback(
             failedSceneIds=[1],

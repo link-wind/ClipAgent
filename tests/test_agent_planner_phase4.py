@@ -12,8 +12,8 @@ from backend.db.repositories import (
     AgentPlanRepository,
     AgentSessionRepository,
 )
-from backend.services.agent_execution_service import AgentExecutionService
-from backend.services.agent_session_service import AgentSessionService
+from backend.app.execution.execution_service import AgentExecutionService
+from backend.app.agent.session_service import AgentSessionService
 from backend.tasks.agent_tasks import run_agent_job
 
 

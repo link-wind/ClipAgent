@@ -6,7 +6,7 @@ from sqlalchemy.pool import StaticPool
 
 from backend.db.base import Base
 from backend.db.repositories import AgentObservationRepository, AgentPlanRepository
-from backend.services.agent_session_service import AgentSessionService
+from backend.app.agent.session_service import AgentSessionService
 
 
 class AgentPlannerPhase2Tests(unittest.TestCase):

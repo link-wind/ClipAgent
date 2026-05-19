@@ -151,7 +151,7 @@ class MCPFoundationRegistryTests(unittest.TestCase):
 
     def test_runtime_config_builds_configured_mcp_tool_definitions(self) -> None:
         from backend.app.tools.configured_definitions import load_configured_mcp_tool_definitions
-        from backend.services.runtime_config_service import RuntimeConfigService
+        from backend.infrastructure.config.runtime_config_service import RuntimeConfigService
 
         with tempfile.TemporaryDirectory() as temp_dir:
             runtime_path = Path(temp_dir) / "runtime_config.local.json"
@@ -194,7 +194,7 @@ class MCPFoundationRegistryTests(unittest.TestCase):
 
     def test_runtime_config_mcp_tools_json_can_fall_back_to_environment(self) -> None:
         from backend.app.tools.configured_definitions import load_configured_mcp_tool_definitions
-        from backend.services.runtime_config_service import RuntimeConfigService
+        from backend.infrastructure.config.runtime_config_service import RuntimeConfigService
 
         tools_json = json.dumps(
             [
@@ -224,7 +224,7 @@ class MCPFoundationRegistryTests(unittest.TestCase):
 
     def test_runtime_config_rejects_invalid_mcp_tools_json(self) -> None:
         from backend.app.tools.configured_definitions import load_configured_mcp_tool_definitions
-        from backend.services.runtime_config_service import RuntimeConfigService
+        from backend.infrastructure.config.runtime_config_service import RuntimeConfigService
 
         with tempfile.TemporaryDirectory() as temp_dir:
             runtime_path = Path(temp_dir) / "runtime_config.local.json"
@@ -241,7 +241,7 @@ class MCPFoundationRegistryTests(unittest.TestCase):
 
     def test_default_tool_registry_loads_runtime_configured_mcp_definitions(self) -> None:
         from backend.app.tools import build_default_tool_registry
-        from backend.services.runtime_config_service import RuntimeConfigService
+        from backend.infrastructure.config.runtime_config_service import RuntimeConfigService
 
         with tempfile.TemporaryDirectory() as temp_dir:
             runtime_path = Path(temp_dir) / "runtime_config.local.json"

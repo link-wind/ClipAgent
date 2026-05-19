@@ -718,6 +718,64 @@ class AgentRuntimeArchitectureTests(unittest.TestCase):
                     f"{path} imports migrated service {import_path}",
                 )
 
+    def test_task1_targeted_tests_only_keep_allowed_legacy_service_modules(self) -> None:
+        target_files = [
+            "tests/test_agent_persistence.py",
+            "tests/test_agent_planner_phase1.py",
+            "tests/test_agent_planner_phase2.py",
+            "tests/test_agent_planner_phase3.py",
+            "tests/test_agent_planner_phase4.py",
+            "tests/test_agent_run_trace_model.py",
+            "tests/test_rag_foundation.py",
+            "tests/test_planner_models.py",
+            "tests/test_mcp_foundation.py",
+        ]
+        allowed_legacy_modules = {
+            "backend.services.search_service",
+            "backend.services.planner_runtime_deterministic",
+            "backend.services.planner_runtime_langchain",
+            "backend.services.asset_providers",
+            "backend.services.asset_providers.config",
+            "backend.services.asset_providers.fixture",
+            "backend.services.asset_providers.metadata",
+            "backend.services.asset_providers.pexels",
+            "backend.services.asset_providers.types",
+            "backend.services.asset_providers.youtube",
+        }
+
+        for relative_path in target_files:
+            source_path = ROOT / relative_path
+            source = source_path.read_text(encoding="utf-8")
+            module = ast.parse(source)
+            legacy_imports: set[str] = set()
+
+            for node in ast.walk(module):
+                if isinstance(node, ast.ImportFrom) and node.module:
+                    if node.module == "backend.services" or node.module.startswith("backend.services."):
+                        legacy_imports.add(node.module)
+                elif isinstance(node, ast.Import):
+                    for alias in node.names:
+                        if alias.name == "backend.services" or alias.name.startswith("backend.services."):
+                            legacy_imports.add(alias.name)
+                elif isinstance(node, ast.Constant) and isinstance(node.value, str):
+                    if node.value == "backend.services" or node.value.startswith("backend.services."):
+                        matched_module = next(
+                            (
+                                allowed_module
+                                for allowed_module in sorted(allowed_legacy_modules, key=len, reverse=True)
+                                if node.value == allowed_module or node.value.startswith(f"{allowed_module}.")
+                            ),
+                            None,
+                        )
+                        legacy_imports.add(matched_module or node.value)
+
+            disallowed_imports = sorted(legacy_imports - allowed_legacy_modules)
+            self.assertEqual(
+                disallowed_imports,
+                [],
+                f"{relative_path} still imports retired service aliases: {disallowed_imports}",
+            )
+
     def test_infrastructure_layer_does_not_import_migrated_service_modules(self) -> None:
         infrastructure_files = [
             path for path in (ROOT / "backend" / "infrastructure").rglob("*.py")

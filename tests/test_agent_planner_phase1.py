@@ -10,7 +10,7 @@ from backend.db.repositories import (
     AgentPlanRepository,
     AgentSessionRepository,
 )
-from backend.services.agent_session_service import AgentSessionService
+from backend.app.agent.session_service import AgentSessionService
 
 
 class AgentPlannerPhase1Tests(unittest.TestCase):

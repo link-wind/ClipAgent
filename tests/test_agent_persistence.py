@@ -1941,14 +1941,14 @@ class RepositoryBehaviorTests(unittest.TestCase):
 
 class SessionServiceContractTests(unittest.TestCase):
     def test_agent_session_service_exposes_minimal_methods(self):
-        from backend.services.agent_session_service import AgentSessionService
+        from backend.app.agent.session_service import AgentSessionService
 
         self.assertTrue(callable(getattr(AgentSessionService, "create_session", None)))
         self.assertTrue(callable(getattr(AgentSessionService, "get_session", None)))
         self.assertTrue(callable(getattr(AgentSessionService, "add_user_message", None)))
 
     def test_agent_read_service_exposes_read_methods(self):
-        from backend.services.agent_read_service import AgentReadService
+        from backend.app.agent.read_service import AgentReadService
 
         self.assertTrue(callable(getattr(AgentReadService, "read_session", None)))
         self.assertTrue(callable(getattr(AgentReadService, "load_latest_plan", None)))
@@ -2025,7 +2025,7 @@ class SessionServiceBehaviorTests(unittest.TestCase):
             AgentSessionRepository,
         )
         from backend.models.agent import AgentStatus
-        from backend.services.agent_session_service import AgentSessionService
+        from backend.app.agent.session_service import AgentSessionService
 
         service = AgentSessionService(session_factory=self.SessionLocal)
         session = service.create_session("做一个 30 秒科技短片")
@@ -2056,7 +2056,7 @@ class SessionServiceBehaviorTests(unittest.TestCase):
             db.close()
 
     def test_create_session_response_exposes_current_plan_version(self):
-        from backend.services.agent_session_service import AgentSessionService
+        from backend.app.agent.session_service import AgentSessionService
 
         service = AgentSessionService(session_factory=self.SessionLocal)
 
@@ -2073,7 +2073,7 @@ class SessionServiceBehaviorTests(unittest.TestCase):
             AgentSessionRepository,
         )
         from backend.models.agent import AgentStatus
-        from backend.services.agent_read_service import AgentReadService
+        from backend.app.agent.read_service import AgentReadService
 
         db = self.SessionLocal()
         try:
@@ -2154,7 +2154,7 @@ class SessionServiceBehaviorTests(unittest.TestCase):
 
     def test_read_service_normalizes_null_grounding_fields_from_legacy_payload(self):
         from backend.db.repositories import AgentSessionRepository
-        from backend.services.agent_read_service import AgentReadService
+        from backend.app.agent.read_service import AgentReadService
 
         db = self.SessionLocal()
         try:
@@ -2195,7 +2195,7 @@ class SessionServiceBehaviorTests(unittest.TestCase):
     def test_add_user_message_persists_message_and_merges_grounding_context_until_confirmed(self):
         from backend.db.repositories import AgentMessageRepository, AgentPlanRepository, AgentSessionRepository
         from backend.models.agent import AgentStatus
-        from backend.services.agent_session_service import AgentSessionService
+        from backend.app.agent.session_service import AgentSessionService
 
         service = AgentSessionService(session_factory=self.SessionLocal)
         session = service.create_session()
@@ -2253,7 +2253,7 @@ class SessionServiceBehaviorTests(unittest.TestCase):
 
     def test_add_user_message_after_plan_persists_revision_observation_and_updates_current_plan(self):
         from backend.db.repositories import AgentObservationRepository, AgentPlanRepository, AgentSessionRepository
-        from backend.services.agent_session_service import AgentSessionService
+        from backend.app.agent.session_service import AgentSessionService
 
         service = AgentSessionService(session_factory=self.SessionLocal)
         session = service.create_session("给 Notion AI 做一个 30 秒产品亮点视频")
@@ -2276,7 +2276,7 @@ class SessionServiceBehaviorTests(unittest.TestCase):
             db.close()
 
     def test_add_user_message_after_plan_returns_incremented_current_plan_version(self):
-        from backend.services.agent_session_service import AgentSessionService
+        from backend.app.agent.session_service import AgentSessionService
 
         service = AgentSessionService(session_factory=self.SessionLocal)
         session = service.create_session("给 Notion AI 做一个 30 秒产品亮点视频")
@@ -2290,7 +2290,7 @@ class SessionServiceBehaviorTests(unittest.TestCase):
     def test_add_user_message_after_plan_persists_revision_plan_when_langchain_revision_falls_back(self):
         from backend.config import get_settings
         from backend.db.repositories import AgentPlanRepository, AgentSessionRepository
-        from backend.services.agent_session_service import AgentSessionService
+        from backend.app.agent.session_service import AgentSessionService
 
         service = AgentSessionService(session_factory=self.SessionLocal)
         session = service.create_session("给 Notion AI 做一个 30 秒产品亮点视频")
@@ -2343,8 +2343,8 @@ class SessionServiceBehaviorTests(unittest.TestCase):
 
     def test_read_service_uses_current_plan_pointer_for_plan_and_version(self):
         from backend.db.repositories import AgentPlanRepository, AgentSessionRepository
-        from backend.services.agent_read_service import AgentReadService
-        from backend.services.agent_session_service import AgentSessionService
+        from backend.app.agent.read_service import AgentReadService
+        from backend.app.agent.session_service import AgentSessionService
 
         service = AgentSessionService(session_factory=self.SessionLocal)
         session = service.create_session("给 Notion AI 做一个 30 秒产品亮点视频")
@@ -2367,8 +2367,8 @@ class SessionServiceBehaviorTests(unittest.TestCase):
 
     def test_read_service_falls_back_to_latest_plan_when_current_pointer_missing(self):
         from backend.db.repositories import AgentSessionRepository
-        from backend.services.agent_read_service import AgentReadService
-        from backend.services.agent_session_service import AgentSessionService
+        from backend.app.agent.read_service import AgentReadService
+        from backend.app.agent.session_service import AgentSessionService
 
         service = AgentSessionService(session_factory=self.SessionLocal)
         session = service.create_session("给 Linear 做一个 30 秒产品亮点视频")
@@ -2389,7 +2389,7 @@ class SessionServiceBehaviorTests(unittest.TestCase):
 
     def test_read_session_includes_diagnostic_for_failed_session(self):
         from backend.db.repositories import AgentEventRepository, AgentJobRepository, AgentSessionRepository
-        from backend.services.agent_read_service import AgentReadService
+        from backend.app.agent.read_service import AgentReadService
 
         with self.SessionLocal() as db:
             session_repo = AgentSessionRepository(db)
@@ -2438,7 +2438,7 @@ class SessionServiceBehaviorTests(unittest.TestCase):
 
     def test_read_session_hides_stale_diagnostic_after_requeue(self):
         from backend.db.repositories import AgentEventRepository, AgentJobRepository, AgentSessionRepository
-        from backend.services.agent_read_service import AgentReadService
+        from backend.app.agent.read_service import AgentReadService
 
         with self.SessionLocal() as db:
             session_repo = AgentSessionRepository(db)
@@ -2502,7 +2502,7 @@ class SessionServiceBehaviorTests(unittest.TestCase):
 
     def test_read_task_includes_diagnostic_for_failed_job(self):
         from backend.db.repositories import AgentEventRepository, AgentJobRepository, AgentSessionRepository
-        from backend.services.agent_task_read_service import AgentTaskReadService
+        from backend.app.execution.task_read_service import AgentTaskReadService
 
         with self.SessionLocal() as db:
             session_repo = AgentSessionRepository(db)
@@ -2542,8 +2542,8 @@ class SessionServiceBehaviorTests(unittest.TestCase):
 
     def test_execution_feedback_replan_clears_revision_trace_fields(self):
         from backend.db.repositories import AgentJobRepository, AgentPlanRepository, AgentSessionRepository
-        from backend.services.agent_session_service import AgentSessionService
-        from backend.services.planner_orchestrator import PlannerOrchestrator
+        from backend.app.agent.session_service import AgentSessionService
+        from backend.app.planning.orchestrator import PlannerOrchestrator
 
         service = AgentSessionService(session_factory=self.SessionLocal)
         session = service.create_session("给 Notion AI 做一个 30 秒产品亮点视频")
@@ -2602,7 +2602,7 @@ class SessionServiceBehaviorTests(unittest.TestCase):
 
     def test_add_user_message_rejects_non_editable_session_states(self):
         from backend.db.repositories import AgentSessionRepository
-        from backend.services.agent_session_service import AgentSessionService
+        from backend.app.agent.session_service import AgentSessionService
 
         db = self.SessionLocal()
         try:

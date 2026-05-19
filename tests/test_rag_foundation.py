@@ -820,7 +820,7 @@ class RagFoundationContextEngineTests(RagFoundationDbTestCase):
 class RagFoundationPlannerContextTests(unittest.TestCase):
     def test_format_context_for_planner_adds_known_context_block(self) -> None:
         from backend.runtime.context_engine import ContextBundle
-        from backend.services.planner_orchestrator import format_context_for_planner
+        from backend.app.planning.orchestrator import format_context_for_planner
 
         context = ContextBundle(
             documents=[
@@ -839,7 +839,7 @@ class RagFoundationPlannerContextTests(unittest.TestCase):
 
     def test_format_context_for_planner_keeps_prompt_when_context_empty(self) -> None:
         from backend.runtime.context_engine import ContextBundle
-        from backend.services.planner_orchestrator import format_context_for_planner
+        from backend.app.planning.orchestrator import format_context_for_planner
 
         self.assertEqual(
             format_context_for_planner("原始 brief", ContextBundle()),
@@ -847,7 +847,7 @@ class RagFoundationPlannerContextTests(unittest.TestCase):
         )
 
     def test_context_text_does_not_change_deterministic_planner_goal(self) -> None:
-        from backend.services.planner_graph import run_initial_planning
+        from backend.app.planning.graph import run_initial_planning
 
         state = run_initial_planning(
             "session-1",

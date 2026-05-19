@@ -29,7 +29,7 @@ from backend.app.agent.read_service import AgentReadService
 from backend.app.agent.run_service import ActiveOperationConflict, AgentRunService
 from backend.app.agent.session_service import AgentSessionService
 from backend.app.agent.step_service import AgentStepService
-from backend.services.planner_orchestrator import PlannerOrchestrator
+from backend.app.planning.orchestrator import PlannerOrchestrator
 
 
 class AgentRunTraceModelTests(unittest.TestCase):
