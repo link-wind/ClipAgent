@@ -9,8 +9,8 @@ from backend.services.asset_providers.config import get_fixture_config
 from backend.services.asset_providers.fixture import search_fixture_candidates
 from backend.services.asset_providers.pexels import search_pexels_candidates
 from backend.services.asset_providers.youtube import search_youtube_candidates
-from backend.services.grounding_planner_models import RetrievalQuery, RetrievalQueryPack
-from backend.services.grounding_planner_runtime import GroundingPlannerRuntime
+from backend.app.planning.grounding_planner_models import RetrievalQuery, RetrievalQueryPack
+from backend.app.planning.grounding_planner_runtime import GroundingPlannerRuntime
 
 
 @dataclass(frozen=True)

@@ -136,6 +136,30 @@ class AgentRuntimeArchitectureTests(unittest.TestCase):
             any(isinstance(node, ast.ClassDef) and node.name == "GroundingService" for node in module.body),
             "GroundingService must be implemented in backend.app.planning.grounding_service",
         )
+        self.assertNotIn("from backend.services.grounding_planner_models import", source)
+        self.assertNotIn("from backend.services.grounding_planner_runtime import", source)
+
+    def test_grounding_planner_modules_live_in_app_planning_boundary(self) -> None:
+        expected_modules = {
+            "grounding_planner_models.py": {"RetrievalQuery", "RetrievalQueryPack"},
+            "grounding_planner_runtime.py": {"GroundingPlannerRuntime"},
+        }
+
+        for filename, expected_classes in expected_modules.items():
+            source_path = ROOT / "backend" / "app" / "planning" / filename
+            self.assertTrue(source_path.is_file(), str(source_path))
+            source = source_path.read_text(encoding="utf-8")
+            module = ast.parse(source)
+            implemented = {
+                node.name
+                for node in module.body
+                if isinstance(node, ast.ClassDef)
+            }
+            self.assertTrue(
+                expected_classes.issubset(implemented),
+                f"{source_path.stem} must be implemented in backend.app.planning",
+            )
+            self.assertNotIn("from backend.services.", source)
 
     def test_legacy_planner_projection_module_is_shim(self) -> None:
         source_path = ROOT / "backend" / "services" / "planner_projection.py"
@@ -164,6 +188,28 @@ class AgentRuntimeArchitectureTests(unittest.TestCase):
             any(isinstance(node, ast.ClassDef) and node.name == "GroundingService" for node in module.body),
             "backend.services.grounding_service must remain a shim",
         )
+
+    def test_legacy_grounding_planner_modules_are_shims(self) -> None:
+        shim_modules = {
+            "grounding_planner_models.py": (
+                "from backend.app.planning.grounding_planner_models import",
+                {"RetrievalQuery", "RetrievalQueryPack"},
+            ),
+            "grounding_planner_runtime.py": (
+                "from backend.app.planning.grounding_planner_runtime import GroundingPlannerRuntime",
+                {"GroundingPlannerRuntime"},
+            ),
+        }
+
+        for filename, (expected_import, forbidden_classes) in shim_modules.items():
+            source_path = ROOT / "backend" / "services" / filename
+            source = source_path.read_text(encoding="utf-8")
+            module = ast.parse(source)
+            self.assertIn(expected_import, source)
+            self.assertFalse(
+                any(isinstance(node, ast.ClassDef) and node.name in forbidden_classes for node in module.body),
+                f"backend.services.{source_path.stem} must remain a shim",
+            )
 
     def test_planning_contracts_live_in_domain_boundary(self) -> None:
         source_path = ROOT / "backend" / "domain" / "planning" / "contracts.py"
