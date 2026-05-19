@@ -1,4 +1,4 @@
-from backend.services.asset_providers.types import (
+from backend.infrastructure.media.asset_providers.types import (
     AssetCandidate,
     AssetDownload,
     ProviderDiagnostic,

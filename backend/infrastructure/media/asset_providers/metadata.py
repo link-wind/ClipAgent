@@ -1,10 +1,15 @@
-from backend.services.asset_providers.metadata import (
-    pop_clip_metadata,
-    remember_clip_metadata,
-)
+from typing import Any
+
+_CLIP_METADATA_BY_LOCAL_PATH: dict[str, dict[str, Any]] = {}
 
 
-__all__ = [
-    "pop_clip_metadata",
-    "remember_clip_metadata",
-]
+def remember_clip_metadata(local_path: str, metadata: dict[str, Any]) -> None:
+    if not local_path or not metadata:
+        return
+    _CLIP_METADATA_BY_LOCAL_PATH[local_path] = dict(metadata)
+
+
+def pop_clip_metadata(local_path: str) -> dict[str, Any]:
+    if not local_path:
+        return {}
+    return _CLIP_METADATA_BY_LOCAL_PATH.pop(local_path, {})

@@ -5,17 +5,17 @@ from typing import Dict, List, Optional
 
 from backend.models.agent import ClipInfo as AgentClipInfo, PlanScene
 from backend.models.task import Scene
-from backend.services.asset_providers.config import (
+from backend.infrastructure.media.asset_providers.config import (
     get_asset_provider_order,
     get_fixture_config,
     get_pexels_config,
     get_youtube_config,
 )
-from backend.services.asset_providers.fixture import download_fixture_candidate, search_fixture_candidates
-from backend.services.asset_providers.metadata import remember_clip_metadata
-from backend.services.asset_providers.pexels import download_pexels_candidate, search_pexels_candidates
-from backend.services.asset_providers.types import AssetCandidate, AssetDownload
-from backend.services.asset_providers.youtube import search_youtube_candidates
+from backend.infrastructure.media.asset_providers.fixture import download_fixture_candidate, search_fixture_candidates
+from backend.infrastructure.media.asset_providers.metadata import remember_clip_metadata
+from backend.infrastructure.media.asset_providers.pexels import download_pexels_candidate, search_pexels_candidates
+from backend.infrastructure.media.asset_providers.types import AssetCandidate, AssetDownload
+from backend.infrastructure.media.asset_providers.youtube import search_youtube_candidates
 
 DOWNLOADS_DIR = "backend/downloads"
 
@@ -73,14 +73,14 @@ def calculate_trim_window(source_duration: float, target_duration: float) -> tup
 
 def build_search_options() -> Dict:
     """构造 YouTube 搜索参数，降低客户端兼容问题。"""
-    from backend.services.asset_providers.youtube import build_youtube_search_options
+    from backend.infrastructure.media.asset_providers.youtube import build_youtube_search_options
 
     return build_youtube_search_options()
 
 
 def build_download_options(output_path: str, progress_hooks: List[callable]) -> Dict:
     """构造 YouTube 下载参数，优先选择可合并的 mp4 素材。"""
-    from backend.services.asset_providers.youtube import build_youtube_download_options
+    from backend.infrastructure.media.asset_providers.youtube import build_youtube_download_options
 
     return build_youtube_download_options(output_path, progress_hooks)
 

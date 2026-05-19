@@ -33,6 +33,7 @@ class AgentRuntimeArchitectureTests(unittest.TestCase):
             "backend/infrastructure/ai/__init__.py",
             "backend/infrastructure/config/__init__.py",
             "backend/infrastructure/media/__init__.py",
+            "backend/infrastructure/media/asset_providers/types.py",
             "backend/workers/__init__.py",
             "backend/workers/tasks/__init__.py",
         ]
@@ -777,6 +778,130 @@ class AgentRuntimeArchitectureTests(unittest.TestCase):
         self.assertTrue(hasattr(pexels, "download_pexels_candidate"))
         self.assertTrue(hasattr(youtube, "build_youtube_search_options"))
         self.assertTrue(hasattr(youtube, "search_youtube_candidates"))
+
+    def test_asset_provider_implementations_live_in_infrastructure_media_boundary(self) -> None:
+        expected_modules = {
+            "types.py": {"ProviderDiagnostic", "AssetCandidate", "AssetDownload", "ProviderResult"},
+            "config.py": {"YoutubeProviderConfig", "PexelsProviderConfig", "FixtureProviderConfig"},
+        }
+
+        for filename, expected_classes in expected_modules.items():
+            source_path = ROOT / "backend" / "infrastructure" / "media" / "asset_providers" / filename
+            self.assertTrue(source_path.is_file(), str(source_path))
+            source = source_path.read_text(encoding="utf-8")
+            module = ast.parse(source)
+            implemented = {
+                node.name
+                for node in module.body
+                if isinstance(node, ast.ClassDef)
+            }
+            self.assertTrue(
+                expected_classes.issubset(implemented),
+                f"{source_path.stem} must be implemented in backend.infrastructure.media.asset_providers",
+            )
+            self.assertNotIn("from backend.services.asset_providers", source)
+
+        expected_functions = {
+            "fixture.py": {
+                "load_fixture_library",
+                "search_fixture_candidates",
+                "download_fixture_candidate",
+                "probe_fixture_duration",
+            },
+            "metadata.py": {
+                "remember_clip_metadata",
+                "pop_clip_metadata",
+            },
+            "pexels.py": {
+                "search_pexels_candidates",
+                "select_pexels_video_file",
+                "download_pexels_candidate",
+            },
+            "youtube.py": {
+                "build_youtube_search_options",
+                "build_youtube_download_options",
+                "search_youtube_candidates",
+            },
+        }
+
+        for filename, required_functions in expected_functions.items():
+            source_path = ROOT / "backend" / "infrastructure" / "media" / "asset_providers" / filename
+            self.assertTrue(source_path.is_file(), str(source_path))
+            source = source_path.read_text(encoding="utf-8")
+            module = ast.parse(source)
+            implemented = {
+                node.name
+                for node in module.body
+                if isinstance(node, ast.FunctionDef)
+            }
+            self.assertTrue(
+                required_functions.issubset(implemented),
+                f"{source_path.stem} must be implemented in backend.infrastructure.media.asset_providers",
+            )
+            self.assertNotIn("from backend.services.asset_providers", source)
+
+    def test_legacy_asset_provider_service_modules_are_shims(self) -> None:
+        shim_expectations = {
+            "config.py": {
+                "required": "backend.infrastructure.media.asset_providers.config",
+                "forbidden": ["from dataclasses import dataclass"],
+            },
+            "fixture.py": {
+                "required": "backend.infrastructure.media.asset_providers.fixture",
+                "forbidden": ["import ffmpeg", "import shutil"],
+            },
+            "metadata.py": {
+                "required": "backend.infrastructure.media.asset_providers.metadata",
+                "forbidden": ["_CLIP_METADATA_BY_LOCAL_PATH"],
+            },
+            "pexels.py": {
+                "required": "backend.infrastructure.media.asset_providers.pexels",
+                "forbidden": ["import urllib.request", "import urllib.error"],
+            },
+            "types.py": {
+                "required": "backend.infrastructure.media.asset_providers.types",
+                "forbidden": ["@dataclass"],
+            },
+            "youtube.py": {
+                "required": "backend.infrastructure.media.asset_providers.youtube",
+                "forbidden": ["import yt_dlp"],
+            },
+        }
+
+        for filename, expectation in shim_expectations.items():
+            source_path = ROOT / "backend" / "services" / "asset_providers" / filename
+            source = source_path.read_text(encoding="utf-8")
+            self.assertIn(expectation["required"], source)
+            for forbidden_snippet in expectation["forbidden"]:
+                self.assertNotIn(forbidden_snippet, source, f"{source_path} must remain a shim")
+
+    def test_primary_layers_do_not_import_legacy_asset_provider_modules(self) -> None:
+        search_source = (ROOT / "backend" / "infrastructure" / "media" / "search_service.py").read_text(encoding="utf-8")
+        grounding_source = (ROOT / "backend" / "app" / "planning" / "grounding_service.py").read_text(encoding="utf-8")
+
+        forbidden_imports = [
+            "backend.services.asset_providers.config",
+            "backend.services.asset_providers.fixture",
+            "backend.services.asset_providers.metadata",
+            "backend.services.asset_providers.pexels",
+            "backend.services.asset_providers.types",
+            "backend.services.asset_providers.youtube",
+        ]
+
+        for import_path in forbidden_imports:
+            self.assertNotIn(import_path, search_source)
+            self.assertNotIn(import_path, grounding_source)
+
+        self.assertIn("backend.infrastructure.media.asset_providers.config", search_source)
+        self.assertIn("backend.infrastructure.media.asset_providers.fixture", search_source)
+        self.assertIn("backend.infrastructure.media.asset_providers.metadata", search_source)
+        self.assertIn("backend.infrastructure.media.asset_providers.pexels", search_source)
+        self.assertIn("backend.infrastructure.media.asset_providers.types", search_source)
+        self.assertIn("backend.infrastructure.media.asset_providers.youtube", search_source)
+        self.assertIn("backend.infrastructure.media.asset_providers.config", grounding_source)
+        self.assertIn("backend.infrastructure.media.asset_providers.fixture", grounding_source)
+        self.assertIn("backend.infrastructure.media.asset_providers.pexels", grounding_source)
+        self.assertIn("backend.infrastructure.media.asset_providers.youtube", grounding_source)
 
     def test_agent_runtime_accepts_existing_services(self) -> None:
         from backend.runtime.agent_runtime import AgentRuntime

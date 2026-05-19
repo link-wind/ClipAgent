@@ -5,12 +5,12 @@ from typing import Any, Callable, Iterable
 
 from backend.config import get_settings
 from backend.models.agent import AgentGroundingCandidate, AgentGroundingSummary
-from backend.services.asset_providers.config import get_fixture_config
-from backend.services.asset_providers.fixture import search_fixture_candidates
-from backend.services.asset_providers.pexels import search_pexels_candidates
-from backend.services.asset_providers.youtube import search_youtube_candidates
 from backend.app.planning.grounding_planner_models import RetrievalQuery, RetrievalQueryPack
 from backend.app.planning.grounding_planner_runtime import GroundingPlannerRuntime
+from backend.infrastructure.media.asset_providers.config import get_fixture_config
+from backend.infrastructure.media.asset_providers.fixture import search_fixture_candidates
+from backend.infrastructure.media.asset_providers.pexels import search_pexels_candidates
+from backend.infrastructure.media.asset_providers.youtube import search_youtube_candidates
 
 
 @dataclass(frozen=True)
