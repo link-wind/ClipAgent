@@ -850,6 +850,45 @@ class AgentRuntimeArchitectureTests(unittest.TestCase):
             source,
         )
 
+    def test_non_architecture_tests_only_reference_frozen_legacy_modules(self) -> None:
+        allowed_legacy_prefixes = {
+            "backend.services.agent_service",
+            "backend.services.search_service",
+            "backend.services.planner_runtime_langchain",
+            "backend.services.asset_providers.config",
+            "backend.services.asset_providers.fixture",
+            "backend.services.asset_providers.pexels",
+        }
+        offenders: dict[str, list[str]] = {}
+
+        for path in sorted((ROOT / "tests").glob("test_*.py")):
+            if path.name == "test_agent_runtime_architecture.py":
+                continue
+
+            source = path.read_text(encoding="utf-8")
+            module = ast.parse(source)
+            legacy_references: set[str] = set()
+
+            for node in ast.walk(module):
+                if isinstance(node, ast.ImportFrom) and node.module and node.module.startswith("backend.services"):
+                    legacy_references.add(node.module)
+                elif isinstance(node, ast.Import):
+                    for alias in node.names:
+                        if alias.name.startswith("backend.services"):
+                            legacy_references.add(alias.name)
+                elif isinstance(node, ast.Constant) and isinstance(node.value, str) and node.value.startswith("backend.services"):
+                    legacy_references.add(node.value)
+
+            unexpected = sorted(
+                ref
+                for ref in legacy_references
+                if not any(ref == prefix or ref.startswith(f"{prefix}.") for prefix in allowed_legacy_prefixes)
+            )
+            if unexpected:
+                offenders[path.relative_to(ROOT).as_posix()] = unexpected
+
+        self.assertEqual(offenders, {})
+
     def test_task3_asset_provider_tests_only_keep_patch_heavy_legacy_modules(self) -> None:
         target_files = [
             "tests/test_agent_backend.py",

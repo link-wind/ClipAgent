@@ -1345,7 +1345,7 @@ class AgentExecutionContractTests(unittest.TestCase):
 
     def test_agent_search_download_returns_agent_clip_paths(self):
         from backend.models.agent import PlanScene
-        from backend.services import search_service
+        import backend.services.search_service as search_service
         from backend.infrastructure.media.asset_providers.types import AssetCandidate
 
         scene = PlanScene(
@@ -1380,7 +1380,7 @@ class AgentExecutionContractTests(unittest.TestCase):
 
     def test_agent_download_tries_next_search_result_after_youtube_failure(self):
         from backend.models.agent import PlanScene
-        from backend.services import search_service
+        import backend.services.search_service as search_service
         from backend.infrastructure.media.asset_providers.types import AssetCandidate
 
         scene = PlanScene(
@@ -1424,7 +1424,7 @@ class AgentExecutionContractTests(unittest.TestCase):
 
     def test_agent_download_failure_surfaces_last_external_error(self):
         from backend.models.agent import PlanScene
-        from backend.services import search_service
+        import backend.services.search_service as search_service
         from backend.infrastructure.media.asset_providers.types import AssetCandidate
 
         scene = PlanScene(
@@ -1467,7 +1467,7 @@ class AgentExecutionContractTests(unittest.TestCase):
 
     def test_agent_search_failure_surfaces_external_error(self):
         from backend.models.agent import PlanScene
-        from backend.services import search_service
+        import backend.services.search_service as search_service
 
         scene = PlanScene(
             id=3,
@@ -1485,7 +1485,7 @@ class AgentExecutionContractTests(unittest.TestCase):
 
     def test_agent_download_falls_back_from_youtube_search_failure_to_pexels(self):
         from backend.models.agent import PlanScene
-        from backend.services import search_service
+        import backend.services.search_service as search_service
         from backend.infrastructure.media.asset_providers.types import AssetCandidate, AssetDownload
 
         scene = PlanScene(
@@ -1530,7 +1530,7 @@ class AgentExecutionContractTests(unittest.TestCase):
 
     def test_agent_download_falls_back_from_youtube_download_failure_to_pexels(self):
         from backend.models.agent import PlanScene
-        from backend.services import search_service
+        import backend.services.search_service as search_service
         from backend.infrastructure.media.asset_providers.types import AssetCandidate, AssetDownload
 
         scene = PlanScene(
@@ -1585,7 +1585,7 @@ class AgentExecutionContractTests(unittest.TestCase):
 
     def test_agent_download_prefers_default_youtube_provider_order(self):
         from backend.models.agent import PlanScene
-        from backend.services import search_service
+        import backend.services.search_service as search_service
         from backend.infrastructure.media.asset_providers.types import AssetCandidate, AssetDownload
 
         scene = PlanScene(
@@ -1636,7 +1636,7 @@ class AgentExecutionContractTests(unittest.TestCase):
 
     def test_agent_download_respects_configured_provider_order(self):
         from backend.models.agent import PlanScene
-        from backend.services import search_service
+        import backend.services.search_service as search_service
         from backend.infrastructure.media.asset_providers.types import AssetCandidate, AssetDownload
 
         scene = PlanScene(
@@ -1695,7 +1695,7 @@ class AgentExecutionContractTests(unittest.TestCase):
 
     def test_agent_download_stops_searching_after_first_provider_returns_candidates(self):
         from backend.models.agent import PlanScene
-        from backend.services import search_service
+        import backend.services.search_service as search_service
         from backend.infrastructure.media.asset_providers.types import AssetCandidate, AssetDownload
 
         scene = PlanScene(
@@ -1743,7 +1743,7 @@ class AgentExecutionContractTests(unittest.TestCase):
 
     def test_all_provider_failure_surfaces_safe_summaries(self):
         from backend.models.agent import PlanScene
-        from backend.services import search_service
+        import backend.services.search_service as search_service
 
         scene = PlanScene(
             id=3,
@@ -1768,7 +1768,7 @@ class AgentExecutionContractTests(unittest.TestCase):
 
     def test_provider_failure_message_dedupes_and_keeps_specific_diagnostics(self):
         from backend.models.agent import PlanScene
-        from backend.services import search_service
+        import backend.services.search_service as search_service
 
         scenes = [
             PlanScene(
@@ -1842,7 +1842,7 @@ class AgentExecutionContractTests(unittest.TestCase):
 
     def test_repeated_scene_provider_failures_are_collapsed_into_summary(self):
         from backend.models.agent import PlanScene
-        from backend.services import search_service
+        import backend.services.search_service as search_service
 
         scenes = [
             PlanScene(
@@ -1894,7 +1894,7 @@ class AgentExecutionContractTests(unittest.TestCase):
 
     def test_all_scene_failures_expose_structured_diagnostics(self):
         from backend.models.agent import PlanScene
-        from backend.services import search_service
+        import backend.services.search_service as search_service
 
         scenes = [
             PlanScene(
@@ -2138,7 +2138,7 @@ class AgentExecutionContractTests(unittest.TestCase):
         from pathlib import Path
         from tempfile import TemporaryDirectory
 
-        from backend.services.asset_providers import fixture as fixture_provider
+        import backend.services.asset_providers.fixture as fixture_provider
         from backend.services.asset_providers.fixture import search_fixture_candidates
 
         with TemporaryDirectory() as tmpdir:
@@ -2177,7 +2177,7 @@ class AgentExecutionContractTests(unittest.TestCase):
         from pathlib import Path
         from tempfile import TemporaryDirectory
 
-        from backend.services.asset_providers import fixture as fixture_provider
+        import backend.services.asset_providers.fixture as fixture_provider
         from backend.services.asset_providers.fixture import download_fixture_candidate, search_fixture_candidates
 
         with TemporaryDirectory() as tmpdir:
@@ -2223,7 +2223,7 @@ class AgentExecutionContractTests(unittest.TestCase):
         from pathlib import Path
         from tempfile import TemporaryDirectory
 
-        from backend.services.asset_providers import fixture as fixture_provider
+        import backend.services.asset_providers.fixture as fixture_provider
         from backend.services.asset_providers.fixture import download_fixture_candidate
         from backend.infrastructure.media.asset_providers.types import AssetCandidate
 
@@ -2255,8 +2255,8 @@ class AgentExecutionContractTests(unittest.TestCase):
         from tempfile import TemporaryDirectory
 
         from backend.models.agent import PlanScene
-        from backend.services import search_service
-        from backend.services.asset_providers import fixture as fixture_provider
+        import backend.services.search_service as search_service
+        import backend.services.asset_providers.fixture as fixture_provider
 
         scene = PlanScene(
             id=1,
@@ -2309,7 +2309,7 @@ class AgentExecutionContractTests(unittest.TestCase):
 
     def test_fixture_provider_falls_through_to_next_provider_when_no_match(self):
         from backend.models.agent import PlanScene
-        from backend.services import search_service
+        import backend.services.search_service as search_service
         from backend.infrastructure.media.asset_providers.types import AssetCandidate, AssetDownload
 
         scene = PlanScene(
