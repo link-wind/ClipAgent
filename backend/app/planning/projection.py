@@ -1,5 +1,5 @@
 from backend.models.agent import EditPlan, PlanScene
-from backend.services.planner_models import ExecutionPlan
+from backend.domain.planning.contracts import ExecutionPlan
 
 
 def execution_plan_to_edit_plan(plan: ExecutionPlan) -> EditPlan:

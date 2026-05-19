@@ -3,7 +3,7 @@ from typing import TypedDict
 
 from langgraph.graph import END, START, StateGraph
 
-from backend.services.planner_models import (
+from backend.domain.planning.contracts import (
     AgentPlan,
     CandidateConfirmationFeedback,
     ExecutionPlan,

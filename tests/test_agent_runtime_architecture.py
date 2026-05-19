@@ -140,6 +140,52 @@ class AgentRuntimeArchitectureTests(unittest.TestCase):
             "backend.services.planner_projection must remain a shim",
         )
 
+    def test_planning_contracts_live_in_domain_boundary(self) -> None:
+        source_path = ROOT / "backend" / "domain" / "planning" / "contracts.py"
+        self.assertTrue(source_path.is_file(), str(source_path))
+        source = source_path.read_text(encoding="utf-8")
+        module = ast.parse(source)
+
+        expected_classes = {
+            "BriefUnderstanding",
+            "AgentScene",
+            "AgentPlan",
+            "ExecutionScene",
+            "ExecutionPlan",
+            "InitialPlanningResult",
+            "RevisionScenePatch",
+            "RevisionPlanningResult",
+            "AgentObservation",
+            "GroundingFeedback",
+            "CandidateConfirmationFeedback",
+            "UserRevisionFeedback",
+            "SearchExecutionFeedback",
+            "RenderReadinessFeedback",
+        }
+        implemented = {
+            node.name
+            for node in module.body
+            if isinstance(node, ast.ClassDef)
+        }
+        self.assertTrue(
+            expected_classes.issubset(implemented),
+            "planner contracts must be implemented in backend.domain.planning.contracts",
+        )
+
+    def test_legacy_planner_models_module_is_shim(self) -> None:
+        source_path = ROOT / "backend" / "services" / "planner_models.py"
+        source = source_path.read_text(encoding="utf-8")
+        module = ast.parse(source)
+
+        self.assertIn(
+            "from backend.domain.planning.contracts import",
+            source,
+        )
+        self.assertFalse(
+            any(isinstance(node, ast.ClassDef) and node.name == "ExecutionPlan" for node in module.body),
+            "backend.services.planner_models must remain a shim",
+        )
+
     def test_runtime_config_service_lives_in_infrastructure_boundary(self) -> None:
         source_path = ROOT / "backend" / "infrastructure" / "config" / "runtime_config_service.py"
         self.assertTrue(source_path.is_file(), str(source_path))
@@ -364,6 +410,7 @@ class AgentRuntimeArchitectureTests(unittest.TestCase):
             "backend.services.agent_task_read_service",
             "backend.services.planner_orchestrator",
             "backend.services.planner_graph",
+            "backend.services.planner_models",
             "backend.services.planner_projection",
             "backend.services.runtime_config_service",
             "backend.services.render_service",
