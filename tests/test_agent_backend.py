@@ -65,7 +65,7 @@ class BackendImportTests(unittest.TestCase):
         self.assertEqual(module.app.title, "ClipForge API")
 
     def test_gpt_service_requires_api_key_when_analyzing(self):
-        from backend.services.gpt_service import GPTService
+        from backend.infrastructure.ai.gpt_service import GPTService
 
         with patch.dict(os.environ, {"OPENAI_API_KEY": ""}, clear=False):
             service = GPTService()
@@ -192,7 +192,7 @@ class AgentSessionTests(unittest.TestCase):
 
 class AgentStreamServiceTests(unittest.TestCase):
     def test_format_sse_event_uses_sequence_as_id_and_event_type(self):
-        from backend.services.agent_stream_service import format_sse_event
+        from backend.app.agent.stream_service import format_sse_event
 
         payload = {
             "id": "trace-1",
@@ -217,7 +217,7 @@ class AgentStreamServiceTests(unittest.TestCase):
         self.assertTrue(frame.endswith("\n\n"))
 
     def test_format_sse_event_writes_json_payload_and_preserves_multiline_message(self):
-        from backend.services.agent_stream_service import format_sse_event
+        from backend.app.agent.stream_service import format_sse_event
 
         message = "line 1\nline 2"
         frame = format_sse_event(

@@ -838,6 +838,18 @@ class AgentRuntimeArchitectureTests(unittest.TestCase):
             source,
         )
 
+    def test_task8_backend_tests_do_not_import_legacy_gpt_or_stream_service_aliases(self) -> None:
+        source = (ROOT / "tests" / "test_agent_backend.py").read_text(encoding="utf-8")
+
+        self.assertNotIn(
+            "from backend.services.gpt_service import",
+            source,
+        )
+        self.assertNotIn(
+            "from backend.services.agent_stream_service import",
+            source,
+        )
+
     def test_task3_asset_provider_tests_only_keep_patch_heavy_legacy_modules(self) -> None:
         target_files = [
             "tests/test_agent_backend.py",
