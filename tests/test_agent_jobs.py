@@ -233,7 +233,7 @@ class ClipInfoContractTests(unittest.TestCase):
 
 class ClipTrimCalculationTests(unittest.TestCase):
     def test_calculate_trim_window_prefers_middle_front_for_long_source(self):
-        from backend.services.search_service import calculate_trim_window
+        from backend.infrastructure.media.search_service import calculate_trim_window
 
         trim_start, trim_duration = calculate_trim_window(
             source_duration=20.0,
@@ -244,7 +244,7 @@ class ClipTrimCalculationTests(unittest.TestCase):
         self.assertEqual(trim_duration, 6.0)
 
     def test_calculate_trim_window_uses_full_source_when_shorter_than_target(self):
-        from backend.services.search_service import calculate_trim_window
+        from backend.infrastructure.media.search_service import calculate_trim_window
 
         trim_start, trim_duration = calculate_trim_window(
             source_duration=4.5,

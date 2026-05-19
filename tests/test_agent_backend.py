@@ -1801,7 +1801,7 @@ class AgentExecutionContractTests(unittest.TestCase):
         self.assertNotIn("pexels: 没有返回候选素材", message)
 
     def test_all_scene_failures_expose_structured_diagnostics(self):
-        from backend.services.search_service import AgentSceneSearchFailure
+        from backend.infrastructure.media.search_service import AgentSceneSearchFailure
 
         exc = AgentSceneSearchFailure(
             "没有下载到可用素材",
@@ -2014,7 +2014,7 @@ class AgentExecutionContractTests(unittest.TestCase):
         self.assertEqual(pop_clip_metadata("backend/downloads/session_1.mp4"), {})
 
     def test_youtube_search_surfaces_external_error(self):
-        from backend.services.search_service import search_youtube
+        from backend.infrastructure.media.search_service import search_youtube
 
         with patch("yt_dlp.YoutubeDL") as mock_youtube_dl:
             ydl = mock_youtube_dl.return_value.__enter__.return_value
@@ -2024,7 +2024,7 @@ class AgentExecutionContractTests(unittest.TestCase):
                 search_youtube(["product", "workflow"], max_results=3)
 
     def test_youtube_options_use_current_clients_and_retry_settings(self):
-        from backend.services.search_service import build_download_options, build_search_options
+        from backend.infrastructure.media.search_service import build_download_options, build_search_options
 
         search_options = build_search_options()
         download_options = build_download_options("backend/downloads/example.mp4", [])
@@ -2036,7 +2036,7 @@ class AgentExecutionContractTests(unittest.TestCase):
         self.assertIn("bestvideo", download_options["format"])
 
     def test_youtube_options_avoid_po_token_clients_and_enable_node_ejs(self):
-        from backend.services.search_service import build_download_options, build_search_options
+        from backend.infrastructure.media.search_service import build_download_options, build_search_options
 
         search_options = build_search_options()
         download_options = build_download_options("backend/downloads/example.mp4", [])
@@ -2047,7 +2047,7 @@ class AgentExecutionContractTests(unittest.TestCase):
         self.assertIn("ejs:npm", download_options["remote_components"])
 
     def test_youtube_options_use_hardening_environment(self):
-        from backend.services.search_service import build_download_options, build_search_options
+        from backend.infrastructure.media.search_service import build_download_options, build_search_options
 
         with patch.dict(
             "os.environ",
@@ -2457,7 +2457,7 @@ class AgentExecutionContractTests(unittest.TestCase):
             self.assertEqual(download.metadata["author"], "Pexels Creator")
 
     def test_summarize_youtube_download_errors_for_agent_status(self):
-        from backend.services.search_service import summarize_download_error
+        from backend.infrastructure.media.search_service import summarize_download_error
 
         message = summarize_download_error(
             "ios client hls formats require a GVS PO Token. Only images are available. "

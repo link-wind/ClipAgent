@@ -25,18 +25,10 @@ from backend.infrastructure.media.search_service import (
 )
 
 _PATCHABLE_EXPORTS = [
-    "DOWNLOADS_DIR",
-    "build_download_options",
-    "download_asset_candidate",
-    "download_fixture_candidate",
     "download_pexels_candidate",
     "download_video",
     "get_asset_provider_order",
-    "get_fixture_config",
     "get_pexels_config",
-    "get_youtube_config",
-    "remember_clip_metadata",
-    "search_fixture_candidates",
     "search_pexels_candidates",
     "search_youtube_candidates",
 ]

@@ -433,6 +433,22 @@ class AgentRuntimeArchitectureTests(unittest.TestCase):
             "backend.services.search_service must remain a shim",
         )
 
+    def test_legacy_search_service_patch_contract_is_explicit(self) -> None:
+        namespace: dict[str, object] = {}
+        exec((ROOT / "backend" / "services" / "search_service.py").read_text(encoding="utf-8"), namespace)
+
+        self.assertEqual(
+            set(namespace["_PATCHABLE_EXPORTS"]),
+            {
+                "download_video",
+                "search_youtube_candidates",
+                "search_pexels_candidates",
+                "download_pexels_candidate",
+                "get_asset_provider_order",
+                "get_pexels_config",
+            },
+        )
+
     def test_execution_services_use_media_infrastructure_adapters(self) -> None:
         asset_source = (ROOT / "backend" / "app" / "execution" / "asset_execution_service.py").read_text(encoding="utf-8")
         render_source = (ROOT / "backend" / "app" / "execution" / "render_execution_service.py").read_text(encoding="utf-8")
