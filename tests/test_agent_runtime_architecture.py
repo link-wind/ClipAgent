@@ -27,6 +27,8 @@ class AgentRuntimeArchitectureTests(unittest.TestCase):
             "backend/domain/skills/__init__.py",
             "backend/domain/skills/contracts.py",
             "backend/domain/planning/__init__.py",
+            "backend/compat/__init__.py",
+            "backend/compat/agent_service.py",
             "backend/infrastructure/__init__.py",
             "backend/infrastructure/ai/__init__.py",
             "backend/infrastructure/config/__init__.py",
@@ -632,6 +634,31 @@ class AgentRuntimeArchitectureTests(unittest.TestCase):
         self.assertNotIn("from backend.services.agent_service import", source)
         self.assertNotIn("import backend.services.agent_service", source)
         self.assertNotIn("agent_service.sync_session(", source)
+
+    def test_compat_agent_service_contains_real_implementation(self) -> None:
+        source_path = ROOT / "backend" / "compat" / "agent_service.py"
+        self.assertTrue(source_path.is_file(), str(source_path))
+        source = source_path.read_text(encoding="utf-8")
+        module = ast.parse(source)
+
+        self.assertTrue(
+            any(isinstance(node, ast.ClassDef) and node.name == "AgentService" for node in module.body),
+            "AgentService must be implemented in backend.compat.agent_service",
+        )
+
+    def test_legacy_agent_service_module_is_compat_shim(self) -> None:
+        source_path = ROOT / "backend" / "services" / "agent_service.py"
+        source = source_path.read_text(encoding="utf-8")
+        module = ast.parse(source)
+
+        self.assertIn(
+            "from backend.compat.agent_service import AgentService",
+            source,
+        )
+        self.assertFalse(
+            any(isinstance(node, ast.ClassDef) and node.name == "AgentService" for node in module.body),
+            "backend.services.agent_service must remain a shim",
+        )
 
     def test_api_ai_does_not_import_legacy_search_service(self) -> None:
         source = (ROOT / "backend" / "api" / "ai.py").read_text(encoding="utf-8")
