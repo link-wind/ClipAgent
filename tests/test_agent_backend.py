@@ -335,7 +335,7 @@ class AgentApiTests(unittest.TestCase):
         with (
             patch.dict("os.environ", {"CLIPFORGE_PLANNER_MODE": "langchain"}, clear=False),
             patch(
-                "backend.services.planner_graph.get_planner_runtime",
+                "backend.app.planning.graph.get_planner_runtime",
                 return_value=FailingRuntime(),
             ),
         ):
@@ -363,7 +363,7 @@ class AgentApiTests(unittest.TestCase):
         with (
             patch.dict("os.environ", {"CLIPFORGE_PLANNER_MODE": "langchain"}, clear=False),
             patch(
-                "backend.services.planner_graph.get_planner_runtime",
+                "backend.app.planning.graph.get_planner_runtime",
                 return_value=FailingRuntime(),
             ),
         ):
