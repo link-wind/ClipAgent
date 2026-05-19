@@ -6,7 +6,7 @@ from backend.infrastructure.media.asset_providers.config import (
     env_csv,
     env_flag,
 )
-from backend.services.runtime_config_service import (
+from backend.infrastructure.config.runtime_config_service import (
     DEFAULT_ASSET_PROVIDER_ORDER,
     DEFAULT_FIXTURE_LIBRARY_PATH,
     DEFAULT_YTDLP_FORMAT,

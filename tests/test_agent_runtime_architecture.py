@@ -1088,6 +1088,19 @@ class AgentRuntimeArchitectureTests(unittest.TestCase):
             for forbidden_snippet in expectation["forbidden"]:
                 self.assertNotIn(forbidden_snippet, source, f"{source_path} must remain a shim")
 
+    def test_legacy_asset_provider_config_shim_depends_on_infrastructure_runtime_config(self) -> None:
+        source_path = ROOT / "backend" / "services" / "asset_providers" / "config.py"
+        source = source_path.read_text(encoding="utf-8")
+
+        self.assertIn(
+            "from backend.infrastructure.config.runtime_config_service import",
+            source,
+        )
+        self.assertNotIn(
+            "from backend.services.runtime_config_service import",
+            source,
+        )
+
     def test_primary_layers_do_not_import_legacy_asset_provider_modules(self) -> None:
         search_source = (ROOT / "backend" / "infrastructure" / "media" / "search_service.py").read_text(encoding="utf-8")
         grounding_source = (ROOT / "backend" / "app" / "planning" / "grounding_service.py").read_text(encoding="utf-8")
