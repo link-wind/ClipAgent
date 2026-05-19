@@ -477,6 +477,7 @@ class AgentRuntimeArchitectureTests(unittest.TestCase):
 
     def test_execution_entry_and_task_read_services_live_in_app_execution_boundary(self) -> None:
         expected_classes = {
+            "diagnostic_service.py": "AgentDiagnosticService",
             "execution_service.py": "AgentExecutionService",
             "progress_service.py": "AgentProgressService",
             "task_read_service.py": "AgentTaskReadService",
@@ -529,6 +530,10 @@ class AgentRuntimeArchitectureTests(unittest.TestCase):
                 "AgentProgressService",
                 "from backend.app.execution.progress_service import AgentProgressService",
             ),
+            "agent_diagnostic_service.py": (
+                "AgentDiagnosticService",
+                "from backend.app.execution.diagnostic_service import AgentDiagnosticService",
+            ),
         }
 
         for filename, (class_name, expected_import) in shim_modules.items():
@@ -568,6 +573,18 @@ class AgentRuntimeArchitectureTests(unittest.TestCase):
 
         self.assertNotIn("from backend.services.agent_progress_service import", source)
         self.assertNotIn("import backend.services.agent_progress_service", source)
+
+    def test_agent_and_execution_read_services_do_not_import_legacy_diagnostic_service(self) -> None:
+        for relative_path in [
+            "backend/app/agent/read_service.py",
+            "backend/app/execution/task_read_service.py",
+        ]:
+            source = (ROOT / relative_path).read_text(encoding="utf-8")
+            self.assertNotIn(
+                "backend.services.agent_diagnostic_service",
+                source,
+                f"{relative_path} should not import legacy diagnostic service",
+            )
 
     def test_api_runtime_and_tasks_do_not_import_legacy_progress_service(self) -> None:
         for relative_path in [
@@ -609,6 +626,7 @@ class AgentRuntimeArchitectureTests(unittest.TestCase):
             "backend.services.grounding_service",
             "backend.services.runtime_config_service",
             "backend.services.render_service",
+            "backend.services.agent_diagnostic_service",
             "backend.services.agent_run_service",
             "backend.services.agent_step_service",
             "backend.services.agent_step_snapshot_service",

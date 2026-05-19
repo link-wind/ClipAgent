@@ -13,7 +13,7 @@ from backend.models.agent import (
     AgentTaskDetail,
     AgentTaskSummary,
 )
-from backend.services.agent_diagnostic_service import AgentDiagnosticService
+from backend.app.execution.diagnostic_service import AgentDiagnosticService
 
 
 RUNNING_JOB_STATUSES = {"queued", "pending", "running"}
