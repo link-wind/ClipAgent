@@ -1015,7 +1015,7 @@ class RuntimeConfigServiceTests(unittest.TestCase):
         self.assertIn("backend/runtime/runtime_config.local.json", gitignore)
 
     def test_runtime_values_override_environment_and_defaults_without_leaking_secrets(self):
-        from backend.services.runtime_config_service import RuntimeConfigService
+        from backend.infrastructure.config.runtime_config_service import RuntimeConfigService
 
         self.runtime_path.write_text(
             json.dumps(
@@ -1045,7 +1045,7 @@ class RuntimeConfigServiceTests(unittest.TestCase):
         self.assertEqual(provider_order["value"], "pexels,youtube")
 
     def test_clear_runtime_override_falls_back_to_environment(self):
-        from backend.services.runtime_config_service import RuntimeConfigService
+        from backend.infrastructure.config.runtime_config_service import RuntimeConfigService
 
         self.runtime_path.write_text(json.dumps({"PEXELS_API_KEY": "runtime-key"}), encoding="utf-8")
         service = RuntimeConfigService(config_path=self.runtime_path)
@@ -1061,7 +1061,7 @@ class RuntimeConfigServiceTests(unittest.TestCase):
         self.assertTrue(pexels_key["configured"])
 
     def test_invalid_provider_order_is_rejected(self):
-        from backend.services.runtime_config_service import RuntimeConfigService
+        from backend.infrastructure.config.runtime_config_service import RuntimeConfigService
 
         service = RuntimeConfigService(config_path=self.runtime_path)
 
@@ -1072,7 +1072,7 @@ class RuntimeConfigServiceTests(unittest.TestCase):
         from fastapi import FastAPI
 
         from backend.api.config import create_config_router
-        from backend.services.runtime_config_service import RuntimeConfigService
+        from backend.infrastructure.config.runtime_config_service import RuntimeConfigService
 
         service = RuntimeConfigService(config_path=self.runtime_path)
         app = FastAPI()
@@ -1106,7 +1106,7 @@ class RuntimeConfigIntegrationTests(unittest.TestCase):
 
     def test_asset_provider_config_reads_runtime_overrides(self):
         import backend.services.asset_providers.config as provider_config
-        from backend.services.runtime_config_service import RuntimeConfigService
+        from backend.infrastructure.config.runtime_config_service import RuntimeConfigService
 
         service = RuntimeConfigService(config_path=self.runtime_path)
         service.update(
@@ -1126,7 +1126,7 @@ class RuntimeConfigIntegrationTests(unittest.TestCase):
 
     def test_gpt_service_reads_runtime_openai_config(self):
         import backend.infrastructure.ai.gpt_service as gpt_service_module
-        from backend.services.runtime_config_service import RuntimeConfigService
+        from backend.infrastructure.config.runtime_config_service import RuntimeConfigService
 
         service = RuntimeConfigService(config_path=self.runtime_path)
         service.update({"OPENAI_API_KEY": "runtime-openai", "OPENAI_BASE_URL": "https://example.test/v1"})
@@ -1139,7 +1139,7 @@ class RuntimeConfigIntegrationTests(unittest.TestCase):
 
     def test_backend_settings_reads_runtime_infrastructure_values(self):
         import backend.config as backend_config
-        from backend.services.runtime_config_service import RuntimeConfigService
+        from backend.infrastructure.config.runtime_config_service import RuntimeConfigService
 
         service = RuntimeConfigService(config_path=self.runtime_path)
         service.update(
@@ -1180,7 +1180,7 @@ class AgentExecutionContractTests(unittest.TestCase):
 
     def test_render_uses_local_path_inputs(self):
         from backend.models.agent import ClipInfo
-        from backend.services.render_service import build_render_inputs
+        from backend.infrastructure.media.render_service import build_render_inputs
 
         clips = [
             ClipInfo(
@@ -1196,7 +1196,7 @@ class AgentExecutionContractTests(unittest.TestCase):
 
     def test_render_helper_keeps_legacy_task_video_url_inputs(self):
         from backend.models.task import ClipInfo
-        from backend.services.render_service import build_render_inputs
+        from backend.infrastructure.media.render_service import build_render_inputs
 
         clips = [
             ClipInfo(

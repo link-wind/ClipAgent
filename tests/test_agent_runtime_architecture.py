@@ -15,6 +15,16 @@ FROZEN_COMPAT_MODULES = {
     "backend.services.asset_providers.fixture",
     "backend.services.asset_providers.pexels",
 }
+TASK6_RETIRED_TEST_SERVICE_MODULES = {
+    "backend.services.runtime_config_service",
+    "backend.services.render_service",
+    "backend.services.grounding_planner_models",
+    "backend.services.grounding_planner_runtime",
+    "backend.services.grounding_service",
+    "backend.services.agent_diagnostic_service",
+    "backend.services.agent_progress_service",
+    "backend.services.planner_orchestrator",
+}
 
 
 class AgentRuntimeArchitectureTests(unittest.TestCase):
@@ -874,6 +884,38 @@ class AgentRuntimeArchitectureTests(unittest.TestCase):
         self.assertIn("# Compat Surface", doc)
         for module_name in sorted(FROZEN_COMPAT_MODULES):
             self.assertIn(module_name, doc)
+
+    def test_task6_targeted_tests_do_not_use_retired_low_risk_service_modules(self) -> None:
+        target_files = [
+            "tests/test_agent_backend.py",
+            "tests/test_agent_jobs.py",
+            "tests/test_grounding_service.py",
+            "tests/test_grounding_planner_runtime.py",
+            "tests/test_planner_runtime.py",
+        ]
+
+        for relative_path in target_files:
+            source = (ROOT / relative_path).read_text(encoding="utf-8")
+            module = ast.parse(source)
+            legacy_references: set[str] = set()
+
+            for node in ast.walk(module):
+                if isinstance(node, ast.ImportFrom) and node.module:
+                    if node.module in TASK6_RETIRED_TEST_SERVICE_MODULES:
+                        legacy_references.add(node.module)
+                elif isinstance(node, ast.Import):
+                    for alias in node.names:
+                        if alias.name in TASK6_RETIRED_TEST_SERVICE_MODULES:
+                            legacy_references.add(alias.name)
+                elif isinstance(node, ast.Constant) and isinstance(node.value, str):
+                    if node.value in TASK6_RETIRED_TEST_SERVICE_MODULES:
+                        legacy_references.add(node.value)
+
+            self.assertEqual(
+                sorted(legacy_references),
+                [],
+                f"{relative_path} still uses retired low-risk test service modules: {sorted(legacy_references)}",
+            )
 
     def test_infrastructure_layer_does_not_import_migrated_service_modules(self) -> None:
         infrastructure_files = [

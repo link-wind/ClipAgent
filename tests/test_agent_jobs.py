@@ -1082,7 +1082,7 @@ class AgentExecutionWorkerTests(unittest.TestCase):
         from backend.app.execution.execution_replan_service import ExecutionReplanService
         from backend.app.execution.asset_execution_service import AssetExecutionService
         from backend.app.execution.render_execution_service import RenderExecutionService
-        from backend.services.agent_progress_service import AgentProgressService
+        from backend.app.execution.progress_service import AgentProgressService
 
         self.assertTrue(callable(getattr(AgentProgressService, "record_event", None)))
         self.assertTrue(callable(getattr(AgentProgressService, "mark_job_running", None)))
@@ -1306,7 +1306,7 @@ class AgentExecutionWorkerTests(unittest.TestCase):
 
     def test_run_agent_job_persists_structured_diagnostics_in_execution_feedback_replan(self):
         from backend.db.repositories import AgentObservationRepository
-        from backend.services.planner_orchestrator import PlannerOrchestrator
+        from backend.app.planning.orchestrator import PlannerOrchestrator
         from backend.tasks.agent_tasks import run_agent_job
 
         session_id, job_id = self._create_queued_job()
@@ -1448,7 +1448,7 @@ class AgentExecutionWorkerTests(unittest.TestCase):
     def test_agent_diagnostic_service_builds_search_no_inventory_diagnostic(self):
         from types import SimpleNamespace
 
-        from backend.services.agent_diagnostic_service import AgentDiagnosticService
+        from backend.app.execution.diagnostic_service import AgentDiagnosticService
 
         event_rows = [
             SimpleNamespace(
@@ -1501,7 +1501,7 @@ class AgentExecutionWorkerTests(unittest.TestCase):
     def test_agent_diagnostic_service_ignores_boolean_failed_scene_ids(self):
         from types import SimpleNamespace
 
-        from backend.services.agent_diagnostic_service import AgentDiagnosticService
+        from backend.app.execution.diagnostic_service import AgentDiagnosticService
 
         event_rows = [
             SimpleNamespace(
@@ -1530,7 +1530,7 @@ class AgentExecutionWorkerTests(unittest.TestCase):
     def test_agent_diagnostic_service_maps_planner_platform_blocked_category(self):
         from types import SimpleNamespace
 
-        from backend.services.agent_diagnostic_service import AgentDiagnosticService
+        from backend.app.execution.diagnostic_service import AgentDiagnosticService
 
         diagnostic = AgentDiagnosticService().build_diagnostic(
             session_record=None,
@@ -1561,7 +1561,7 @@ class AgentExecutionWorkerTests(unittest.TestCase):
     def test_agent_diagnostic_service_falls_back_from_plain_job_error(self):
         from types import SimpleNamespace
 
-        from backend.services.agent_diagnostic_service import AgentDiagnosticService
+        from backend.app.execution.diagnostic_service import AgentDiagnosticService
 
         diagnostic = AgentDiagnosticService().build_diagnostic(
             session_record=None,

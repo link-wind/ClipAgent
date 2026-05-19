@@ -29,7 +29,7 @@ class _FakeChatModel:
 
 class GroundingPlannerRuntimeContractTests(unittest.TestCase):
     def test_retrieval_query_pack_wraps_queries_and_assumptions(self):
-        from backend.services.grounding_planner_models import RetrievalQueryPack
+        from backend.app.planning.grounding_planner_models import RetrievalQueryPack
 
         pack = RetrievalQueryPack(
             productName="Notion AI",
@@ -60,8 +60,8 @@ class GroundingPlannerRuntimeContractTests(unittest.TestCase):
 
 class GroundingPlannerRuntimeTests(unittest.TestCase):
     def test_runtime_builds_normalized_query_pack_from_structured_output(self):
-        from backend.services.grounding_planner_models import RetrievalQueryPack
-        from backend.services.grounding_planner_runtime import GroundingPlannerRuntime
+        from backend.app.planning.grounding_planner_models import RetrievalQueryPack
+        from backend.app.planning.grounding_planner_runtime import GroundingPlannerRuntime
 
         fake_llm = _FakeChatModel(
             result=RetrievalQueryPack(
@@ -96,8 +96,8 @@ class GroundingPlannerRuntimeTests(unittest.TestCase):
         self.assertEqual(pack.queries[0].text, "notion ai demo")
 
     def test_runtime_rejects_blank_query_text(self):
-        from backend.services.grounding_planner_models import RetrievalQueryPack
-        from backend.services.grounding_planner_runtime import GroundingPlannerRuntime
+        from backend.app.planning.grounding_planner_models import RetrievalQueryPack
+        from backend.app.planning.grounding_planner_runtime import GroundingPlannerRuntime
 
         fake_llm = _FakeChatModel(
             result=RetrievalQueryPack(
@@ -125,7 +125,7 @@ class GroundingPlannerRuntimeTests(unittest.TestCase):
             runtime.build_query_pack("给 Notion AI 做一个产品介绍视频")
 
     def test_runtime_bubbles_up_model_failures(self):
-        from backend.services.grounding_planner_runtime import GroundingPlannerRuntime
+        from backend.app.planning.grounding_planner_runtime import GroundingPlannerRuntime
 
         runtime = GroundingPlannerRuntime(
             model_name="gpt-4o-mini",
@@ -136,8 +136,8 @@ class GroundingPlannerRuntimeTests(unittest.TestCase):
             runtime.build_query_pack("给 Notion AI 做一个产品介绍视频")
 
     def test_runtime_rejects_query_pack_with_too_few_queries(self):
-        from backend.services.grounding_planner_models import RetrievalQueryPack
-        from backend.services.grounding_planner_runtime import GroundingPlannerRuntime
+        from backend.app.planning.grounding_planner_models import RetrievalQueryPack
+        from backend.app.planning.grounding_planner_runtime import GroundingPlannerRuntime
 
         runtime = GroundingPlannerRuntime(
             model_name="gpt-4o-mini",
@@ -160,8 +160,8 @@ class GroundingPlannerRuntimeTests(unittest.TestCase):
             runtime.build_query_pack("给 Notion AI 做一个产品介绍视频")
 
     def test_runtime_uses_structured_schema_and_blank_brief_fallback(self):
-        from backend.services.grounding_planner_models import RetrievalQueryPack
-        from backend.services.grounding_planner_runtime import (
+        from backend.app.planning.grounding_planner_models import RetrievalQueryPack
+        from backend.app.planning.grounding_planner_runtime import (
             GROUNDING_QUERY_PLANNER_SYSTEM_PROMPT,
             GroundingPlannerRuntime,
         )

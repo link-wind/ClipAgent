@@ -1031,7 +1031,7 @@ class PlannerRuntimeTests(unittest.TestCase):
 
     def test_langchain_runtime_reads_openai_credentials_from_runtime_settings(self):
         import backend.app.planning.runtime_langchain as planner_runtime_langchain
-        from backend.services.runtime_config_service import RuntimeConfigService
+        from backend.infrastructure.config.runtime_config_service import RuntimeConfigService
 
         with tempfile.TemporaryDirectory() as temp_dir:
             service = RuntimeConfigService(config_path=Path(temp_dir) / "runtime_config.local.json")
