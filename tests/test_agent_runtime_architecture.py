@@ -126,6 +126,17 @@ class AgentRuntimeArchitectureTests(unittest.TestCase):
             "execution_plan_to_edit_plan must be implemented in backend.app.planning.projection",
         )
 
+    def test_grounding_service_lives_in_app_planning_boundary(self) -> None:
+        source_path = ROOT / "backend" / "app" / "planning" / "grounding_service.py"
+        self.assertTrue(source_path.is_file(), str(source_path))
+        source = source_path.read_text(encoding="utf-8")
+        module = ast.parse(source)
+
+        self.assertTrue(
+            any(isinstance(node, ast.ClassDef) and node.name == "GroundingService" for node in module.body),
+            "GroundingService must be implemented in backend.app.planning.grounding_service",
+        )
+
     def test_legacy_planner_projection_module_is_shim(self) -> None:
         source_path = ROOT / "backend" / "services" / "planner_projection.py"
         source = source_path.read_text(encoding="utf-8")
@@ -138,6 +149,20 @@ class AgentRuntimeArchitectureTests(unittest.TestCase):
         self.assertFalse(
             any(isinstance(node, ast.FunctionDef) and node.name == "execution_plan_to_edit_plan" for node in module.body),
             "backend.services.planner_projection must remain a shim",
+        )
+
+    def test_legacy_grounding_service_module_is_shim(self) -> None:
+        source_path = ROOT / "backend" / "services" / "grounding_service.py"
+        source = source_path.read_text(encoding="utf-8")
+        module = ast.parse(source)
+
+        self.assertIn(
+            "from backend.app.planning.grounding_service import",
+            source,
+        )
+        self.assertFalse(
+            any(isinstance(node, ast.ClassDef) and node.name == "GroundingService" for node in module.body),
+            "backend.services.grounding_service must remain a shim",
         )
 
     def test_planning_contracts_live_in_domain_boundary(self) -> None:
@@ -438,6 +463,7 @@ class AgentRuntimeArchitectureTests(unittest.TestCase):
             "backend.services.planner_models",
             "backend.services.planner_projection",
             "backend.services.planner_runtime",
+            "backend.services.grounding_service",
             "backend.services.runtime_config_service",
             "backend.services.render_service",
             "backend.services.agent_run_service",
