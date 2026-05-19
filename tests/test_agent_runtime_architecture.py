@@ -7,6 +7,14 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[1]
+FROZEN_COMPAT_MODULES = {
+    "backend.services.agent_service",
+    "backend.services.search_service",
+    "backend.services.planner_runtime_langchain",
+    "backend.services.asset_providers.config",
+    "backend.services.asset_providers.fixture",
+    "backend.services.asset_providers.pexels",
+}
 
 
 class AgentRuntimeArchitectureTests(unittest.TestCase):
@@ -857,6 +865,15 @@ class AgentRuntimeArchitectureTests(unittest.TestCase):
                 [],
                 f"{relative_path} still uses simple asset-provider compat modules: {disallowed_references}",
             )
+
+    def test_frozen_compat_surface_is_documented(self) -> None:
+        doc_path = ROOT / "docs" / "architecture" / "compat-surface.md"
+        self.assertTrue(doc_path.is_file(), str(doc_path))
+
+        doc = doc_path.read_text(encoding="utf-8")
+        self.assertIn("# Compat Surface", doc)
+        for module_name in sorted(FROZEN_COMPAT_MODULES):
+            self.assertIn(module_name, doc)
 
     def test_infrastructure_layer_does_not_import_migrated_service_modules(self) -> None:
         infrastructure_files = [
