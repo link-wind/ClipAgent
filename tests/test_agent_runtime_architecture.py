@@ -871,10 +871,8 @@ class AgentRuntimeArchitectureTests(unittest.TestCase):
 
     def test_non_architecture_tests_only_reference_frozen_legacy_modules(self) -> None:
         allowed_legacy_prefixes = {
-            "backend.services.agent_service",
             "backend.services.search_service",
             "backend.services.planner_runtime_langchain",
-            "backend.services.asset_providers.config",
             "backend.services.asset_providers.fixture",
             "backend.services.asset_providers.pexels",
         }
@@ -916,7 +914,6 @@ class AgentRuntimeArchitectureTests(unittest.TestCase):
         ]
         allowed_legacy_prefixes = {
             "backend.services.asset_providers",
-            "backend.services.asset_providers.config",
             "backend.services.asset_providers.fixture",
             "backend.services.asset_providers.pexels",
         }
