@@ -11,7 +11,7 @@ from backend.domain.planning.contracts import (
     SearchExecutionFeedback,
     UserRevisionFeedback,
 )
-from backend.services.planner_runtime import get_planner_runtime
+from backend.app.planning.runtime_factory import get_planner_runtime
 
 
 class PlanningState(TypedDict, total=False):

@@ -1,16 +1,3 @@
-from backend.services.planner_runtime_deterministic import DeterministicPlannerRuntime
+from backend.app.planning.runtime_factory import get_planner_runtime
 
-
-def get_planner_runtime():
-    from backend.config import get_settings
-
-    settings = get_settings()
-    if settings.planner_mode == "deterministic":
-        return DeterministicPlannerRuntime()
-
-    if settings.planner_mode == "langchain":
-        from backend.services.planner_runtime_langchain import LangChainPlannerRuntime
-
-        return LangChainPlannerRuntime(model_name=settings.planner_model)
-
-    raise ValueError(f"Unknown planner mode: {settings.planner_mode}")
+__all__ = ["get_planner_runtime"]

@@ -197,6 +197,17 @@ class AgentRuntimeArchitectureTests(unittest.TestCase):
             "RuntimeConfigService must be implemented in backend.infrastructure.config.runtime_config_service",
         )
 
+    def test_planner_runtime_factory_lives_in_app_planning_boundary(self) -> None:
+        source_path = ROOT / "backend" / "app" / "planning" / "runtime_factory.py"
+        self.assertTrue(source_path.is_file(), str(source_path))
+        source = source_path.read_text(encoding="utf-8")
+        module = ast.parse(source)
+
+        self.assertTrue(
+            any(isinstance(node, ast.FunctionDef) and node.name == "get_planner_runtime" for node in module.body),
+            "get_planner_runtime must be implemented in backend.app.planning.runtime_factory",
+        )
+
     def test_legacy_runtime_config_service_module_is_shim(self) -> None:
         source_path = ROOT / "backend" / "services" / "runtime_config_service.py"
         source = source_path.read_text(encoding="utf-8")
@@ -209,6 +220,20 @@ class AgentRuntimeArchitectureTests(unittest.TestCase):
         self.assertFalse(
             any(isinstance(node, ast.ClassDef) and node.name == "RuntimeConfigService" for node in module.body),
             "backend.services.runtime_config_service must remain a shim",
+        )
+
+    def test_legacy_planner_runtime_module_is_shim(self) -> None:
+        source_path = ROOT / "backend" / "services" / "planner_runtime.py"
+        source = source_path.read_text(encoding="utf-8")
+        module = ast.parse(source)
+
+        self.assertIn(
+            "from backend.app.planning.runtime_factory import get_planner_runtime",
+            source,
+        )
+        self.assertFalse(
+            any(isinstance(node, ast.FunctionDef) and node.name == "get_planner_runtime" for node in module.body),
+            "backend.services.planner_runtime must remain a shim",
         )
 
     def test_media_infrastructure_does_not_reexport_services_render_module(self) -> None:
@@ -412,6 +437,7 @@ class AgentRuntimeArchitectureTests(unittest.TestCase):
             "backend.services.planner_graph",
             "backend.services.planner_models",
             "backend.services.planner_projection",
+            "backend.services.planner_runtime",
             "backend.services.runtime_config_service",
             "backend.services.render_service",
             "backend.services.agent_run_service",
@@ -426,7 +452,16 @@ class AgentRuntimeArchitectureTests(unittest.TestCase):
         for path in app_files:
             source = path.read_text(encoding="utf-8")
             for import_path in migrated_service_imports:
-                self.assertNotIn(import_path, source, f"{path} imports migrated service {import_path}")
+                self.assertNotIn(
+                    f"from {import_path} import",
+                    source,
+                    f"{path} imports migrated service {import_path}",
+                )
+                self.assertNotIn(
+                    f"import {import_path}",
+                    source,
+                    f"{path} imports migrated service {import_path}",
+                )
 
     def test_infrastructure_layer_does_not_import_migrated_service_modules(self) -> None:
         infrastructure_files = [
