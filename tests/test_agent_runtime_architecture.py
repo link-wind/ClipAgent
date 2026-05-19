@@ -797,6 +797,51 @@ class AgentRuntimeArchitectureTests(unittest.TestCase):
                     f"{relative_path} still imports deterministic runtime alias via {snippet}",
                 )
 
+    def test_task3_asset_provider_tests_only_keep_patch_heavy_legacy_modules(self) -> None:
+        target_files = [
+            "tests/test_agent_backend.py",
+            "tests/test_agent_jobs.py",
+            "tests/test_grounding_service.py",
+        ]
+        allowed_legacy_prefixes = {
+            "backend.services.asset_providers",
+            "backend.services.asset_providers.config",
+            "backend.services.asset_providers.fixture",
+            "backend.services.asset_providers.pexels",
+        }
+
+        for relative_path in target_files:
+            source = (ROOT / relative_path).read_text(encoding="utf-8")
+            module = ast.parse(source)
+            legacy_references: set[str] = set()
+
+            for node in ast.walk(module):
+                if isinstance(node, ast.ImportFrom) and node.module:
+                    if node.module.startswith("backend.services.asset_providers"):
+                        legacy_references.add(node.module)
+                elif isinstance(node, ast.Import):
+                    for alias in node.names:
+                        if alias.name.startswith("backend.services.asset_providers"):
+                            legacy_references.add(alias.name)
+                elif isinstance(node, ast.Constant) and isinstance(node.value, str):
+                    if node.value.startswith("backend.services.asset_providers"):
+                        matched_prefix = next(
+                            (
+                                allowed_prefix
+                                for allowed_prefix in sorted(allowed_legacy_prefixes, key=len, reverse=True)
+                                if node.value == allowed_prefix or node.value.startswith(f"{allowed_prefix}.")
+                            ),
+                            None,
+                        )
+                        legacy_references.add(matched_prefix or node.value)
+
+            disallowed_references = sorted(legacy_references - allowed_legacy_prefixes)
+            self.assertEqual(
+                disallowed_references,
+                [],
+                f"{relative_path} still uses simple asset-provider compat modules: {disallowed_references}",
+            )
+
     def test_infrastructure_layer_does_not_import_migrated_service_modules(self) -> None:
         infrastructure_files = [
             path for path in (ROOT / "backend" / "infrastructure").rglob("*.py")

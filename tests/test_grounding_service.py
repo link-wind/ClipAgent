@@ -3,7 +3,7 @@ import unittest
 from unittest.mock import patch
 
 from backend.models.agent import AgentGroundingSummary
-from backend.services.asset_providers.types import AssetCandidate
+from backend.infrastructure.media.asset_providers.types import AssetCandidate
 from backend.services.grounding_planner_models import RetrievalQuery
 from backend.services.grounding_planner_models import RetrievalQueryPack
 from backend.services.grounding_service import GroundingService

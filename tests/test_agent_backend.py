@@ -1346,7 +1346,7 @@ class AgentExecutionContractTests(unittest.TestCase):
     def test_agent_search_download_returns_agent_clip_paths(self):
         from backend.models.agent import PlanScene
         from backend.services import search_service
-        from backend.services.asset_providers.types import AssetCandidate
+        from backend.infrastructure.media.asset_providers.types import AssetCandidate
 
         scene = PlanScene(
             id=7,
@@ -1381,7 +1381,7 @@ class AgentExecutionContractTests(unittest.TestCase):
     def test_agent_download_tries_next_search_result_after_youtube_failure(self):
         from backend.models.agent import PlanScene
         from backend.services import search_service
-        from backend.services.asset_providers.types import AssetCandidate
+        from backend.infrastructure.media.asset_providers.types import AssetCandidate
 
         scene = PlanScene(
             id=3,
@@ -1425,7 +1425,7 @@ class AgentExecutionContractTests(unittest.TestCase):
     def test_agent_download_failure_surfaces_last_external_error(self):
         from backend.models.agent import PlanScene
         from backend.services import search_service
-        from backend.services.asset_providers.types import AssetCandidate
+        from backend.infrastructure.media.asset_providers.types import AssetCandidate
 
         scene = PlanScene(
             id=3,
@@ -1486,7 +1486,7 @@ class AgentExecutionContractTests(unittest.TestCase):
     def test_agent_download_falls_back_from_youtube_search_failure_to_pexels(self):
         from backend.models.agent import PlanScene
         from backend.services import search_service
-        from backend.services.asset_providers.types import AssetCandidate, AssetDownload
+        from backend.infrastructure.media.asset_providers.types import AssetCandidate, AssetDownload
 
         scene = PlanScene(
             id=3,
@@ -1531,7 +1531,7 @@ class AgentExecutionContractTests(unittest.TestCase):
     def test_agent_download_falls_back_from_youtube_download_failure_to_pexels(self):
         from backend.models.agent import PlanScene
         from backend.services import search_service
-        from backend.services.asset_providers.types import AssetCandidate, AssetDownload
+        from backend.infrastructure.media.asset_providers.types import AssetCandidate, AssetDownload
 
         scene = PlanScene(
             id=3,
@@ -1586,7 +1586,7 @@ class AgentExecutionContractTests(unittest.TestCase):
     def test_agent_download_prefers_default_youtube_provider_order(self):
         from backend.models.agent import PlanScene
         from backend.services import search_service
-        from backend.services.asset_providers.types import AssetCandidate, AssetDownload
+        from backend.infrastructure.media.asset_providers.types import AssetCandidate, AssetDownload
 
         scene = PlanScene(
             id=3,
@@ -1637,7 +1637,7 @@ class AgentExecutionContractTests(unittest.TestCase):
     def test_agent_download_respects_configured_provider_order(self):
         from backend.models.agent import PlanScene
         from backend.services import search_service
-        from backend.services.asset_providers.types import AssetCandidate, AssetDownload
+        from backend.infrastructure.media.asset_providers.types import AssetCandidate, AssetDownload
 
         scene = PlanScene(
             id=3,
@@ -1696,7 +1696,7 @@ class AgentExecutionContractTests(unittest.TestCase):
     def test_agent_download_stops_searching_after_first_provider_returns_candidates(self):
         from backend.models.agent import PlanScene
         from backend.services import search_service
-        from backend.services.asset_providers.types import AssetCandidate, AssetDownload
+        from backend.infrastructure.media.asset_providers.types import AssetCandidate, AssetDownload
 
         scene = PlanScene(
             id=3,
@@ -1962,7 +1962,7 @@ class AgentExecutionContractTests(unittest.TestCase):
         self.assertEqual(getattr(ctx.exception, "retry_strategy_hint", None), "inventory_broaden")
 
     def test_asset_candidate_exposes_legacy_video_info(self):
-        from backend.services.asset_providers.types import AssetCandidate
+        from backend.infrastructure.media.asset_providers.types import AssetCandidate
 
         candidate = AssetCandidate(
             provider="youtube",
@@ -1992,7 +1992,7 @@ class AgentExecutionContractTests(unittest.TestCase):
         )
 
     def test_clip_metadata_sidecar_round_trips_by_local_path(self):
-        from backend.services.asset_providers.metadata import pop_clip_metadata, remember_clip_metadata
+        from backend.infrastructure.media.asset_providers.metadata import pop_clip_metadata, remember_clip_metadata
 
         remember_clip_metadata(
             "backend/downloads/session_1.mp4",
@@ -2225,7 +2225,7 @@ class AgentExecutionContractTests(unittest.TestCase):
 
         from backend.services.asset_providers import fixture as fixture_provider
         from backend.services.asset_providers.fixture import download_fixture_candidate
-        from backend.services.asset_providers.types import AssetCandidate
+        from backend.infrastructure.media.asset_providers.types import AssetCandidate
 
         candidate = AssetCandidate(
             provider="fixture",
@@ -2310,7 +2310,7 @@ class AgentExecutionContractTests(unittest.TestCase):
     def test_fixture_provider_falls_through_to_next_provider_when_no_match(self):
         from backend.models.agent import PlanScene
         from backend.services import search_service
-        from backend.services.asset_providers.types import AssetCandidate, AssetDownload
+        from backend.infrastructure.media.asset_providers.types import AssetCandidate, AssetDownload
 
         scene = PlanScene(
             id=3,
@@ -2423,7 +2423,7 @@ class AgentExecutionContractTests(unittest.TestCase):
         from unittest.mock import MagicMock
 
         from backend.services.asset_providers.pexels import download_pexels_candidate
-        from backend.services.asset_providers.types import AssetCandidate
+        from backend.infrastructure.media.asset_providers.types import AssetCandidate
 
         candidate = AssetCandidate(
             provider="pexels",

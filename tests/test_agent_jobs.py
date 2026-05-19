@@ -258,7 +258,7 @@ class ClipTrimCalculationTests(unittest.TestCase):
 class SearchClipAssemblyTests(unittest.TestCase):
     def test_search_and_download_agent_clips_populates_trim_metadata(self):
         from backend.models.agent import PlanScene
-        from backend.services.asset_providers.types import AssetCandidate
+        from backend.infrastructure.media.asset_providers.types import AssetCandidate
         from backend.services.search_service import search_and_download_agent_clips
 
         async def run_test():
@@ -299,7 +299,7 @@ class SearchClipAssemblyTests(unittest.TestCase):
 
     def test_search_and_download_agent_clips_populates_caption(self):
         from backend.models.agent import PlanScene
-        from backend.services.asset_providers.types import AssetCandidate
+        from backend.infrastructure.media.asset_providers.types import AssetCandidate
         from backend.services.search_service import search_and_download_agent_clips
 
         async def run_test():
@@ -452,7 +452,7 @@ class ArtifactTrimMetadataTests(unittest.TestCase):
 
     def test_run_agent_job_persists_provider_metadata_in_artifacts(self):
         from backend.db.repositories import AgentArtifactRepository
-        from backend.services.asset_providers.metadata import remember_clip_metadata
+        from backend.infrastructure.media.asset_providers.metadata import remember_clip_metadata
         from backend.tasks.agent_tasks import run_agent_job
 
         session_id, job_id = self._create_queued_job()
