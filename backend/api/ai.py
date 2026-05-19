@@ -16,8 +16,8 @@ from backend.models.task import (
     Scene,
 )
 from backend.infrastructure.ai.gpt_service import gpt_service
+from backend.infrastructure.media.render_service import render_video
 from backend.infrastructure.media.search_service import search_and_download_all
-from backend.services.render_service import render_video
 from backend.utils.websocket import ws_manager
 
 router = APIRouter()

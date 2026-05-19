@@ -673,6 +673,13 @@ class AgentRuntimeArchitectureTests(unittest.TestCase):
         self.assertNotIn("from backend.services.gpt_service import", source)
         self.assertNotIn("import backend.services.gpt_service", source)
 
+    def test_api_ai_does_not_import_legacy_render_service(self) -> None:
+        source = (ROOT / "backend" / "api" / "ai.py").read_text(encoding="utf-8")
+
+        self.assertNotIn("from backend.services.render_service import", source)
+        self.assertNotIn("import backend.services.render_service", source)
+        self.assertIn("from backend.infrastructure.media.render_service import render_video", source)
+
     def test_application_layer_does_not_import_migrated_service_modules(self) -> None:
         migrated_service_imports = {
             "backend.services.agent_session_service",
