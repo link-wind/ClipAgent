@@ -266,6 +266,45 @@ class AgentRuntimeArchitectureTests(unittest.TestCase):
 
         self.assertNotIn("from backend.services.render_service import", render_source)
 
+    def test_search_service_lives_in_infrastructure_media_boundary(self) -> None:
+        source_path = ROOT / "backend" / "infrastructure" / "media" / "search_service.py"
+        self.assertTrue(source_path.is_file(), str(source_path))
+        source = source_path.read_text(encoding="utf-8")
+        module = ast.parse(source)
+
+        expected_functions = {
+            "normalize_duration",
+            "calculate_trim_window",
+            "summarize_download_error",
+            "search_and_download_all",
+            "search_and_download_agent_clips",
+        }
+        implemented = {
+            node.name
+            for node in module.body
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+        }
+        self.assertTrue(
+            expected_functions.issubset(implemented),
+            "search service entrypoints must be implemented in backend.infrastructure.media.search_service",
+        )
+        self.assertNotIn("from backend.services.search_service import", source)
+        self.assertNotIn("import backend.services.search_service", source)
+
+    def test_legacy_search_service_module_is_shim(self) -> None:
+        source_path = ROOT / "backend" / "services" / "search_service.py"
+        source = source_path.read_text(encoding="utf-8")
+        module = ast.parse(source)
+
+        self.assertIn(
+            "from backend.infrastructure.media.search_service import",
+            source,
+        )
+        self.assertFalse(
+            any(isinstance(node, ast.AsyncFunctionDef) and node.name == "search_and_download_agent_clips" for node in module.body),
+            "backend.services.search_service must remain a shim",
+        )
+
     def test_execution_services_use_media_infrastructure_adapters(self) -> None:
         asset_source = (ROOT / "backend" / "app" / "execution" / "asset_execution_service.py").read_text(encoding="utf-8")
         render_source = (ROOT / "backend" / "app" / "execution" / "render_execution_service.py").read_text(encoding="utf-8")
@@ -451,6 +490,12 @@ class AgentRuntimeArchitectureTests(unittest.TestCase):
         self.assertNotIn("from backend.services.agent_service import", source)
         self.assertNotIn("import backend.services.agent_service", source)
         self.assertNotIn("agent_service.sync_session(", source)
+
+    def test_api_ai_does_not_import_legacy_search_service(self) -> None:
+        source = (ROOT / "backend" / "api" / "ai.py").read_text(encoding="utf-8")
+
+        self.assertNotIn("from backend.services.search_service import", source)
+        self.assertNotIn("import backend.services.search_service", source)
 
     def test_application_layer_does_not_import_migrated_service_modules(self) -> None:
         migrated_service_imports = {
