@@ -695,6 +695,11 @@ class AgentRuntimeArchitectureTests(unittest.TestCase):
             "backend.services.agent_service must remain a shim",
         )
 
+    def test_backend_test_suite_does_not_import_legacy_agent_service(self) -> None:
+        source = (ROOT / "tests" / "test_agent_backend.py").read_text(encoding="utf-8")
+
+        self.assertNotIn("from backend.services.agent_service import", source)
+
     def test_api_ai_does_not_import_legacy_search_service(self) -> None:
         source = (ROOT / "backend" / "api" / "ai.py").read_text(encoding="utf-8")
 

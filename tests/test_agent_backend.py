@@ -109,7 +109,7 @@ class SkillEngineContractTests(unittest.TestCase):
 class AgentSessionTests(unittest.TestCase):
     def test_create_session_starts_idle_with_empty_messages(self):
         from backend.models.agent import AgentStatus
-        from backend.services.agent_service import AgentService
+        from backend.compat.agent_service import AgentService
 
         service = AgentService()
         session = service.create_session()
@@ -120,7 +120,7 @@ class AgentSessionTests(unittest.TestCase):
 
     def test_create_session_with_prompt_generates_grounding_ready_session(self):
         from backend.models.agent import AgentStatus
-        from backend.services.agent_service import AgentService
+        from backend.compat.agent_service import AgentService
 
         service = AgentService()
         session = service.create_session("做一个 30 秒科技产品短视频")
@@ -135,7 +135,7 @@ class AgentSessionTests(unittest.TestCase):
 
     def test_add_user_message_to_empty_session_generates_grounding_confirmation(self):
         from backend.models.agent import AgentStatus
-        from backend.services.agent_service import AgentService
+        from backend.compat.agent_service import AgentService
 
         service = AgentService()
         session = service.create_session()
@@ -151,7 +151,7 @@ class AgentSessionTests(unittest.TestCase):
 
     def test_add_user_message_before_grounding_confirmation_refreshes_candidates_without_creating_plan(self):
         from backend.models.agent import AgentStatus
-        from backend.services.agent_service import AgentService
+        from backend.compat.agent_service import AgentService
 
         service = AgentService()
         session = service.create_session("做一个 30 秒科技产品短视频")
@@ -169,7 +169,7 @@ class AgentSessionTests(unittest.TestCase):
 
     def test_add_user_message_rejects_non_editable_session_status(self):
         from backend.models.agent import AgentStatus
-        from backend.services.agent_service import AgentService
+        from backend.compat.agent_service import AgentService
 
         service = AgentService()
         session = service.create_session("做一个 30 秒科技产品短视频")
@@ -181,7 +181,7 @@ class AgentSessionTests(unittest.TestCase):
         self.assertEqual(session.status, AgentStatus.RENDERING)
 
     def test_add_user_message_rejects_blank_content(self):
-        from backend.services.agent_service import AgentService
+        from backend.compat.agent_service import AgentService
 
         service = AgentService()
         session = service.create_session()
@@ -1232,7 +1232,7 @@ class AgentExecutionContractTests(unittest.TestCase):
 
     def test_confirm_session_with_plan_starts_searching(self):
         from backend.models.agent import AgentStatus
-        from backend.services.agent_service import AgentService
+        from backend.compat.agent_service import AgentService
 
         service = AgentService()
         session = service.create_session("做一个科技短片")
@@ -1249,7 +1249,7 @@ class AgentExecutionContractTests(unittest.TestCase):
 
     def test_confirm_session_rejects_searching_without_resetting_status(self):
         from backend.models.agent import AgentStatus
-        from backend.services.agent_service import AgentService
+        from backend.compat.agent_service import AgentService
 
         service = AgentService()
         session = service.create_session("做一个科技短片")
@@ -1270,7 +1270,7 @@ class AgentExecutionContractTests(unittest.TestCase):
 
     def test_confirm_session_rejects_rendering_without_resetting_status(self):
         from backend.models.agent import AgentStatus
-        from backend.services.agent_service import AgentService
+        from backend.compat.agent_service import AgentService
 
         service = AgentService()
         session = service.create_session("做一个科技短片")
@@ -1291,7 +1291,7 @@ class AgentExecutionContractTests(unittest.TestCase):
 
     def test_confirm_session_without_plan_still_fails_with_planning_error(self):
         from backend.models.agent import AgentStatus
-        from backend.services.agent_service import AgentService
+        from backend.compat.agent_service import AgentService
 
         service = AgentService()
         session = service.create_session()
@@ -1304,7 +1304,7 @@ class AgentExecutionContractTests(unittest.TestCase):
 
     def test_failed_planning_session_after_empty_confirm_accepts_message_and_recovers_grounding(self):
         from backend.models.agent import AgentStatus
-        from backend.services.agent_service import AgentService
+        from backend.compat.agent_service import AgentService
 
         service = AgentService()
         session = service.create_session()
@@ -1320,7 +1320,7 @@ class AgentExecutionContractTests(unittest.TestCase):
 
     def test_failed_planning_session_with_existing_plan_regenerates_plan(self):
         from backend.models.agent import AgentError, AgentStatus
-        from backend.services.agent_service import AgentService
+        from backend.compat.agent_service import AgentService
 
         service = AgentService()
         session = service.create_session("做一个科技短片")
@@ -3225,7 +3225,7 @@ class FrontendClientContractTests(unittest.TestCase):
 
     def test_run_confirmed_session_completes_with_clips_and_video_url(self):
         from backend.models.agent import AgentStatus, ClipInfo
-        from backend.services.agent_service import AgentService
+        from backend.compat.agent_service import AgentService
 
         async def fake_search(session_id, scenes):
             return [
@@ -3258,7 +3258,7 @@ class FrontendClientContractTests(unittest.TestCase):
 
     def test_run_confirmed_session_fixture_smoke_exposes_verifiable_video_result_entrypoint(self):
         from backend.models.agent import AgentStatus, ClipInfo
-        from backend.services.agent_service import AgentService
+        from backend.compat.agent_service import AgentService
 
         async def fake_search(session_id, scenes):
             return [
@@ -3293,7 +3293,7 @@ class FrontendClientContractTests(unittest.TestCase):
 
     def test_run_confirmed_session_without_downloaded_clips_fails(self):
         from backend.models.agent import AgentStatus
-        from backend.services.agent_service import AgentService
+        from backend.compat.agent_service import AgentService
 
         async def fake_search(session_id, scenes):
             return []
