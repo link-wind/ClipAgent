@@ -1105,7 +1105,7 @@ class RuntimeConfigIntegrationTests(unittest.TestCase):
         self.temp_dir.cleanup()
 
     def test_asset_provider_config_reads_runtime_overrides(self):
-        import backend.services.asset_providers.config as provider_config
+        import backend.infrastructure.media.asset_providers.config as provider_config
         from backend.infrastructure.config.runtime_config_service import RuntimeConfigService
 
         service = RuntimeConfigService(config_path=self.runtime_path)
@@ -2074,14 +2074,14 @@ class AgentExecutionContractTests(unittest.TestCase):
         self.assertEqual(download_options["format"], "best[height<=480][ext=mp4]")
 
     def test_provider_boolean_env_parsing(self):
-        from backend.services.asset_providers.config import env_flag
+        from backend.infrastructure.media.asset_providers.config import env_flag
 
         with patch.dict("os.environ", {"YTDLP_PROVIDER_ENABLED": "false", "PEXELS_PROVIDER_ENABLED": "1"}, clear=False):
             self.assertFalse(env_flag("YTDLP_PROVIDER_ENABLED", default=True))
             self.assertTrue(env_flag("PEXELS_PROVIDER_ENABLED", default=False))
 
     def test_fixture_provider_config_uses_defaults(self):
-        from backend.services.asset_providers.config import get_fixture_config
+        from backend.infrastructure.media.asset_providers.config import get_fixture_config
 
         with patch.dict("os.environ", {}, clear=True):
             config = get_fixture_config()

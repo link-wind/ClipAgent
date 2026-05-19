@@ -855,6 +855,22 @@ class AgentRuntimeArchitectureTests(unittest.TestCase):
             source,
         )
 
+    def test_task2_backend_tests_do_not_import_legacy_asset_provider_config_aliases(self) -> None:
+        source = (ROOT / "tests" / "test_agent_backend.py").read_text(encoding="utf-8")
+
+        self.assertNotIn(
+            "import backend.services.asset_providers.config as provider_config",
+            source,
+        )
+        self.assertNotIn(
+            "from backend.services.asset_providers.config import env_flag",
+            source,
+        )
+        self.assertNotIn(
+            "from backend.services.asset_providers.config import get_fixture_config",
+            source,
+        )
+
     def test_non_architecture_tests_only_reference_frozen_legacy_modules(self) -> None:
         allowed_legacy_prefixes = {
             "backend.services.agent_service",
