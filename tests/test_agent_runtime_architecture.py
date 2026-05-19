@@ -831,6 +831,13 @@ class AgentRuntimeArchitectureTests(unittest.TestCase):
                     f"{relative_path} still imports deterministic runtime alias via {snippet}",
                 )
 
+    def test_task7_phase3_test_does_not_import_legacy_deterministic_runtime_alias(self) -> None:
+        source = (ROOT / "tests" / "test_agent_planner_phase3.py").read_text(encoding="utf-8")
+        self.assertNotIn(
+            "from backend.services.planner_runtime_deterministic import",
+            source,
+        )
+
     def test_task3_asset_provider_tests_only_keep_patch_heavy_legacy_modules(self) -> None:
         target_files = [
             "tests/test_agent_backend.py",

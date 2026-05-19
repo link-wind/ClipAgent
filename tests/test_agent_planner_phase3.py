@@ -41,7 +41,7 @@ class AgentPlannerPhase3Tests(unittest.TestCase):
         cursor.close()
 
     def test_post_plan_user_revision_persists_observation_and_plan_vnext(self):
-        from backend.services.planner_runtime_deterministic import DeterministicPlannerRuntime
+        from backend.app.planning.runtime_deterministic import DeterministicPlannerRuntime
 
         runtime = DeterministicPlannerRuntime()
         initial_agent, initial_execution = runtime.build_plan_from_brief(
@@ -144,7 +144,7 @@ class AgentPlannerPhase3Tests(unittest.TestCase):
             self.assertEqual(latest.execution_plan_json["scenes"][0]["searchQuery"], "城市 车流 黄昏")
 
     def test_post_plan_user_revision_clears_stale_fallback_reason_after_success(self):
-        from backend.services.planner_runtime_deterministic import DeterministicPlannerRuntime
+        from backend.app.planning.runtime_deterministic import DeterministicPlannerRuntime
 
         runtime = DeterministicPlannerRuntime()
         initial_agent, initial_execution = runtime.build_plan_from_brief(
