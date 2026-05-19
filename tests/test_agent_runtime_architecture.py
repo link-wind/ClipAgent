@@ -8,10 +8,8 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 FROZEN_COMPAT_MODULES = {
-    "backend.services.agent_service",
     "backend.services.search_service",
     "backend.services.planner_runtime_langchain",
-    "backend.services.asset_providers.config",
     "backend.services.asset_providers.fixture",
     "backend.services.asset_providers.pexels",
 }
