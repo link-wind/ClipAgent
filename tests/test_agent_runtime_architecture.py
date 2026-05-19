@@ -28,6 +28,7 @@ class AgentRuntimeArchitectureTests(unittest.TestCase):
             "backend/domain/skills/contracts.py",
             "backend/domain/planning/__init__.py",
             "backend/infrastructure/__init__.py",
+            "backend/infrastructure/ai/__init__.py",
             "backend/infrastructure/config/__init__.py",
             "backend/infrastructure/media/__init__.py",
             "backend/workers/__init__.py",
@@ -268,6 +269,18 @@ class AgentRuntimeArchitectureTests(unittest.TestCase):
             "RuntimeConfigService must be implemented in backend.infrastructure.config.runtime_config_service",
         )
 
+    def test_gpt_service_lives_in_infrastructure_ai_boundary(self) -> None:
+        source_path = ROOT / "backend" / "infrastructure" / "ai" / "gpt_service.py"
+        self.assertTrue(source_path.is_file(), str(source_path))
+        source = source_path.read_text(encoding="utf-8")
+        module = ast.parse(source)
+
+        self.assertTrue(
+            any(isinstance(node, ast.ClassDef) and node.name == "GPTService" for node in module.body),
+            "GPTService must be implemented in backend.infrastructure.ai.gpt_service",
+        )
+        self.assertNotIn("from backend.services.gpt_service import", source)
+
     def test_planner_runtime_factory_lives_in_app_planning_boundary(self) -> None:
         source_path = ROOT / "backend" / "app" / "planning" / "runtime_factory.py"
         self.assertTrue(source_path.is_file(), str(source_path))
@@ -311,6 +324,20 @@ class AgentRuntimeArchitectureTests(unittest.TestCase):
         self.assertFalse(
             any(isinstance(node, ast.ClassDef) and node.name == "RuntimeConfigService" for node in module.body),
             "backend.services.runtime_config_service must remain a shim",
+        )
+
+    def test_legacy_gpt_service_module_is_shim(self) -> None:
+        source_path = ROOT / "backend" / "services" / "gpt_service.py"
+        source = source_path.read_text(encoding="utf-8")
+        module = ast.parse(source)
+
+        self.assertIn(
+            "from backend.infrastructure.ai.gpt_service import",
+            source,
+        )
+        self.assertFalse(
+            any(isinstance(node, ast.ClassDef) and node.name == "GPTService" for node in module.body),
+            "backend.services.gpt_service must remain a shim",
         )
 
     def test_legacy_planner_runtime_module_is_shim(self) -> None:
@@ -611,6 +638,12 @@ class AgentRuntimeArchitectureTests(unittest.TestCase):
 
         self.assertNotIn("from backend.services.search_service import", source)
         self.assertNotIn("import backend.services.search_service", source)
+
+    def test_api_ai_does_not_import_legacy_gpt_service(self) -> None:
+        source = (ROOT / "backend" / "api" / "ai.py").read_text(encoding="utf-8")
+
+        self.assertNotIn("from backend.services.gpt_service import", source)
+        self.assertNotIn("import backend.services.gpt_service", source)
 
     def test_application_layer_does_not_import_migrated_service_modules(self) -> None:
         migrated_service_imports = {

@@ -1125,7 +1125,7 @@ class RuntimeConfigIntegrationTests(unittest.TestCase):
             self.assertFalse(provider_config.get_youtube_config().enabled)
 
     def test_gpt_service_reads_runtime_openai_config(self):
-        import backend.services.gpt_service as gpt_service_module
+        import backend.infrastructure.ai.gpt_service as gpt_service_module
         from backend.services.runtime_config_service import RuntimeConfigService
 
         service = RuntimeConfigService(config_path=self.runtime_path)
