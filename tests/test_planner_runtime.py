@@ -972,7 +972,7 @@ class PlannerRuntimeTests(unittest.TestCase):
         with patch.dict("os.environ", {}, clear=True):
             from backend.config import get_settings
             from backend.services.planner_runtime import get_planner_runtime
-            import backend.services.planner_runtime_langchain as planner_runtime_langchain
+            import backend.app.planning.runtime_langchain as planner_runtime_langchain
 
             class LangChainPlannerRuntime:
                 def __init__(self, model_name):
@@ -1000,7 +1000,7 @@ class PlannerRuntimeTests(unittest.TestCase):
 
     def test_selector_reads_current_settings_after_backend_config_reload(self):
         import backend.services.planner_runtime as planner_runtime
-        import backend.services.planner_runtime_langchain as planner_runtime_langchain
+        import backend.app.planning.runtime_langchain as planner_runtime_langchain
 
         class LangChainPlannerRuntime:
             def __init__(self, model_name):
@@ -1030,7 +1030,7 @@ class PlannerRuntimeTests(unittest.TestCase):
             reloaded_config.get_settings.cache_clear()
 
     def test_langchain_runtime_reads_openai_credentials_from_runtime_settings(self):
-        import backend.services.planner_runtime_langchain as planner_runtime_langchain
+        import backend.app.planning.runtime_langchain as planner_runtime_langchain
         from backend.services.runtime_config_service import RuntimeConfigService
 
         with tempfile.TemporaryDirectory() as temp_dir:

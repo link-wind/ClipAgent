@@ -1,4 +1,4 @@
-from backend.services.planner_runtime_deterministic import DeterministicPlannerRuntime
+from backend.app.planning.runtime_deterministic import DeterministicPlannerRuntime
 
 
 def get_planner_runtime():
@@ -9,7 +9,7 @@ def get_planner_runtime():
         return DeterministicPlannerRuntime()
 
     if settings.planner_mode == "langchain":
-        from backend.services.planner_runtime_langchain import LangChainPlannerRuntime
+        from backend.app.planning.runtime_langchain import LangChainPlannerRuntime
 
         return LangChainPlannerRuntime(model_name=settings.planner_model)
 

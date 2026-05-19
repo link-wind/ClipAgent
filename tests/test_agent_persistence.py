@@ -2302,11 +2302,11 @@ class SessionServiceBehaviorTests(unittest.TestCase):
         with patch.dict(os.environ, {"CLIPFORGE_PLANNER_MODE": "langchain"}, clear=False):
             get_settings.cache_clear()
             with patch(
-                "backend.services.planner_runtime_langchain.ChatOpenAI",
+                "backend.app.planning.runtime_langchain.ChatOpenAI",
                 return_value=Mock(),
             ):
                 with patch(
-                    "backend.services.planner_runtime_langchain.LangChainPlannerRuntime._revision_runnable",
+                    "backend.app.planning.runtime_langchain.LangChainPlannerRuntime._revision_runnable",
                     return_value=_FailingRevisionRunnable(),
                 ):
                     updated = service.add_user_message(session.id, "整体再商务一点，目标受众改成销售团队")

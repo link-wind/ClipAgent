@@ -232,6 +232,26 @@ class AgentRuntimeArchitectureTests(unittest.TestCase):
             any(isinstance(node, ast.FunctionDef) and node.name == "get_planner_runtime" for node in module.body),
             "get_planner_runtime must be implemented in backend.app.planning.runtime_factory",
         )
+        self.assertNotIn("from backend.services.planner_runtime_deterministic import", source)
+        self.assertNotIn("from backend.services.planner_runtime_langchain import", source)
+
+    def test_planner_runtime_implementations_live_in_app_planning_boundary(self) -> None:
+        expected_modules = {
+            "runtime_deterministic.py": "DeterministicPlannerRuntime",
+            "runtime_langchain.py": "LangChainPlannerRuntime",
+            "runtime_openai.py": "OpenAIPlannerRuntime",
+        }
+
+        for filename, class_name in expected_modules.items():
+            source_path = ROOT / "backend" / "app" / "planning" / filename
+            self.assertTrue(source_path.is_file(), str(source_path))
+            source = source_path.read_text(encoding="utf-8")
+            module = ast.parse(source)
+            self.assertTrue(
+                any(isinstance(node, ast.ClassDef) and node.name == class_name for node in module.body),
+                f"{class_name} must be implemented in backend.app.planning.{source_path.stem}",
+            )
+            self.assertNotIn("from backend.services.", source)
 
     def test_legacy_runtime_config_service_module_is_shim(self) -> None:
         source_path = ROOT / "backend" / "services" / "runtime_config_service.py"
@@ -260,6 +280,38 @@ class AgentRuntimeArchitectureTests(unittest.TestCase):
             any(isinstance(node, ast.FunctionDef) and node.name == "get_planner_runtime" for node in module.body),
             "backend.services.planner_runtime must remain a shim",
         )
+
+    def test_legacy_planner_runtime_implementation_modules_are_shims(self) -> None:
+        shim_modules = {
+            "planner_runtime_deterministic.py": (
+                "DeterministicPlannerRuntime",
+                "from backend.app.planning.runtime_deterministic import DeterministicPlannerRuntime",
+            ),
+            "planner_runtime_langchain.py": (
+                "LangChainPlannerRuntime",
+                "backend.app.planning.runtime_langchain",
+            ),
+            "planner_runtime_openai.py": (
+                "OpenAIPlannerRuntime",
+                "from backend.app.planning.runtime_openai import OpenAIPlannerRuntime",
+            ),
+        }
+
+        for filename, (class_name, expected_import) in shim_modules.items():
+            source_path = ROOT / "backend" / "services" / filename
+            source = source_path.read_text(encoding="utf-8")
+            module = ast.parse(source)
+            self.assertIn(expected_import, source)
+            if filename == "planner_runtime_langchain.py":
+                self.assertFalse(
+                    any(isinstance(node, ast.FunctionDef) and node.name == "build_plan_from_brief" for node in module.body),
+                    "backend.services.planner_runtime_langchain must not carry the full runtime implementation",
+                )
+            else:
+                self.assertFalse(
+                    any(isinstance(node, ast.ClassDef) and node.name == class_name for node in module.body),
+                    f"backend.services.{source_path.stem} must remain a shim",
+                )
 
     def test_media_infrastructure_does_not_reexport_services_render_module(self) -> None:
         render_source = (ROOT / "backend" / "infrastructure" / "media" / "render_service.py").read_text(encoding="utf-8")
