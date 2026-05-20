@@ -2118,7 +2118,7 @@ class AgentExecutionContractTests(unittest.TestCase):
         self.assertEqual(config.library_path, "fixtures/videos.json")
 
     def test_fixture_library_loads_default_videos_json(self):
-        from backend.services.asset_providers.fixture import load_fixture_library
+        from backend.infrastructure.media.asset_providers.fixture import load_fixture_library
 
         with patch.dict("os.environ", {}, clear=True):
             library = load_fixture_library()
@@ -2131,7 +2131,7 @@ class AgentExecutionContractTests(unittest.TestCase):
         self.assertIn("thumbnailUrl", library[0])
 
     def test_fixture_search_returns_normalized_candidates(self):
-        from backend.services.asset_providers.fixture import search_fixture_candidates
+        from backend.infrastructure.media.asset_providers.fixture import search_fixture_candidates
 
         with patch.dict("os.environ", {}, clear=True):
             candidates = search_fixture_candidates(["  城市 ", "夜景"], max_results=3)
@@ -2154,7 +2154,7 @@ class AgentExecutionContractTests(unittest.TestCase):
         )
 
     def test_fixture_search_returns_empty_list_when_no_match(self):
-        from backend.services.asset_providers.fixture import search_fixture_candidates
+        from backend.infrastructure.media.asset_providers.fixture import search_fixture_candidates
 
         with patch.dict("os.environ", {}, clear=True):
             candidates = search_fixture_candidates(["沙漠", "极光"], max_results=5)
@@ -2166,8 +2166,8 @@ class AgentExecutionContractTests(unittest.TestCase):
         from pathlib import Path
         from tempfile import TemporaryDirectory
 
-        import backend.services.asset_providers.fixture as fixture_provider
-        from backend.services.asset_providers.fixture import search_fixture_candidates
+        import backend.infrastructure.media.asset_providers.fixture as fixture_provider
+        from backend.infrastructure.media.asset_providers.fixture import search_fixture_candidates
 
         with TemporaryDirectory() as tmpdir:
             temp_root = Path(tmpdir)
@@ -2192,7 +2192,7 @@ class AgentExecutionContractTests(unittest.TestCase):
             (fixtures_dir / "vid_001.mp4").write_bytes(b"fixture-mp4-bytes")
 
             with patch.object(fixture_provider, "ROOT_DIR", temp_root), patch(
-                "backend.services.asset_providers.fixture.probe_fixture_duration",
+                "backend.infrastructure.media.asset_providers.fixture.probe_fixture_duration",
                 return_value=1.0,
             ), patch.dict("os.environ", {}, clear=True):
                 candidates = search_fixture_candidates(["城市", "车流"], max_results=1)
@@ -2205,8 +2205,11 @@ class AgentExecutionContractTests(unittest.TestCase):
         from pathlib import Path
         from tempfile import TemporaryDirectory
 
-        import backend.services.asset_providers.fixture as fixture_provider
-        from backend.services.asset_providers.fixture import download_fixture_candidate, search_fixture_candidates
+        import backend.infrastructure.media.asset_providers.fixture as fixture_provider
+        from backend.infrastructure.media.asset_providers.fixture import (
+            download_fixture_candidate,
+            search_fixture_candidates,
+        )
 
         with TemporaryDirectory() as tmpdir:
             temp_root = Path(tmpdir)
@@ -2251,8 +2254,8 @@ class AgentExecutionContractTests(unittest.TestCase):
         from pathlib import Path
         from tempfile import TemporaryDirectory
 
-        import backend.services.asset_providers.fixture as fixture_provider
-        from backend.services.asset_providers.fixture import download_fixture_candidate
+        import backend.infrastructure.media.asset_providers.fixture as fixture_provider
+        from backend.infrastructure.media.asset_providers.fixture import download_fixture_candidate
         from backend.infrastructure.media.asset_providers.types import AssetCandidate
 
         candidate = AssetCandidate(

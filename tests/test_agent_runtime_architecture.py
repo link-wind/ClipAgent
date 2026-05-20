@@ -923,6 +923,26 @@ class AgentRuntimeArchitectureTests(unittest.TestCase):
             source,
         )
 
+    def test_task1_backend_fixture_provider_tests_do_not_reference_legacy_fixture_shim(self) -> None:
+        source = (ROOT / "tests" / "test_agent_backend.py").read_text(encoding="utf-8")
+        targeted_tests = [
+            "test_fixture_library_loads_default_videos_json",
+            "test_fixture_search_returns_normalized_candidates",
+            "test_fixture_search_returns_empty_list_when_no_match",
+            "test_fixture_search_prefers_probed_media_duration_when_local_file_exists",
+            "test_fixture_download_copies_asset_into_backend_downloads",
+            "test_fixture_download_raises_clear_error_when_source_file_missing",
+        ]
+
+        for function_name in targeted_tests:
+            function_source = _get_function_source(source, function_name=function_name)
+            _assert_no_legacy_module_references(
+                self,
+                function_source,
+                module_name="backend.services.asset_providers.fixture",
+                context=f"tests/test_agent_backend.py::{function_name}",
+            )
+
     def test_non_architecture_tests_only_reference_frozen_legacy_modules(self) -> None:
         allowed_legacy_prefixes = {
             "backend.services.asset_providers.fixture",
