@@ -99,6 +99,17 @@ class AgentRuntimeArchitectureTests(unittest.TestCase):
         for relative_path in expected_paths:
             self.assertTrue((ROOT / relative_path).is_file(), relative_path)
 
+    def test_read_model_assembler_boundary_files_exist(self) -> None:
+        expected_paths = [
+            "backend/app/read_models/__init__.py",
+            "backend/app/read_models/session_assembler.py",
+            "backend/app/read_models/step_assembler.py",
+            "backend/app/read_models/trace_assembler.py",
+        ]
+
+        for relative_path in expected_paths:
+            self.assertTrue((ROOT / relative_path).is_file(), relative_path)
+
     def test_application_boundary_reexports_existing_use_cases(self) -> None:
         session_use_cases = importlib.import_module("backend.app.agent.session_use_cases")
         job_use_cases = importlib.import_module("backend.app.execution.job_use_cases")
