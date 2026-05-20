@@ -7,6 +7,7 @@ import tempfile
 import unittest
 from datetime import datetime
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 
 import httpx
@@ -237,6 +238,126 @@ class AgentStreamServiceTests(unittest.TestCase):
         self.assertEqual(payload["sessionId"], "session-1")
         self.assertEqual(payload["message"], message)
         self.assertTrue(frame.endswith("\n\n"))
+
+    def test_trace_read_model_assembler_maps_actor_role_and_sequence(self):
+        from backend.app.read_models.trace_assembler import TraceReadModelAssembler
+
+        assembler = TraceReadModelAssembler()
+        records = [
+            SimpleNamespace(
+                id="trace-1",
+                session_id="session-1",
+                run_id="run-1",
+                step_id="step-1",
+                job_id="job-1",
+                event_type="step_started",
+                level="info",
+                message="开始规划",
+                payload_json={"ok": True},
+                sequence=3,
+                actor_role="planner",
+                created_at=datetime(2026, 5, 20, 10, 0, 0),
+            )
+        ]
+
+        events = assembler.build_trace_events(records)
+        event = events[0]
+
+        self.assertEqual(len(events), 1)
+        self.assertEqual(event.actorRole, "planner")
+        self.assertEqual(event.sequence, 3)
+        self.assertEqual(event.createdAt, "2026-05-20T10:00:00")
+
+    def test_step_read_model_assembler_prefers_latest_persisted_step_row(self):
+        from backend.app.read_models.step_assembler import StepReadModelAssembler
+        from backend.models.agent import AgentStep
+
+        class StubStepSnapshotService:
+            def build_session_steps(self, **_kwargs):
+                step_keys = [
+                    "understand_request",
+                    "extract_requirements",
+                    "generate_options",
+                    "finalize_plan",
+                    "create_task",
+                    "search_assets",
+                    "prepare_assets",
+                    "render_video",
+                ]
+                return [
+                    AgentStep(
+                        id=step_key,
+                        title=step_key,
+                        description=step_key,
+                        status="pending",
+                        summary="",
+                    )
+                    for step_key in step_keys
+                ]
+
+            def build_task_steps(self, **_kwargs):
+                return self.build_session_steps()
+
+            def build_persisted_steps(self, step_rows):
+                return [
+                    AgentStep(
+                        id=row.step_key,
+                        title=row.title,
+                        description=row.description,
+                        status=row.status,
+                        progress=row.progress,
+                        summary=row.summary,
+                        result=row.result_json,
+                        error=None,
+                        startedAt=row.started_at.isoformat() if row.started_at else None,
+                        finishedAt=row.finished_at.isoformat() if row.finished_at else None,
+                    )
+                    for row in step_rows
+                ]
+
+        assembler = StepReadModelAssembler(step_snapshot_service=StubStepSnapshotService())
+        persisted_step_rows = [
+            SimpleNamespace(
+                id="step-older",
+                step_key="prepare_assets",
+                title="准备素材",
+                description="准备素材",
+                status="running",
+                progress=0.4,
+                summary="素材准备中",
+                result_json={"version": "old"},
+                started_at=datetime(2026, 5, 20, 9, 0, 0),
+                finished_at=None,
+                created_at=datetime(2026, 5, 20, 9, 0, 0),
+                updated_at=datetime(2026, 5, 20, 9, 5, 0),
+            ),
+            SimpleNamespace(
+                id="step-latest",
+                step_key="prepare_assets",
+                title="准备素材",
+                description="准备素材",
+                status="succeeded",
+                progress=1.0,
+                summary="素材已准备完成",
+                result_json={"version": "latest"},
+                started_at=datetime(2026, 5, 20, 9, 0, 0),
+                finished_at=datetime(2026, 5, 20, 9, 10, 0),
+                created_at=datetime(2026, 5, 20, 9, 10, 0),
+                updated_at=datetime(2026, 5, 20, 9, 10, 0),
+            ),
+        ]
+
+        steps = assembler.build_session_steps(
+            session_record=None,
+            message_rows=[],
+            plan_row=None,
+            event_rows=[],
+            persisted_step_rows=persisted_step_rows,
+        )
+
+        self.assertEqual(steps[6].id, "prepare_assets")
+        self.assertEqual(steps[6].status, "succeeded")
+        self.assertEqual(steps[6].summary, "素材已准备完成")
 
 
 class AgentApiTests(unittest.TestCase):

@@ -4,6 +4,7 @@ from typing import Any
 
 from sqlalchemy.orm import Session
 
+from backend.app.read_models.trace_assembler import TraceReadModelAssembler
 from backend.db.models import AgentSessionRecord, AgentTraceEventRecord
 from backend.db.repositories import AgentSessionRepository, AgentTraceEventRepository
 from backend.models.agent import AgentTraceEvent
@@ -36,20 +37,7 @@ def format_sse_event(event_name: str, payload: dict[str, Any], event_id: int | N
 
 
 def trace_record_to_model(record: AgentTraceEventRecord) -> AgentTraceEvent:
-    return AgentTraceEvent(
-        id=record.id,
-        sessionId=record.session_id,
-        runId=record.run_id,
-        stepId=record.step_id,
-        jobId=record.job_id,
-        eventType=record.event_type,
-        level=record.level,
-        message=record.message,
-        payload=record.payload_json or {},
-        sequence=record.sequence,
-        actorRole=record.actor_role,
-        createdAt=record.created_at.isoformat(),
-    )
+    return TraceReadModelAssembler().build_trace_events([record])[0]
 
 
 class AgentStreamService:
@@ -57,6 +45,7 @@ class AgentStreamService:
         self.db = db_session
         self.session_repo = AgentSessionRepository(db_session)
         self.trace_repo = AgentTraceEventRepository(db_session)
+        self.trace_assembler = TraceReadModelAssembler()
 
     def require_session(self, session_id: str) -> AgentSessionRecord:
         session = self.session_repo.get(session_id)
@@ -70,7 +59,7 @@ class AgentStreamService:
             after_sequence=after_sequence,
             limit=limit,
         )
-        events = [trace_record_to_model(record) for record in records]
+        events = self.trace_assembler.build_trace_events(records)
         last_sequence = after_sequence
         if events:
             last_sequence = max(event.sequence for event in events)
