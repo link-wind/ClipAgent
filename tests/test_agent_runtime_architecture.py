@@ -28,10 +28,14 @@ TASK6_RETIRED_TEST_SERVICE_MODULES = {
 def _collect_legacy_module_references(source: str, *, module_name: str) -> set[str]:
     module = ast.parse(source)
     references: set[str] = set()
+    parent_module, _, leaf_name = module_name.rpartition(".")
 
     for node in ast.walk(module):
         if isinstance(node, ast.ImportFrom) and node.module == module_name:
             references.add(module_name)
+        elif isinstance(node, ast.ImportFrom) and node.module == parent_module:
+            if any(alias.name == leaf_name for alias in node.names):
+                references.add(module_name)
         elif isinstance(node, ast.Import):
             for alias in node.names:
                 if alias.name == module_name:
@@ -1022,6 +1026,14 @@ class AgentRuntimeArchitectureTests(unittest.TestCase):
     def test_task1_guard_detects_legacy_search_service_module_alias_imports(self) -> None:
         references = _collect_legacy_module_references(
             "import backend.services.search_service as search_service\n",
+            module_name="backend.services.search_service",
+        )
+
+        self.assertEqual(references, {"backend.services.search_service"})
+
+    def test_task1_guard_detects_legacy_search_service_from_imports(self) -> None:
+        references = _collect_legacy_module_references(
+            "from backend.services import search_service\n",
             module_name="backend.services.search_service",
         )
 
