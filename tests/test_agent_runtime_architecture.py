@@ -1060,8 +1060,27 @@ class AgentRuntimeArchitectureTests(unittest.TestCase):
 
         doc = doc_path.read_text(encoding="utf-8")
         self.assertIn("# Compat Surface", doc)
+        self.assertEqual(FROZEN_COMPAT_MODULES, set())
+        self.assertIn("frozen compat surface", doc)
+        self.assertIn("已收缩为 0", doc)
         for module_name in sorted(FROZEN_COMPAT_MODULES):
             self.assertIn(module_name, doc)
+
+    def test_runtime_boundaries_are_documented_without_legacy_service_boundary(self) -> None:
+        doc_path = ROOT / "docs" / "architecture" / "runtime-boundaries.md"
+        self.assertTrue(doc_path.is_file(), str(doc_path))
+
+        doc = doc_path.read_text(encoding="utf-8")
+        self.assertIn("# Runtime Boundaries", doc)
+        self.assertIn("backend/app", doc)
+        self.assertIn("backend/runtime", doc)
+        self.assertIn("backend/domain", doc)
+        self.assertIn("backend/infrastructure", doc)
+        self.assertIn("backend/compat", doc)
+        self.assertIn("RAG", doc)
+        self.assertIn("Skill", doc)
+        self.assertIn("MCP", doc)
+        self.assertNotIn("backend.services.", doc)
 
     def test_task6_targeted_tests_do_not_use_retired_low_risk_service_modules(self) -> None:
         target_files = [
