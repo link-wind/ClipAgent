@@ -2287,7 +2287,7 @@ class AgentExecutionContractTests(unittest.TestCase):
 
         from backend.models.agent import PlanScene
         import backend.infrastructure.media.search_service as search_service
-        import backend.services.asset_providers.fixture as fixture_provider
+        import backend.infrastructure.media.asset_providers.fixture as fixture_provider
 
         scene = PlanScene(
             id=1,

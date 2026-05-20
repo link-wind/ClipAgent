@@ -943,6 +943,20 @@ class AgentRuntimeArchitectureTests(unittest.TestCase):
                 context=f"tests/test_agent_backend.py::{function_name}",
             )
 
+    def test_task6_fixture_provider_integration_test_does_not_reference_legacy_fixture_shim(self) -> None:
+        source = (ROOT / "tests" / "test_agent_backend.py").read_text(encoding="utf-8")
+        function_source = _get_function_source(
+            source,
+            function_name="test_agent_download_can_complete_with_fixture_provider",
+        )
+
+        _assert_no_legacy_module_references(
+            self,
+            function_source,
+            module_name="backend.services.asset_providers.fixture",
+            context="tests/test_agent_backend.py::test_agent_download_can_complete_with_fixture_provider",
+        )
+
     def test_non_architecture_tests_only_reference_frozen_legacy_modules(self) -> None:
         allowed_legacy_prefixes = {
             "backend.services.asset_providers.fixture",
