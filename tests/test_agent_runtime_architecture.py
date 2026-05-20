@@ -7,9 +7,7 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[1]
-FROZEN_COMPAT_MODULES = {
-    "backend.services.asset_providers.pexels",
-}
+FROZEN_COMPAT_MODULES: set[str] = set()
 TASK6_RETIRED_TEST_SERVICE_MODULES = {
     "backend.services.runtime_config_service",
     "backend.services.render_service",
@@ -978,10 +976,14 @@ class AgentRuntimeArchitectureTests(unittest.TestCase):
         self.assertNotIn("backend.services.asset_providers.fixture", FROZEN_COMPAT_MODULES)
         self.assertNotIn("`backend.services.asset_providers.fixture`", compat_doc)
 
+    def test_task9_pexels_shim_is_removed_from_frozen_compat_surface(self) -> None:
+        compat_doc = (ROOT / "docs" / "architecture" / "compat-surface.md").read_text(encoding="utf-8")
+
+        self.assertNotIn("backend.services.asset_providers.pexels", FROZEN_COMPAT_MODULES)
+        self.assertNotIn("`backend.services.asset_providers.pexels`", compat_doc)
+
     def test_non_architecture_tests_only_reference_frozen_legacy_modules(self) -> None:
-        allowed_legacy_prefixes = {
-            "backend.services.asset_providers.pexels",
-        }
+        allowed_legacy_prefixes: set[str] = set()
         offenders: dict[str, list[str]] = {}
 
         for path in sorted((ROOT / "tests").glob("test_*.py")):
@@ -1018,10 +1020,7 @@ class AgentRuntimeArchitectureTests(unittest.TestCase):
             "tests/test_agent_jobs.py",
             "tests/test_grounding_service.py",
         ]
-        allowed_legacy_prefixes = {
-            "backend.services.asset_providers",
-            "backend.services.asset_providers.pexels",
-        }
+        allowed_legacy_prefixes: set[str] = set()
 
         for relative_path in target_files:
             source = (ROOT / relative_path).read_text(encoding="utf-8")
