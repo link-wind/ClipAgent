@@ -8,7 +8,6 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 FROZEN_COMPAT_MODULES = {
-    "backend.services.planner_runtime_langchain",
     "backend.services.asset_providers.fixture",
     "backend.services.asset_providers.pexels",
 }
@@ -826,7 +825,6 @@ class AgentRuntimeArchitectureTests(unittest.TestCase):
         ]
         allowed_legacy_modules = {
             "backend.services.planner_runtime_deterministic",
-            "backend.services.planner_runtime_langchain",
             "backend.services.asset_providers",
             "backend.services.asset_providers.config",
             "backend.services.asset_providers.fixture",
@@ -927,7 +925,6 @@ class AgentRuntimeArchitectureTests(unittest.TestCase):
 
     def test_non_architecture_tests_only_reference_frozen_legacy_modules(self) -> None:
         allowed_legacy_prefixes = {
-            "backend.services.planner_runtime_langchain",
             "backend.services.asset_providers.fixture",
             "backend.services.asset_providers.pexels",
         }
