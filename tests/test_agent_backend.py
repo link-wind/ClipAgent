@@ -1485,7 +1485,7 @@ class AgentExecutionContractTests(unittest.TestCase):
 
     def test_agent_download_falls_back_from_youtube_search_failure_to_pexels(self):
         from backend.models.agent import PlanScene
-        import backend.services.search_service as search_service
+        import backend.infrastructure.media.search_service as search_service
         from backend.infrastructure.media.asset_providers.types import AssetCandidate, AssetDownload
 
         scene = PlanScene(
@@ -1505,12 +1505,14 @@ class AgentExecutionContractTests(unittest.TestCase):
             author="Pexels Creator",
         )
 
-        with patch("backend.services.search_service.search_youtube_candidates") as mock_youtube_search, patch(
-            "backend.services.search_service.search_pexels_candidates",
+        with patch("backend.infrastructure.media.search_service.get_asset_provider_order", return_value=["youtube", "pexels"]), patch(
+            "backend.infrastructure.media.search_service.search_youtube_candidates",
+        ) as mock_youtube_search, patch(
+            "backend.infrastructure.media.search_service.search_pexels_candidates",
         ) as mock_pexels_search, patch(
-            "backend.services.search_service.download_pexels_candidate",
+            "backend.infrastructure.media.search_service.download_pexels_candidate",
         ) as mock_pexels_download, patch(
-            "backend.services.search_service.get_pexels_config",
+            "backend.infrastructure.media.search_service.get_pexels_config",
         ) as mock_pexels_config:
             mock_youtube_search.side_effect = RuntimeError("素材搜索失败：Sign in to confirm you’re not a bot.")
             mock_pexels_search.return_value = [pexels_candidate]
@@ -1530,7 +1532,7 @@ class AgentExecutionContractTests(unittest.TestCase):
 
     def test_agent_download_falls_back_from_youtube_download_failure_to_pexels(self):
         from backend.models.agent import PlanScene
-        import backend.services.search_service as search_service
+        import backend.infrastructure.media.search_service as search_service
         from backend.infrastructure.media.asset_providers.types import AssetCandidate, AssetDownload
 
         scene = PlanScene(
@@ -1557,21 +1559,24 @@ class AgentExecutionContractTests(unittest.TestCase):
             duration=14,
         )
 
-        with patch("backend.services.search_service.search_youtube_candidates", return_value=[youtube_candidate]), patch(
-            "backend.services.search_service.download_video",
+        with patch("backend.infrastructure.media.search_service.get_asset_provider_order", return_value=["youtube", "pexels"]), patch(
+            "backend.infrastructure.media.search_service.search_youtube_candidates",
+            return_value=[youtube_candidate],
+        ), patch(
+            "backend.infrastructure.media.search_service.download_video",
             new_callable=AsyncMock,
         ) as mock_download, patch(
-            "backend.services.search_service.search_pexels_candidates",
+            "backend.infrastructure.media.search_service.search_pexels_candidates",
             return_value=[pexels_candidate],
         ), patch(
-            "backend.services.search_service.download_pexels_candidate",
+            "backend.infrastructure.media.search_service.download_pexels_candidate",
             return_value=AssetDownload(
                 local_path="backend/downloads/session_3_pexels_1.mp4",
                 public_url="/downloads/session_3_pexels_1.mp4",
                 metadata=pexels_candidate.to_metadata(),
             ),
         ), patch(
-            "backend.services.search_service.get_pexels_config",
+            "backend.infrastructure.media.search_service.get_pexels_config",
         ) as mock_pexels_config:
             mock_download.side_effect = Exception("Download failed: YouTube 当前要求 PO Token")
             mock_pexels_config.return_value.enabled = True
@@ -1585,7 +1590,7 @@ class AgentExecutionContractTests(unittest.TestCase):
 
     def test_agent_download_prefers_default_youtube_provider_order(self):
         from backend.models.agent import PlanScene
-        import backend.services.search_service as search_service
+        import backend.infrastructure.media.search_service as search_service
         from backend.infrastructure.media.asset_providers.types import AssetCandidate, AssetDownload
 
         scene = PlanScene(
@@ -1612,17 +1617,20 @@ class AgentExecutionContractTests(unittest.TestCase):
             duration=14,
         )
 
-        with patch("backend.services.search_service.search_youtube_candidates", return_value=[youtube_candidate]), patch(
-            "backend.services.search_service.search_pexels_candidates",
+        with patch("backend.infrastructure.media.search_service.get_asset_provider_order", return_value=["youtube", "pexels"]), patch(
+            "backend.infrastructure.media.search_service.search_youtube_candidates",
+            return_value=[youtube_candidate],
+        ), patch(
+            "backend.infrastructure.media.search_service.search_pexels_candidates",
             return_value=[pexels_candidate],
         ), patch(
-            "backend.services.search_service.download_video",
+            "backend.infrastructure.media.search_service.download_video",
             new_callable=AsyncMock,
             return_value="backend/downloads/session_3.mp4",
         ) as mock_download, patch(
-            "backend.services.search_service.download_pexels_candidate",
+            "backend.infrastructure.media.search_service.download_pexels_candidate",
         ) as mock_pexels_download, patch(
-            "backend.services.search_service.get_pexels_config",
+            "backend.infrastructure.media.search_service.get_pexels_config",
         ) as mock_pexels_config:
             mock_pexels_config.return_value.enabled = True
             mock_pexels_config.return_value.api_key = "pexels-key"
@@ -1636,7 +1644,7 @@ class AgentExecutionContractTests(unittest.TestCase):
 
     def test_agent_download_respects_configured_provider_order(self):
         from backend.models.agent import PlanScene
-        import backend.services.search_service as search_service
+        import backend.infrastructure.media.search_service as search_service
         from backend.infrastructure.media.asset_providers.types import AssetCandidate, AssetDownload
 
         scene = PlanScene(
@@ -1663,25 +1671,25 @@ class AgentExecutionContractTests(unittest.TestCase):
             duration=14,
         )
 
-        with patch.dict("os.environ", {"CLIPFORGE_ASSET_PROVIDER_ORDER": "pexels,youtube"}, clear=False), patch(
-            "backend.services.search_service.search_youtube_candidates",
+        with patch("backend.infrastructure.media.search_service.get_asset_provider_order", return_value=["pexels", "youtube"]), patch(
+            "backend.infrastructure.media.search_service.search_youtube_candidates",
             return_value=[youtube_candidate],
         ), patch(
-            "backend.services.search_service.search_pexels_candidates",
+            "backend.infrastructure.media.search_service.search_pexels_candidates",
             return_value=[pexels_candidate],
         ), patch(
-            "backend.services.search_service.download_video",
+            "backend.infrastructure.media.search_service.download_video",
             new_callable=AsyncMock,
             return_value="backend/downloads/session_3.mp4",
         ) as mock_download, patch(
-            "backend.services.search_service.download_pexels_candidate",
+            "backend.infrastructure.media.search_service.download_pexels_candidate",
             return_value=AssetDownload(
                 local_path="backend/downloads/session_3_pexels_1.mp4",
                 public_url="/downloads/session_3_pexels_1.mp4",
                 metadata=pexels_candidate.to_metadata(),
             ),
         ) as mock_pexels_download, patch(
-            "backend.services.search_service.get_pexels_config",
+            "backend.infrastructure.media.search_service.get_pexels_config",
         ) as mock_pexels_config:
             mock_pexels_config.return_value.enabled = True
             mock_pexels_config.return_value.api_key = "pexels-key"
@@ -1695,7 +1703,7 @@ class AgentExecutionContractTests(unittest.TestCase):
 
     def test_agent_download_stops_searching_after_first_provider_returns_candidates(self):
         from backend.models.agent import PlanScene
-        import backend.services.search_service as search_service
+        import backend.infrastructure.media.search_service as search_service
         from backend.infrastructure.media.asset_providers.types import AssetCandidate, AssetDownload
 
         scene = PlanScene(
@@ -1714,21 +1722,21 @@ class AgentExecutionContractTests(unittest.TestCase):
             duration=14,
         )
 
-        with patch.dict("os.environ", {"CLIPFORGE_ASSET_PROVIDER_ORDER": "pexels,youtube"}, clear=False), patch(
-            "backend.services.search_service.search_pexels_candidates",
+        with patch("backend.infrastructure.media.search_service.get_asset_provider_order", return_value=["pexels", "youtube"]), patch(
+            "backend.infrastructure.media.search_service.search_pexels_candidates",
             return_value=[pexels_candidate],
         ) as mock_pexels_search, patch(
-            "backend.services.search_service.search_youtube_candidates",
+            "backend.infrastructure.media.search_service.search_youtube_candidates",
             side_effect=AssertionError("should not search fallback provider after first provider returns candidates"),
         ) as mock_youtube_search, patch(
-            "backend.services.search_service.download_pexels_candidate",
+            "backend.infrastructure.media.search_service.download_pexels_candidate",
             return_value=AssetDownload(
                 local_path="backend/downloads/session_3_pexels_1.mp4",
                 public_url="/downloads/session_3_pexels_1.mp4",
                 metadata=pexels_candidate.to_metadata(),
             ),
         ) as mock_pexels_download, patch(
-            "backend.services.search_service.get_pexels_config",
+            "backend.infrastructure.media.search_service.get_pexels_config",
         ) as mock_pexels_config:
             mock_pexels_config.return_value.enabled = True
             mock_pexels_config.return_value.api_key = "pexels-key"
@@ -1743,7 +1751,7 @@ class AgentExecutionContractTests(unittest.TestCase):
 
     def test_all_provider_failure_surfaces_safe_summaries(self):
         from backend.models.agent import PlanScene
-        import backend.services.search_service as search_service
+        import backend.infrastructure.media.search_service as search_service
 
         scene = PlanScene(
             id=3,
@@ -1753,10 +1761,12 @@ class AgentExecutionContractTests(unittest.TestCase):
             searchQuery="product workflow",
         )
 
-        with patch("backend.services.search_service.search_youtube_candidates") as mock_youtube_search, patch(
-            "backend.services.search_service.search_pexels_candidates",
+        with patch("backend.infrastructure.media.search_service.get_asset_provider_order", return_value=["youtube", "pexels"]), patch(
+            "backend.infrastructure.media.search_service.search_youtube_candidates",
+        ) as mock_youtube_search, patch(
+            "backend.infrastructure.media.search_service.search_pexels_candidates",
         ) as mock_pexels_search, patch(
-            "backend.services.search_service.get_pexels_config",
+            "backend.infrastructure.media.search_service.get_pexels_config",
         ) as mock_pexels_config:
             mock_youtube_search.side_effect = RuntimeError("素材搜索失败：Sign in to confirm you’re not a bot.")
             mock_pexels_search.side_effect = RuntimeError("Pexels 搜索失败：HTTP 401 Unauthorized")
