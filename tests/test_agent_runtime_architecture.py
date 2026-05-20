@@ -43,6 +43,16 @@ def _collect_legacy_module_references(source: str, *, module_name: str) -> set[s
     return references
 
 
+def _get_function_source(source: str, *, function_name: str) -> str:
+    module = ast.parse(source)
+
+    for node in ast.walk(module):
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.name == function_name:
+            return ast.get_source_segment(source, node) or ""
+
+    raise AssertionError(f"Function {function_name} not found")
+
+
 class AgentRuntimeArchitectureTests(unittest.TestCase):
     def test_target_architecture_packages_exist(self) -> None:
         expected_paths = [
@@ -1028,6 +1038,30 @@ class AgentRuntimeArchitectureTests(unittest.TestCase):
             sorted(references),
             [],
             f"tests/test_agent_jobs.py still uses legacy search service contracts: {sorted(references)}",
+        )
+
+    def test_task2_backend_youtube_only_search_cases_do_not_use_legacy_search_service_contracts(self) -> None:
+        source = (ROOT / "tests" / "test_agent_backend.py").read_text(encoding="utf-8")
+        target_tests = [
+            "test_agent_search_download_returns_agent_clip_paths",
+            "test_agent_download_tries_next_search_result_after_youtube_failure",
+            "test_agent_download_failure_surfaces_last_external_error",
+            "test_agent_search_failure_surfaces_external_error",
+        ]
+        legacy_references: dict[str, list[str]] = {}
+
+        for test_name in target_tests:
+            references = _collect_legacy_module_references(
+                _get_function_source(source, function_name=test_name),
+                module_name="backend.services.search_service",
+            )
+            if references:
+                legacy_references[test_name] = sorted(references)
+
+        self.assertEqual(
+            legacy_references,
+            {},
+            f"basic YouTube-only backend search cases still use legacy search service contracts: {legacy_references}",
         )
 
     def test_infrastructure_layer_does_not_import_migrated_service_modules(self) -> None:

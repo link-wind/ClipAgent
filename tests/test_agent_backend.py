@@ -1345,7 +1345,7 @@ class AgentExecutionContractTests(unittest.TestCase):
 
     def test_agent_search_download_returns_agent_clip_paths(self):
         from backend.models.agent import PlanScene
-        import backend.services.search_service as search_service
+        import backend.infrastructure.media.search_service as search_service
         from backend.infrastructure.media.asset_providers.types import AssetCandidate
 
         scene = PlanScene(
@@ -1356,8 +1356,8 @@ class AgentExecutionContractTests(unittest.TestCase):
             searchQuery="product detail",
         )
 
-        with patch("backend.services.search_service.search_youtube_candidates") as mock_search:
-            with patch("backend.services.search_service.download_video", new_callable=AsyncMock) as mock_download:
+        with patch("backend.infrastructure.media.search_service.search_youtube_candidates") as mock_search:
+            with patch("backend.infrastructure.media.search_service.download_video", new_callable=AsyncMock) as mock_download:
                 mock_search.return_value = [
                     AssetCandidate(
                         provider="youtube",
@@ -1380,7 +1380,7 @@ class AgentExecutionContractTests(unittest.TestCase):
 
     def test_agent_download_tries_next_search_result_after_youtube_failure(self):
         from backend.models.agent import PlanScene
-        import backend.services.search_service as search_service
+        import backend.infrastructure.media.search_service as search_service
         from backend.infrastructure.media.asset_providers.types import AssetCandidate
 
         scene = PlanScene(
@@ -1391,8 +1391,8 @@ class AgentExecutionContractTests(unittest.TestCase):
             searchQuery="product workflow",
         )
 
-        with patch("backend.services.search_service.search_youtube_candidates") as mock_search:
-            with patch("backend.services.search_service.download_video", new_callable=AsyncMock) as mock_download:
+        with patch("backend.infrastructure.media.search_service.search_youtube_candidates") as mock_search:
+            with patch("backend.infrastructure.media.search_service.download_video", new_callable=AsyncMock) as mock_download:
                 mock_search.return_value = [
                     AssetCandidate(
                         provider="youtube",
@@ -1424,7 +1424,7 @@ class AgentExecutionContractTests(unittest.TestCase):
 
     def test_agent_download_failure_surfaces_last_external_error(self):
         from backend.models.agent import PlanScene
-        import backend.services.search_service as search_service
+        import backend.infrastructure.media.search_service as search_service
         from backend.infrastructure.media.asset_providers.types import AssetCandidate
 
         scene = PlanScene(
@@ -1435,8 +1435,8 @@ class AgentExecutionContractTests(unittest.TestCase):
             searchQuery="product workflow",
         )
 
-        with patch("backend.services.search_service.search_youtube_candidates") as mock_search:
-            with patch("backend.services.search_service.download_video", new_callable=AsyncMock) as mock_download:
+        with patch("backend.infrastructure.media.search_service.search_youtube_candidates") as mock_search:
+            with patch("backend.infrastructure.media.search_service.download_video", new_callable=AsyncMock) as mock_download:
                 mock_search.return_value = [
                     AssetCandidate(
                         provider="youtube",
@@ -1467,7 +1467,7 @@ class AgentExecutionContractTests(unittest.TestCase):
 
     def test_agent_search_failure_surfaces_external_error(self):
         from backend.models.agent import PlanScene
-        import backend.services.search_service as search_service
+        import backend.infrastructure.media.search_service as search_service
 
         scene = PlanScene(
             id=3,
@@ -1477,7 +1477,7 @@ class AgentExecutionContractTests(unittest.TestCase):
             searchQuery="product workflow",
         )
 
-        with patch("backend.services.search_service.search_youtube_candidates") as mock_search:
+        with patch("backend.infrastructure.media.search_service.search_youtube_candidates") as mock_search:
             mock_search.side_effect = RuntimeError("YouTube said: Sign in to confirm you’re not a bot.")
 
             with self.assertRaisesRegex(RuntimeError, "Sign in to confirm"):
