@@ -436,6 +436,19 @@ class AgentRuntimeArchitectureTests(unittest.TestCase):
                     f"backend.services.{source_path.stem} must remain a shim",
                 )
 
+    def test_planner_runtime_tests_import_langchain_runtime_from_app_boundary(self) -> None:
+        source_path = ROOT / "tests" / "test_planner_runtime.py"
+        source = source_path.read_text(encoding="utf-8")
+
+        self.assertNotIn(
+            "from backend.services.planner_runtime_langchain import LangChainPlannerRuntime",
+            source,
+        )
+        self.assertIn(
+            "from backend.app.planning.runtime_langchain import LangChainPlannerRuntime",
+            source,
+        )
+
     def test_media_infrastructure_does_not_reexport_services_render_module(self) -> None:
         render_source = (ROOT / "backend" / "infrastructure" / "media" / "render_service.py").read_text(encoding="utf-8")
 

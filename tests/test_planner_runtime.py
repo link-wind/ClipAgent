@@ -51,7 +51,7 @@ class _FakeChatModel:
 
 class PlannerRuntimeTests(unittest.TestCase):
     def test_langchain_runtime_builds_initial_plan_from_structured_output(self):
-        from backend.services.planner_runtime_langchain import LangChainPlannerRuntime
+        from backend.app.planning.runtime_langchain import LangChainPlannerRuntime
 
         fake_llm = _FakeChatModel(
             result=InitialPlanningResult(
@@ -93,7 +93,7 @@ class PlannerRuntimeTests(unittest.TestCase):
         self.assertEqual(execution_plan.scenes[0].searchQuery, "product interface")
 
     def test_langchain_runtime_rejects_mismatched_scene_ids(self):
-        from backend.services.planner_runtime_langchain import LangChainPlannerRuntime
+        from backend.app.planning.runtime_langchain import LangChainPlannerRuntime
 
         fake_llm = _FakeChatModel(
             result=InitialPlanningResult(
@@ -134,7 +134,7 @@ class PlannerRuntimeTests(unittest.TestCase):
             runtime.build_plan_from_brief("给 Notion AI 做一个视频")
 
     def test_langchain_runtime_rejects_non_positive_agent_scene_duration(self):
-        from backend.services.planner_runtime_langchain import LangChainPlannerRuntime
+        from backend.app.planning.runtime_langchain import LangChainPlannerRuntime
 
         fake_llm = _FakeChatModel(
             result=InitialPlanningResult(
@@ -175,7 +175,7 @@ class PlannerRuntimeTests(unittest.TestCase):
             runtime.build_plan_from_brief("给 Notion AI 做一个视频")
 
     def test_langchain_runtime_bubbles_up_model_failures(self):
-        from backend.services.planner_runtime_langchain import LangChainPlannerRuntime
+        from backend.app.planning.runtime_langchain import LangChainPlannerRuntime
 
         runtime = LangChainPlannerRuntime(
             model_name="gpt-4o-mini",
@@ -186,7 +186,7 @@ class PlannerRuntimeTests(unittest.TestCase):
             runtime.build_plan_from_brief("给 Notion AI 做一个视频")
 
     def test_langchain_runtime_falls_back_to_plain_json_when_structured_output_is_blocked(self):
-        from backend.services.planner_runtime_langchain import LangChainPlannerRuntime
+        from backend.app.planning.runtime_langchain import LangChainPlannerRuntime
 
         blocked = openai.PermissionDeniedError(
             message="Your request was blocked.",
@@ -255,7 +255,7 @@ class PlannerRuntimeTests(unittest.TestCase):
         self.assertEqual(execution_plan.scenes[0].searchQuery, "soccer dribble stadium")
 
     def test_langchain_runtime_falls_back_to_compact_initial_plan_when_structured_output_times_out(self):
-        from backend.services.planner_runtime_langchain import LangChainPlannerRuntime
+        from backend.app.planning.runtime_langchain import LangChainPlannerRuntime
 
         timed_out = openai.APITimeoutError(
             request=httpx.Request("POST", "https://example.com/v1/chat/completions")
@@ -308,7 +308,7 @@ class PlannerRuntimeTests(unittest.TestCase):
         self.assertEqual(execution_plan.scenes[2].searchQuery, "soccer celebration team")
 
     def test_langchain_runtime_falls_back_to_deterministic_initial_plan_when_compact_plan_still_fails(self):
-        from backend.services.planner_runtime_langchain import LangChainPlannerRuntime
+        from backend.app.planning.runtime_langchain import LangChainPlannerRuntime
 
         timed_out = openai.APITimeoutError(
             request=httpx.Request("POST", "https://example.com/v1/chat/completions")
@@ -339,7 +339,7 @@ class PlannerRuntimeTests(unittest.TestCase):
         deterministic_delegate.build_plan_from_brief.assert_called_once_with("帮我剪一个踢足球的20秒视频")
 
     def test_langchain_runtime_can_prefer_compact_initial_plan_without_trying_structured_output(self):
-        from backend.services.planner_runtime_langchain import LangChainPlannerRuntime
+        from backend.app.planning.runtime_langchain import LangChainPlannerRuntime
 
         fake_llm = _FakeChatModel(
             error=RuntimeError("structured output should be skipped"),
@@ -391,7 +391,7 @@ class PlannerRuntimeTests(unittest.TestCase):
         self.assertEqual(execution_plan.scenes[0].searchQuery, "soccer dribble field")
 
     def test_langchain_runtime_delegates_grounding_replan_to_deterministic_runtime(self):
-        from backend.services.planner_runtime_langchain import LangChainPlannerRuntime
+        from backend.app.planning.runtime_langchain import LangChainPlannerRuntime
 
         deterministic_delegate = Mock()
         deterministic_delegate.replan_after_grounding.return_value = (
@@ -419,7 +419,7 @@ class PlannerRuntimeTests(unittest.TestCase):
     def test_langchain_runtime_replans_after_user_revision_with_patch_merge(self):
         from backend.domain.planning.contracts import RevisionPlanningResult, UserRevisionFeedback
         from backend.app.planning.runtime_deterministic import DeterministicPlannerRuntime
-        from backend.services.planner_runtime_langchain import LangChainPlannerRuntime
+        from backend.app.planning.runtime_langchain import LangChainPlannerRuntime
 
         current_agent, current_execution = DeterministicPlannerRuntime().build_plan_from_brief(
             "给 Notion AI 做一个 30 秒产品亮点视频"
@@ -469,7 +469,7 @@ class PlannerRuntimeTests(unittest.TestCase):
     def test_langchain_runtime_preserves_explicit_scene_keyword_updates_over_model_patch(self):
         from backend.domain.planning.contracts import RevisionPlanningResult, UserRevisionFeedback
         from backend.app.planning.runtime_deterministic import DeterministicPlannerRuntime
-        from backend.services.planner_runtime_langchain import LangChainPlannerRuntime
+        from backend.app.planning.runtime_langchain import LangChainPlannerRuntime
 
         current_agent, current_execution = DeterministicPlannerRuntime().build_plan_from_brief(
             "给 Notion AI 做一个 30 秒产品亮点视频"
@@ -510,7 +510,7 @@ class PlannerRuntimeTests(unittest.TestCase):
     def test_langchain_runtime_allows_revision_result_to_clear_open_issues(self):
         from backend.domain.planning.contracts import RevisionPlanningResult, UserRevisionFeedback
         from backend.app.planning.runtime_deterministic import DeterministicPlannerRuntime
-        from backend.services.planner_runtime_langchain import LangChainPlannerRuntime
+        from backend.app.planning.runtime_langchain import LangChainPlannerRuntime
 
         deterministic_delegate = Mock()
         current_agent, current_execution = DeterministicPlannerRuntime().build_plan_from_brief(
@@ -549,7 +549,7 @@ class PlannerRuntimeTests(unittest.TestCase):
     def test_langchain_runtime_preserves_open_issues_when_revision_result_omits_open_issues(self):
         from backend.domain.planning.contracts import RevisionPlanningResult, UserRevisionFeedback
         from backend.app.planning.runtime_deterministic import DeterministicPlannerRuntime
-        from backend.services.planner_runtime_langchain import LangChainPlannerRuntime
+        from backend.app.planning.runtime_langchain import LangChainPlannerRuntime
 
         deterministic_delegate = Mock()
         current_agent, current_execution = DeterministicPlannerRuntime().build_plan_from_brief(
@@ -586,7 +586,7 @@ class PlannerRuntimeTests(unittest.TestCase):
     def test_langchain_runtime_falls_back_when_scene_keyword_override_is_explicitly_empty(self):
         from backend.domain.planning.contracts import RevisionPlanningResult, UserRevisionFeedback
         from backend.app.planning.runtime_deterministic import DeterministicPlannerRuntime
-        from backend.services.planner_runtime_langchain import LangChainPlannerRuntime
+        from backend.app.planning.runtime_langchain import LangChainPlannerRuntime
 
         deterministic_delegate = Mock()
         deterministic_delegate.replan_after_user_revision.return_value = (
@@ -631,7 +631,7 @@ class PlannerRuntimeTests(unittest.TestCase):
     def test_langchain_runtime_falls_back_when_scene_keyword_override_targets_unknown_scene(self):
         from backend.domain.planning.contracts import RevisionPlanningResult, UserRevisionFeedback
         from backend.app.planning.runtime_deterministic import DeterministicPlannerRuntime
-        from backend.services.planner_runtime_langchain import LangChainPlannerRuntime
+        from backend.app.planning.runtime_langchain import LangChainPlannerRuntime
 
         deterministic_delegate = Mock()
         deterministic_delegate.replan_after_user_revision.return_value = (
@@ -676,7 +676,7 @@ class PlannerRuntimeTests(unittest.TestCase):
     def test_langchain_runtime_falls_back_to_deterministic_revision_when_patch_targets_unknown_scene(self):
         from backend.domain.planning.contracts import RevisionPlanningResult, UserRevisionFeedback
         from backend.app.planning.runtime_deterministic import DeterministicPlannerRuntime
-        from backend.services.planner_runtime_langchain import LangChainPlannerRuntime
+        from backend.app.planning.runtime_langchain import LangChainPlannerRuntime
 
         deterministic_delegate = Mock()
         deterministic_delegate.replan_after_user_revision.return_value = (
@@ -725,7 +725,7 @@ class PlannerRuntimeTests(unittest.TestCase):
     def test_langchain_runtime_falls_back_to_deterministic_revision_when_scene_patch_ids_repeat(self):
         from backend.domain.planning.contracts import RevisionPlanningResult, UserRevisionFeedback
         from backend.app.planning.runtime_deterministic import DeterministicPlannerRuntime
-        from backend.services.planner_runtime_langchain import LangChainPlannerRuntime
+        from backend.app.planning.runtime_langchain import LangChainPlannerRuntime
 
         deterministic_delegate = Mock()
         deterministic_delegate.replan_after_user_revision.return_value = (
@@ -780,7 +780,7 @@ class PlannerRuntimeTests(unittest.TestCase):
     def test_langchain_runtime_falls_back_to_deterministic_revision_when_model_raises(self):
         from backend.domain.planning.contracts import UserRevisionFeedback
         from backend.app.planning.runtime_deterministic import DeterministicPlannerRuntime
-        from backend.services.planner_runtime_langchain import LangChainPlannerRuntime
+        from backend.app.planning.runtime_langchain import LangChainPlannerRuntime
 
         deterministic_delegate = Mock()
         deterministic_delegate.replan_after_user_revision.return_value = (
@@ -812,7 +812,7 @@ class PlannerRuntimeTests(unittest.TestCase):
     def test_langchain_runtime_does_not_fall_back_when_revision_runnable_construction_fails(self):
         from backend.domain.planning.contracts import UserRevisionFeedback
         from backend.app.planning.runtime_deterministic import DeterministicPlannerRuntime
-        from backend.services.planner_runtime_langchain import LangChainPlannerRuntime
+        from backend.app.planning.runtime_langchain import LangChainPlannerRuntime
 
         deterministic_delegate = Mock()
         current_agent, current_execution = DeterministicPlannerRuntime().build_plan_from_brief(
@@ -841,7 +841,7 @@ class PlannerRuntimeTests(unittest.TestCase):
     def test_langchain_runtime_does_not_fall_back_when_revision_message_construction_fails(self):
         from backend.domain.planning.contracts import UserRevisionFeedback
         from backend.app.planning.runtime_deterministic import DeterministicPlannerRuntime
-        from backend.services.planner_runtime_langchain import LangChainPlannerRuntime
+        from backend.app.planning.runtime_langchain import LangChainPlannerRuntime
 
         deterministic_delegate = Mock()
         current_agent, current_execution = DeterministicPlannerRuntime().build_plan_from_brief(
@@ -870,7 +870,7 @@ class PlannerRuntimeTests(unittest.TestCase):
     def test_langchain_runtime_does_not_swallow_unexpected_revision_merge_errors(self):
         from backend.domain.planning.contracts import RevisionPlanningResult, UserRevisionFeedback
         from backend.app.planning.runtime_deterministic import DeterministicPlannerRuntime
-        from backend.services.planner_runtime_langchain import LangChainPlannerRuntime
+        from backend.app.planning.runtime_langchain import LangChainPlannerRuntime
 
         deterministic_delegate = Mock()
         current_agent, current_execution = DeterministicPlannerRuntime().build_plan_from_brief(
