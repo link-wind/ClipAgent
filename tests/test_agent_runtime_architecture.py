@@ -991,6 +991,13 @@ class AgentRuntimeArchitectureTests(unittest.TestCase):
                 f"{relative_path} still uses retired low-risk test service modules: {sorted(legacy_references)}",
             )
 
+    def test_task1_agent_jobs_test_does_not_use_legacy_search_service_contracts(self) -> None:
+        source = (ROOT / "tests" / "test_agent_jobs.py").read_text(encoding="utf-8")
+
+        self.assertNotIn("from backend.services.search_service import", source)
+        self.assertNotIn("backend.services.search_service.search_youtube_candidates", source)
+        self.assertNotIn("backend.services.search_service.download_video", source)
+
     def test_infrastructure_layer_does_not_import_migrated_service_modules(self) -> None:
         infrastructure_files = [
             path for path in (ROOT / "backend" / "infrastructure").rglob("*.py")

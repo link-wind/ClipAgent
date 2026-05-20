@@ -259,7 +259,7 @@ class SearchClipAssemblyTests(unittest.TestCase):
     def test_search_and_download_agent_clips_populates_trim_metadata(self):
         from backend.models.agent import PlanScene
         from backend.infrastructure.media.asset_providers.types import AssetCandidate
-        from backend.services.search_service import search_and_download_agent_clips
+        from backend.infrastructure.media.search_service import search_and_download_agent_clips
 
         async def run_test():
             scenes = [
@@ -272,8 +272,8 @@ class SearchClipAssemblyTests(unittest.TestCase):
                 )
             ]
 
-            with patch("backend.services.search_service.search_youtube_candidates") as mock_search, patch(
-                "backend.services.search_service.download_video",
+            with patch("backend.infrastructure.media.search_service.search_youtube_candidates") as mock_search, patch(
+                "backend.infrastructure.media.search_service.download_video",
                 new_callable=AsyncMock,
             ) as mock_download:
                 mock_search.return_value = [
@@ -300,7 +300,7 @@ class SearchClipAssemblyTests(unittest.TestCase):
     def test_search_and_download_agent_clips_populates_caption(self):
         from backend.models.agent import PlanScene
         from backend.infrastructure.media.asset_providers.types import AssetCandidate
-        from backend.services.search_service import search_and_download_agent_clips
+        from backend.infrastructure.media.search_service import search_and_download_agent_clips
 
         async def run_test():
             scenes = [
@@ -313,8 +313,8 @@ class SearchClipAssemblyTests(unittest.TestCase):
                 )
             ]
 
-            with patch("backend.services.search_service.search_youtube_candidates") as mock_search, patch(
-                "backend.services.search_service.download_video",
+            with patch("backend.infrastructure.media.search_service.search_youtube_candidates") as mock_search, patch(
+                "backend.infrastructure.media.search_service.download_video",
                 new_callable=AsyncMock,
             ) as mock_download:
                 mock_search.return_value = [
