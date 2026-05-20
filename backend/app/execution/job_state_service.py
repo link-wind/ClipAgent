@@ -1,6 +1,5 @@
-from datetime import datetime
-
 from backend.db.repositories import AgentJobRepository, AgentSessionRepository
+from backend.utils.time import utc_now_naive
 
 
 MAX_CURRENT_STEP_LENGTH = 128
@@ -30,7 +29,7 @@ class JobStateService:
             status="running",
             progress=35,
             current_step="正在搜索素材",
-            started_at=datetime.utcnow(),
+            started_at=utc_now_naive(),
             error_message=None,
         )
         session_record = self.session_repo.get(session_id)
@@ -68,7 +67,7 @@ class JobStateService:
             status="succeeded",
             progress=100,
             current_step="完成",
-            finished_at=datetime.utcnow(),
+            finished_at=utc_now_naive(),
             error_message=None,
         )
         session_record = self.session_repo.get(session_id)
@@ -86,7 +85,7 @@ class JobStateService:
             job_id,
             status="failed",
             current_step=current_step,
-            finished_at=datetime.utcnow(),
+            finished_at=utc_now_naive(),
             error_message=message,
         )
         session_record = self.session_repo.get(session_id)

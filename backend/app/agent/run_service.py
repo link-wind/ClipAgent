@@ -1,10 +1,9 @@
-from datetime import datetime
-
 from backend.db.repositories import (
     AgentRunRepository,
     AgentSessionRepository,
     AgentTraceEventRepository,
 )
+from backend.utils.time import utc_now_naive
 
 
 class ActiveOperationConflict(RuntimeError):
@@ -26,7 +25,7 @@ class AgentRunService:
             session_id=session_id,
             trigger_type=trigger_type,
             status="running",
-            started_at=datetime.utcnow(),
+            started_at=utc_now_naive(),
             **values,
         )
         if not self.session_repo.try_start_operation(session_id, "run", run.id):
@@ -59,7 +58,7 @@ class AgentRunService:
             status="succeeded",
             summary=summary,
             output_json=merged_output,
-            finished_at=datetime.utcnow(),
+            finished_at=utc_now_naive(),
         )
         if run is None:
             return None
@@ -82,7 +81,7 @@ class AgentRunService:
             run_id,
             status="failed",
             error_message=message,
-            finished_at=datetime.utcnow(),
+            finished_at=utc_now_naive(),
         )
         if run is None:
             return None

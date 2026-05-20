@@ -1,7 +1,6 @@
-from datetime import datetime
-
 from backend.db.repositories import AgentStepRepository, AgentTraceEventRepository
 from backend.models.agent import AgentStep, AgentStepError
+from backend.utils.time import utc_now_naive
 
 
 class AgentStepService:
@@ -33,7 +32,7 @@ class AgentStepService:
             progress=0,
             sequence=sequence,
             actor_role=actor_role,
-            started_at=datetime.utcnow(),
+            started_at=utc_now_naive(),
         )
         self.trace_repo.create(
             session_id=session_id,
@@ -56,7 +55,7 @@ class AgentStepService:
             progress=100,
             summary=summary,
             result_json=result or {},
-            finished_at=datetime.utcnow(),
+            finished_at=utc_now_naive(),
         )
         if step is None:
             return None
@@ -91,7 +90,7 @@ class AgentStepService:
             step_id,
             status="failed",
             error_json=error,
-            finished_at=datetime.utcnow(),
+            finished_at=utc_now_naive(),
         )
         if step is None:
             return None

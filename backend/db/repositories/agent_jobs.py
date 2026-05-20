@@ -1,9 +1,8 @@
-from datetime import datetime
-
 from sqlalchemy import func, select, update
 from sqlalchemy.orm import Session
 
 from backend.db.models import AgentJobRecord
+from backend.utils.time import utc_now_naive
 
 
 class AgentJobRepository:
@@ -92,7 +91,7 @@ class AgentJobRepository:
                 status="running",
                 progress=35,
                 current_step="正在搜索素材",
-                started_at=datetime.utcnow(),
+                started_at=utc_now_naive(),
                 error_message=None,
             )
         )
