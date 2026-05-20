@@ -543,7 +543,29 @@ class AgentRuntimeArchitectureTests(unittest.TestCase):
         self.assertIn("class AgentSessionService", session_source)
         self.assertIn("class AgentReadService", read_source)
         self.assertIn("PlannerOrchestrator", session_source)
-        self.assertIn("StepProjectionService", read_source)
+        self.assertIn("SessionReadModelAssembler", read_source)
+
+    def test_read_model_assemblers_are_consumed_by_read_paths(self) -> None:
+        read_service_source = (ROOT / "backend" / "app" / "agent" / "read_service.py").read_text(encoding="utf-8")
+        task_read_service_source = (ROOT / "backend" / "app" / "execution" / "task_read_service.py").read_text(encoding="utf-8")
+        stream_service_source = (ROOT / "backend" / "app" / "agent" / "stream_service.py").read_text(encoding="utf-8")
+        step_projection_source = (ROOT / "backend" / "app" / "agent" / "step_projection_service.py").read_text(encoding="utf-8")
+
+        self.assertIn("SessionReadModelAssembler", read_service_source)
+        self.assertIn("SessionReadModelAssembler", task_read_service_source)
+        self.assertIn("TraceReadModelAssembler", stream_service_source)
+        self.assertIn("StepReadModelAssembler", step_projection_source)
+
+    def test_read_services_do_not_inline_read_model_mapping_details(self) -> None:
+        read_service_source = (ROOT / "backend" / "app" / "agent" / "read_service.py").read_text(encoding="utf-8")
+        task_read_service_source = (ROOT / "backend" / "app" / "execution" / "task_read_service.py").read_text(encoding="utf-8")
+
+        self.assertNotIn("AgentSession(", read_service_source)
+        self.assertNotIn("AgentMessage(", read_service_source)
+        self.assertNotIn("execution_plan_to_edit_plan", read_service_source)
+        self.assertNotIn("AgentTaskDetail(", task_read_service_source)
+        self.assertNotIn("self.read_service = AgentReadService", task_read_service_source)
+        self.assertNotIn("build_task_steps(", task_read_service_source)
 
     def test_app_agent_contains_real_stream_service_implementation(self) -> None:
         source_path = ROOT / "backend" / "app" / "agent" / "stream_service.py"

@@ -1,6 +1,6 @@
-from backend.app.agent.read_service import AgentReadService
 from backend.app.agent.step_snapshot_service import AgentStepSnapshotService
 from backend.app.read_models.session_assembler import SessionReadModelAssembler
+from backend.app.read_models.step_assembler import StepReadModelAssembler
 from backend.db.repositories import (
     AgentArtifactRepository,
     AgentEventRepository,
@@ -22,11 +22,12 @@ RUNNING_JOB_STATUSES = {"queued", "pending", "running"}
 class AgentTaskReadService:
     def __init__(self, session_factory):
         self.session_factory = session_factory
-        self.read_service = AgentReadService(session_factory=session_factory)
         self.step_snapshot_service = AgentStepSnapshotService()
         self.diagnostic_service = AgentDiagnosticService()
         self.session_assembler = SessionReadModelAssembler(
-            step_assembler=self.read_service.session_assembler.step_assembler,
+            step_assembler=StepReadModelAssembler(
+                step_snapshot_service=self.step_snapshot_service,
+            ),
             diagnostic_service=self.diagnostic_service,
         )
 
@@ -57,7 +58,6 @@ class AgentTaskReadService:
             plan = AgentPlanRepository(db).get(job.plan_id) if job.plan_id else None
             artifacts = AgentArtifactRepository(db).list_for_job(job.id)
             events = AgentEventRepository(db).list_for_job(job.id)
-            clip_rows = [row for row in artifacts if row.artifact_type == "clip"]
             video_url = self._resolve_video_url(artifacts, events)
             retryable_step = self._resolve_retryable_step(events)
             summary = self._build_task_summary(job, session, retryable_step)
