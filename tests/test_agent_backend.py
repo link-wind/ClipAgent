@@ -2385,7 +2385,7 @@ class AgentExecutionContractTests(unittest.TestCase):
         import json
         from unittest.mock import MagicMock
 
-        from backend.services.asset_providers.pexels import search_pexels_candidates
+        from backend.infrastructure.media.asset_providers.pexels import search_pexels_candidates
 
         response_payload = {
             "videos": [
@@ -2436,7 +2436,7 @@ class AgentExecutionContractTests(unittest.TestCase):
         self.assertEqual(candidates[0].author, "Pexels Creator")
 
     def test_pexels_selects_vertical_mp4_with_bounded_resolution(self):
-        from backend.services.asset_providers.pexels import select_pexels_video_file
+        from backend.infrastructure.media.asset_providers.pexels import select_pexels_video_file
 
         selected = select_pexels_video_file(
             [
@@ -2453,7 +2453,7 @@ class AgentExecutionContractTests(unittest.TestCase):
         from tempfile import TemporaryDirectory
         from unittest.mock import MagicMock
 
-        from backend.services.asset_providers.pexels import download_pexels_candidate
+        from backend.infrastructure.media.asset_providers.pexels import download_pexels_candidate
         from backend.infrastructure.media.asset_providers.types import AssetCandidate
 
         candidate = AssetCandidate(
@@ -2474,7 +2474,7 @@ class AgentExecutionContractTests(unittest.TestCase):
         fake_response.__exit__.return_value = None
 
         with TemporaryDirectory() as tmp_dir, patch(
-            "backend.services.asset_providers.pexels.DOWNLOADS_DIR",
+            "backend.infrastructure.media.asset_providers.pexels.DOWNLOADS_DIR",
             tmp_dir,
         ), patch("urllib.request.urlopen", return_value=fake_response):
             download = download_pexels_candidate("session", candidate, scene_id=4, output_filename="session_4.mp4")

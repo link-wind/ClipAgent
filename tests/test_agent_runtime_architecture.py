@@ -955,6 +955,23 @@ class AgentRuntimeArchitectureTests(unittest.TestCase):
             context="tests/test_agent_backend.py::test_agent_download_can_complete_with_fixture_provider",
         )
 
+    def test_task8_backend_pexels_provider_tests_do_not_reference_legacy_pexels_shim(self) -> None:
+        source = (ROOT / "tests" / "test_agent_backend.py").read_text(encoding="utf-8")
+        targeted_tests = [
+            "test_pexels_search_maps_api_response_to_candidates",
+            "test_pexels_selects_vertical_mp4_with_bounded_resolution",
+            "test_pexels_direct_download_writes_mp4",
+        ]
+
+        for function_name in targeted_tests:
+            function_source = _get_function_source(source, function_name=function_name)
+            _assert_no_legacy_module_references(
+                self,
+                function_source,
+                module_name="backend.services.asset_providers.pexels",
+                context=f"tests/test_agent_backend.py::{function_name}",
+            )
+
     def test_task7_fixture_shim_is_removed_from_frozen_compat_surface(self) -> None:
         compat_doc = (ROOT / "docs" / "architecture" / "compat-surface.md").read_text(encoding="utf-8")
 
