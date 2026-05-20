@@ -8,7 +8,6 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 FROZEN_COMPAT_MODULES = {
-    "backend.services.asset_providers.fixture",
     "backend.services.asset_providers.pexels",
 }
 TASK6_RETIRED_TEST_SERVICE_MODULES = {
@@ -827,7 +826,6 @@ class AgentRuntimeArchitectureTests(unittest.TestCase):
             "backend.services.planner_runtime_deterministic",
             "backend.services.asset_providers",
             "backend.services.asset_providers.config",
-            "backend.services.asset_providers.fixture",
             "backend.services.asset_providers.metadata",
             "backend.services.asset_providers.pexels",
             "backend.services.asset_providers.types",
@@ -957,9 +955,14 @@ class AgentRuntimeArchitectureTests(unittest.TestCase):
             context="tests/test_agent_backend.py::test_agent_download_can_complete_with_fixture_provider",
         )
 
+    def test_task7_fixture_shim_is_removed_from_frozen_compat_surface(self) -> None:
+        compat_doc = (ROOT / "docs" / "architecture" / "compat-surface.md").read_text(encoding="utf-8")
+
+        self.assertNotIn("backend.services.asset_providers.fixture", FROZEN_COMPAT_MODULES)
+        self.assertNotIn("`backend.services.asset_providers.fixture`", compat_doc)
+
     def test_non_architecture_tests_only_reference_frozen_legacy_modules(self) -> None:
         allowed_legacy_prefixes = {
-            "backend.services.asset_providers.fixture",
             "backend.services.asset_providers.pexels",
         }
         offenders: dict[str, list[str]] = {}
@@ -1000,7 +1003,6 @@ class AgentRuntimeArchitectureTests(unittest.TestCase):
         ]
         allowed_legacy_prefixes = {
             "backend.services.asset_providers",
-            "backend.services.asset_providers.fixture",
             "backend.services.asset_providers.pexels",
         }
 
