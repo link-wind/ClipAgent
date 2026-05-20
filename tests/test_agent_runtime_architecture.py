@@ -25,6 +25,24 @@ TASK6_RETIRED_TEST_SERVICE_MODULES = {
 }
 
 
+def _collect_legacy_module_references(source: str, *, module_name: str) -> set[str]:
+    module = ast.parse(source)
+    references: set[str] = set()
+
+    for node in ast.walk(module):
+        if isinstance(node, ast.ImportFrom) and node.module == module_name:
+            references.add(module_name)
+        elif isinstance(node, ast.Import):
+            for alias in node.names:
+                if alias.name == module_name:
+                    references.add(module_name)
+        elif isinstance(node, ast.Constant) and isinstance(node.value, str):
+            if node.value == module_name or node.value.startswith(f"{module_name}."):
+                references.add(node.value)
+
+    return references
+
+
 class AgentRuntimeArchitectureTests(unittest.TestCase):
     def test_target_architecture_packages_exist(self) -> None:
         expected_paths = [
@@ -991,12 +1009,26 @@ class AgentRuntimeArchitectureTests(unittest.TestCase):
                 f"{relative_path} still uses retired low-risk test service modules: {sorted(legacy_references)}",
             )
 
+    def test_task1_guard_detects_legacy_search_service_module_alias_imports(self) -> None:
+        references = _collect_legacy_module_references(
+            "import backend.services.search_service as search_service\n",
+            module_name="backend.services.search_service",
+        )
+
+        self.assertEqual(references, {"backend.services.search_service"})
+
     def test_task1_agent_jobs_test_does_not_use_legacy_search_service_contracts(self) -> None:
         source = (ROOT / "tests" / "test_agent_jobs.py").read_text(encoding="utf-8")
+        references = _collect_legacy_module_references(
+            source,
+            module_name="backend.services.search_service",
+        )
 
-        self.assertNotIn("from backend.services.search_service import", source)
-        self.assertNotIn("backend.services.search_service.search_youtube_candidates", source)
-        self.assertNotIn("backend.services.search_service.download_video", source)
+        self.assertEqual(
+            sorted(references),
+            [],
+            f"tests/test_agent_jobs.py still uses legacy search service contracts: {sorted(references)}",
+        )
 
     def test_infrastructure_layer_does_not_import_migrated_service_modules(self) -> None:
         infrastructure_files = [
