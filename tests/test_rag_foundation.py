@@ -3,6 +3,7 @@ from __future__ import annotations
 import sqlite3
 import tempfile
 import unittest
+import warnings
 from datetime import datetime
 from pathlib import Path
 from unittest.mock import patch
@@ -62,10 +63,42 @@ class RagFoundationDbTestCase(unittest.TestCase):
 
     def tearDown(self) -> None:
         self.db.close()
-        with self.engine.connect() as connection:
-            connection.execute(text("PRAGMA foreign_keys=OFF"))
-        Base.metadata.drop_all(bind=self.engine)
+        self._drop_schema(self.engine)
         self.engine.dispose()
+
+    @staticmethod
+    def _drop_schema(engine) -> None:
+        with engine.connect() as connection:
+            connection.execute(text("PRAGMA foreign_keys=OFF"))
+            table_names = inspect(connection).get_table_names()
+            for table_name in table_names:
+                connection.execute(text(f'DROP TABLE IF EXISTS "{table_name}"'))
+
+
+class RagFoundationSchemaLifecycleTests(unittest.TestCase):
+    def test_drop_schema_helper_avoids_drop_cycle_warning(self) -> None:
+        engine = create_engine("sqlite:///:memory:", connect_args={"check_same_thread": False})
+
+        @event.listens_for(engine, "connect")
+        def _enable_foreign_keys(dbapi_connection, _connection_record):
+            if isinstance(dbapi_connection, sqlite3.Connection):
+                cursor = dbapi_connection.cursor()
+                cursor.execute("PRAGMA foreign_keys=ON")
+                cursor.close()
+
+        Base.metadata.create_all(bind=engine)
+
+        with warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter("always")
+            RagFoundationDbTestCase._drop_schema(engine)
+
+        cycle_warnings = [
+            warning
+            for warning in caught
+            if "Can't sort tables for DROP" in str(warning.message)
+        ]
+        self.assertEqual(cycle_warnings, [])
+        engine.dispose()
 
 
 class RagFoundationPersistenceTests(RagFoundationDbTestCase):
