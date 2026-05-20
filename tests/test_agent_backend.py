@@ -1796,7 +1796,7 @@ class AgentExecutionContractTests(unittest.TestCase):
 
     def test_provider_failure_message_dedupes_and_keeps_specific_diagnostics(self):
         from backend.models.agent import PlanScene
-        import backend.services.search_service as search_service
+        import backend.infrastructure.media.search_service as search_service
 
         scenes = [
             PlanScene(
@@ -1815,8 +1815,8 @@ class AgentExecutionContractTests(unittest.TestCase):
             ),
         ]
 
-        with patch("backend.services.search_service.get_asset_provider_order", return_value=["pexels"]), patch(
-            "backend.services.search_service.get_pexels_config",
+        with patch("backend.infrastructure.media.search_service.get_asset_provider_order", return_value=["pexels"]), patch(
+            "backend.infrastructure.media.search_service.get_pexels_config",
         ) as mock_pexels_config:
             mock_pexels_config.return_value.enabled = True
             mock_pexels_config.return_value.api_key = ""
@@ -1870,7 +1870,7 @@ class AgentExecutionContractTests(unittest.TestCase):
 
     def test_repeated_scene_provider_failures_are_collapsed_into_summary(self):
         from backend.models.agent import PlanScene
-        import backend.services.search_service as search_service
+        import backend.infrastructure.media.search_service as search_service
 
         scenes = [
             PlanScene(
@@ -1896,10 +1896,10 @@ class AgentExecutionContractTests(unittest.TestCase):
             ),
         ]
 
-        with patch("backend.services.search_service.get_asset_provider_order", return_value=["pexels"]), patch(
-            "backend.services.search_service.get_pexels_config",
+        with patch("backend.infrastructure.media.search_service.get_asset_provider_order", return_value=["pexels"]), patch(
+            "backend.infrastructure.media.search_service.get_pexels_config",
         ) as mock_pexels_config, patch(
-            "backend.services.search_service.search_pexels_candidates",
+            "backend.infrastructure.media.search_service.search_pexels_candidates",
         ) as mock_pexels_search:
             mock_pexels_config.return_value.enabled = True
             mock_pexels_config.return_value.api_key = "pexels-key"
@@ -1922,7 +1922,7 @@ class AgentExecutionContractTests(unittest.TestCase):
 
     def test_all_scene_failures_expose_structured_diagnostics(self):
         from backend.models.agent import PlanScene
-        import backend.services.search_service as search_service
+        import backend.infrastructure.media.search_service as search_service
 
         scenes = [
             PlanScene(
@@ -1941,10 +1941,10 @@ class AgentExecutionContractTests(unittest.TestCase):
             ),
         ]
 
-        with patch("backend.services.search_service.get_asset_provider_order", return_value=["pexels"]), patch(
-            "backend.services.search_service.get_pexels_config",
+        with patch("backend.infrastructure.media.search_service.get_asset_provider_order", return_value=["pexels"]), patch(
+            "backend.infrastructure.media.search_service.get_pexels_config",
         ) as mock_pexels_config, patch(
-            "backend.services.search_service.search_pexels_candidates",
+            "backend.infrastructure.media.search_service.search_pexels_candidates",
         ) as mock_pexels_search:
             mock_pexels_config.return_value.enabled = True
             mock_pexels_config.return_value.api_key = "pexels-key"
@@ -2283,7 +2283,7 @@ class AgentExecutionContractTests(unittest.TestCase):
         from tempfile import TemporaryDirectory
 
         from backend.models.agent import PlanScene
-        import backend.services.search_service as search_service
+        import backend.infrastructure.media.search_service as search_service
         import backend.services.asset_providers.fixture as fixture_provider
 
         scene = PlanScene(
@@ -2337,7 +2337,7 @@ class AgentExecutionContractTests(unittest.TestCase):
 
     def test_fixture_provider_falls_through_to_next_provider_when_no_match(self):
         from backend.models.agent import PlanScene
-        import backend.services.search_service as search_service
+        import backend.infrastructure.media.search_service as search_service
         from backend.infrastructure.media.asset_providers.types import AssetCandidate, AssetDownload
 
         scene = PlanScene(
@@ -2357,17 +2357,17 @@ class AgentExecutionContractTests(unittest.TestCase):
         )
 
         with patch.dict("os.environ", {"CLIPFORGE_ASSET_PROVIDER_ORDER": "fixture,pexels"}, clear=False), patch(
-            "backend.services.search_service.search_pexels_candidates",
+            "backend.infrastructure.media.search_service.search_pexels_candidates",
             return_value=[pexels_candidate],
         ), patch(
-            "backend.services.search_service.download_pexels_candidate",
+            "backend.infrastructure.media.search_service.download_pexels_candidate",
             return_value=AssetDownload(
                 local_path="backend/downloads/session_3_pexels_1.mp4",
                 public_url="/downloads/session_3_pexels_1.mp4",
                 metadata=pexels_candidate.to_metadata(),
             ),
         ) as mock_download, patch(
-            "backend.services.search_service.get_pexels_config",
+            "backend.infrastructure.media.search_service.get_pexels_config",
         ) as mock_pexels_config:
             mock_pexels_config.return_value.enabled = True
             mock_pexels_config.return_value.api_key = "pexels-key"

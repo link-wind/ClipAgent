@@ -1040,28 +1040,17 @@ class AgentRuntimeArchitectureTests(unittest.TestCase):
             f"tests/test_agent_jobs.py still uses legacy search service contracts: {sorted(references)}",
         )
 
-    def test_task2_backend_youtube_only_search_cases_do_not_use_legacy_search_service_contracts(self) -> None:
+    def test_task4_backend_test_does_not_use_legacy_search_service_contracts(self) -> None:
         source = (ROOT / "tests" / "test_agent_backend.py").read_text(encoding="utf-8")
-        target_tests = [
-            "test_agent_search_download_returns_agent_clip_paths",
-            "test_agent_download_tries_next_search_result_after_youtube_failure",
-            "test_agent_download_failure_surfaces_last_external_error",
-            "test_agent_search_failure_surfaces_external_error",
-        ]
-        legacy_references: dict[str, list[str]] = {}
-
-        for test_name in target_tests:
-            references = _collect_legacy_module_references(
-                _get_function_source(source, function_name=test_name),
-                module_name="backend.services.search_service",
-            )
-            if references:
-                legacy_references[test_name] = sorted(references)
+        references = _collect_legacy_module_references(
+            source,
+            module_name="backend.services.search_service",
+        )
 
         self.assertEqual(
-            legacy_references,
-            {},
-            f"basic YouTube-only backend search cases still use legacy search service contracts: {legacy_references}",
+            sorted(references),
+            [],
+            f"tests/test_agent_backend.py still uses legacy search service contracts: {sorted(references)}",
         )
 
     def test_infrastructure_layer_does_not_import_migrated_service_modules(self) -> None:
