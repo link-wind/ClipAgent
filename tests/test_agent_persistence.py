@@ -2500,6 +2500,168 @@ class SessionServiceBehaviorTests(unittest.TestCase):
         self.assertEqual(session.activeJobId, replacement_job_id)
         self.assertIsNone(session.diagnostic)
 
+    def test_session_read_model_assembler_keeps_session_contract_stable(self):
+        from backend.app.agent.session_service import AgentSessionService
+        from backend.app.read_models.session_assembler import SessionReadModelAssembler
+        from backend.db.repositories import (
+            AgentArtifactRepository,
+            AgentEventRepository,
+            AgentJobRepository,
+            AgentMessageRepository,
+            AgentPlanRepository,
+            AgentSessionRepository,
+            AgentStepRepository,
+        )
+
+        service = AgentSessionService(session_factory=self.SessionLocal)
+        session = service.create_session("做一个 30 秒 AI 笔记产品宣传片")
+
+        with self.SessionLocal() as db:
+            session_repo = AgentSessionRepository(db)
+            message_repo = AgentMessageRepository(db)
+            event_repo = AgentEventRepository(db)
+            artifact_repo = AgentArtifactRepository(db)
+            plan_repo = AgentPlanRepository(db)
+            step_repo = AgentStepRepository(db)
+            job_repo = AgentJobRepository(db)
+
+            session_record = session_repo.get(session.id)
+            self.assertIsNotNone(session_record)
+            assert session_record is not None
+
+            job_record = job_repo.create(
+                session_id=session.id,
+                job_type="generate_video",
+                status="running",
+                progress=80,
+                current_step="正在合成视频",
+            )
+            session_record.active_job_id = job_record.id
+            session_record.status = "rendering"
+            session_record.progress = 80
+            session_record.current_step = "正在合成视频"
+
+            event_repo.create(
+                session_id=session.id,
+                job_id=job_record.id,
+                event_type="render_started",
+                step="rendering",
+                progress=80,
+                message="开始合成视频",
+                payload_json={},
+            )
+            artifact_repo.create(
+                session_id=session.id,
+                job_id=job_record.id,
+                artifact_type="clip",
+                scene_id="1",
+                source_url="https://example.com/source.mp4",
+                local_path="/tmp/source.mp4",
+                public_url="/output/source.mp4",
+                duration=6.0,
+                metadata_json={"caption": "clip"},
+            )
+            db.commit()
+
+            assembler = SessionReadModelAssembler()
+            assembled = assembler.build_session(
+                session_record=session_record,
+                message_rows=message_repo.list_for_session(session.id),
+                plan_row=plan_repo.get_latest_for_session(session.id),
+                artifact_rows=artifact_repo.list_for_session(session.id),
+                event_rows=event_repo.list_for_session(session.id),
+                persisted_step_rows=step_repo.list_for_session(session.id),
+                job_record=job_record,
+            )
+
+        self.assertEqual(assembled.id, session.id)
+        self.assertEqual(assembled.status.value, "rendering")
+        self.assertEqual(assembled.activeJobId, job_record.id)
+        self.assertEqual(len(assembled.messages), 2)
+        self.assertEqual(len(assembled.clips), 1)
+        self.assertEqual(assembled.clips[0].publicUrl, "/output/source.mp4")
+        self.assertEqual(len(assembled.events), 1)
+        self.assertEqual(assembled.events[0].eventType, "render_started")
+        self.assertEqual(len(assembled.steps), 8)
+
+    def test_task_detail_read_model_assembler_keeps_standard_steps_and_diagnostic(self):
+        from backend.app.execution.task_read_service import AgentTaskReadService
+        from backend.app.read_models.session_assembler import SessionReadModelAssembler
+        from backend.db.repositories import (
+            AgentArtifactRepository,
+            AgentEventRepository,
+            AgentJobRepository,
+            AgentPlanRepository,
+            AgentSessionRepository,
+        )
+
+        with self.SessionLocal() as db:
+            session_repo = AgentSessionRepository(db)
+            job_repo = AgentJobRepository(db)
+            event_repo = AgentEventRepository(db)
+            artifact_repo = AgentArtifactRepository(db)
+            plan_repo = AgentPlanRepository(db)
+
+            session_record = session_repo.create(title="诊断测试", status="failed")
+            job_record = job_repo.create(
+                session_id=session_record.id,
+                job_type="generate_video",
+                status="failed",
+                progress=35,
+                current_step="处理失败：没有下载到可用素材",
+                error_message="没有下载到可用素材",
+            )
+            event_repo.create(
+                session_id=session_record.id,
+                job_id=job_record.id,
+                event_type="job_failed",
+                step="failed",
+                message="没有下载到可用素材",
+                payload_json={
+                    "failureReason": "没有下载到可用素材",
+                    "failureCategory": "no_inventory",
+                    "primaryProvider": "youtube",
+                    "retryableStep": "searching",
+                },
+            )
+            artifact_repo.create(
+                session_id=session_record.id,
+                job_id=job_record.id,
+                artifact_type="clip",
+                scene_id="1",
+                source_url="https://example.com/source.mp4",
+                local_path="/tmp/source.mp4",
+                public_url="/output/source.mp4",
+                duration=6.0,
+                metadata_json={"caption": "clip"},
+            )
+            db.commit()
+
+            task_read_service = AgentTaskReadService(session_factory=self.SessionLocal)
+            assembler = SessionReadModelAssembler()
+            events = event_repo.list_for_job(job_record.id)
+            artifacts = artifact_repo.list_for_job(job_record.id)
+            retryable_step = task_read_service._resolve_retryable_step(events)
+            summary = task_read_service._build_task_summary(job_record, session_record, retryable_step)
+            detail = assembler.build_task_detail(
+                summary=summary,
+                job_record=job_record,
+                session_record=session_record,
+                plan_row=plan_repo.get(job_record.plan_id) if job_record.plan_id else None,
+                artifact_rows=artifacts,
+                event_rows=events,
+                video_url=task_read_service._resolve_video_url(artifacts, events),
+                retryable_step=retryable_step,
+            )
+
+        self.assertEqual(detail.steps[4].id, "create_task")
+        self.assertEqual(detail.steps[5].id, "search_assets")
+        self.assertEqual(detail.steps[5].status, "failed")
+        self.assertEqual(detail.steps[5].error.retryableStep, "search_assets")
+        self.assertIsNotNone(detail.diagnostic)
+        self.assertEqual(detail.diagnostic.phase, "search_assets")
+        self.assertEqual(detail.currentStepId, "search_assets")
+
     def test_read_task_includes_diagnostic_for_failed_job(self):
         from backend.db.repositories import AgentEventRepository, AgentJobRepository, AgentSessionRepository
         from backend.app.execution.task_read_service import AgentTaskReadService

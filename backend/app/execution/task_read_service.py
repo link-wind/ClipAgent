@@ -1,5 +1,6 @@
 from backend.app.agent.read_service import AgentReadService
 from backend.app.agent.step_snapshot_service import AgentStepSnapshotService
+from backend.app.read_models.session_assembler import SessionReadModelAssembler
 from backend.db.repositories import (
     AgentArtifactRepository,
     AgentEventRepository,
@@ -9,7 +10,6 @@ from backend.db.repositories import (
 )
 from backend.models.agent import (
     AgentDashboardSummary,
-    AgentError,
     AgentTaskDetail,
     AgentTaskSummary,
 )
@@ -25,6 +25,10 @@ class AgentTaskReadService:
         self.read_service = AgentReadService(session_factory=session_factory)
         self.step_snapshot_service = AgentStepSnapshotService()
         self.diagnostic_service = AgentDiagnosticService()
+        self.session_assembler = SessionReadModelAssembler(
+            step_assembler=self.read_service.session_assembler.step_assembler,
+            diagnostic_service=self.diagnostic_service,
+        )
 
     def list_tasks(self, limit: int = 50) -> list[AgentTaskSummary]:
         # 读取最近任务摘要
@@ -57,31 +61,15 @@ class AgentTaskReadService:
             video_url = self._resolve_video_url(artifacts, events)
             retryable_step = self._resolve_retryable_step(events)
             summary = self._build_task_summary(job, session, retryable_step)
-            return AgentTaskDetail(
-                **summary.model_dump(),
-                events=self.read_service.build_event_response(events),
-                clips=[self.read_service._build_clip_info(row) for row in clip_rows],
-                diagnostic=self.diagnostic_service.build_diagnostic(
-                    session_record=session,
-                    job_record=job,
-                    event_rows=events,
-                ),
-                steps=self.step_snapshot_service.build_task_steps(
-                    session_record=session,
-                    job_record=job,
-                    plan_row=plan,
-                    artifact_rows=artifacts,
-                    event_rows=events,
-                ),
-                error=(
-                    AgentError(
-                        message=job.error_message,
-                        retryableStep=retryable_step,
-                    )
-                    if job.error_message
-                    else None
-                ),
-                videoUrl=video_url,
+            return self.session_assembler.build_task_detail(
+                summary=summary,
+                job_record=job,
+                session_record=session,
+                plan_row=plan,
+                artifact_rows=artifacts,
+                event_rows=events,
+                video_url=video_url,
+                retryable_step=retryable_step,
             )
 
     def read_dashboard(self) -> AgentDashboardSummary:
