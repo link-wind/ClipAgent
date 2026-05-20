@@ -12,7 +12,10 @@ from sqlalchemy import create_engine, event, inspect, text
 from sqlalchemy.orm import sessionmaker
 
 from backend.db.base import Base
+from backend.utils.sqlite import install_sqlite_datetime_adapters
 from backend.utils.time import utc_now_naive
+
+install_sqlite_datetime_adapters()
 
 
 class RagFoundationDomainTests(unittest.TestCase):

@@ -30,12 +30,15 @@ from sqlalchemy import (
     text,
 )
 from sqlalchemy.orm import sessionmaker
+from backend.utils.sqlite import install_sqlite_datetime_adapters
 from backend.utils.time import utc_now_naive
 
 
 ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
+
+install_sqlite_datetime_adapters()
 
 
 class ConfigTests(unittest.TestCase):
