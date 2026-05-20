@@ -46,6 +46,21 @@ def _collect_legacy_module_references(source: str, *, module_name: str) -> set[s
     return references
 
 
+def _assert_no_legacy_module_references(
+    test_case: unittest.TestCase,
+    source: str,
+    *,
+    module_name: str,
+    context: str,
+) -> None:
+    references = _collect_legacy_module_references(source, module_name=module_name)
+    test_case.assertEqual(
+        sorted(references),
+        [],
+        f"{context}: {sorted(references)}",
+    )
+
+
 def _get_function_source(source: str, *, function_name: str) -> str:
     module = ast.parse(source)
 
@@ -440,13 +455,11 @@ class AgentRuntimeArchitectureTests(unittest.TestCase):
         source_path = ROOT / "tests" / "test_planner_runtime.py"
         source = source_path.read_text(encoding="utf-8")
 
-        self.assertNotIn(
-            "from backend.services.planner_runtime_langchain import LangChainPlannerRuntime",
+        _assert_no_legacy_module_references(
+            self,
             source,
-        )
-        self.assertIn(
-            "from backend.app.planning.runtime_langchain import LangChainPlannerRuntime",
-            source,
+            module_name="backend.services.planner_runtime_langchain",
+            context="tests/test_planner_runtime.py still imports legacy langchain runtime alias",
         )
 
     def test_media_infrastructure_does_not_reexport_services_render_module(self) -> None:
@@ -1048,6 +1061,15 @@ class AgentRuntimeArchitectureTests(unittest.TestCase):
         )
 
         self.assertEqual(references, {"backend.services.search_service"})
+
+    def test_task1_guard_flags_legacy_langchain_runtime_module_alias_imports(self) -> None:
+        with self.assertRaises(AssertionError):
+            _assert_no_legacy_module_references(
+                self,
+                "import backend.services.planner_runtime_langchain as legacy\n",
+                module_name="backend.services.planner_runtime_langchain",
+                context="synthetic planner runtime source still imports legacy langchain runtime alias",
+            )
 
     def test_task1_agent_jobs_test_does_not_use_legacy_search_service_contracts(self) -> None:
         source = (ROOT / "tests" / "test_agent_jobs.py").read_text(encoding="utf-8")
