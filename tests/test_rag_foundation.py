@@ -11,6 +11,7 @@ from sqlalchemy import create_engine, event, inspect, text
 from sqlalchemy.orm import sessionmaker
 
 from backend.db.base import Base
+from backend.utils.time import utc_now_naive
 
 
 class RagFoundationDomainTests(unittest.TestCase):
@@ -880,7 +881,7 @@ class RagFoundationMigrationTests(unittest.TestCase):
 
         with engine.connect() as connection:
             connection.execute(text("PRAGMA foreign_keys=ON"))
-            now = datetime.utcnow()
+            now = utc_now_naive()
             connection.execute(
                 text(
                     """

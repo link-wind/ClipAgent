@@ -1,5 +1,4 @@
 from dataclasses import dataclass
-from datetime import datetime
 from hashlib import sha256
 
 from sqlalchemy import select
@@ -11,6 +10,7 @@ from backend.db.models import (
     KnowledgeSourceRecord,
     KnowledgeVersionRecord,
 )
+from backend.utils.time import utc_now_naive
 
 
 @dataclass(frozen=True)
@@ -144,7 +144,7 @@ class KnowledgeRepository:
         if version is None:
             raise ValueError(f"knowledge version not found: {version_id}")
 
-        now = datetime.utcnow()
+        now = utc_now_naive()
         source = self.get_source(version.source_id)
         if source is None:
             raise ValueError(f"knowledge source not found: {version.source_id}")
@@ -165,7 +165,7 @@ class KnowledgeRepository:
         if version is None:
             raise ValueError(f"knowledge version not found: {version_id}")
 
-        now = datetime.utcnow()
+        now = utc_now_naive()
         source = self.get_source(version.source_id)
         if source is None:
             raise ValueError(f"knowledge source not found: {version.source_id}")
@@ -187,7 +187,7 @@ class KnowledgeRepository:
         if record is None:
             raise ValueError(f"knowledge source not found: {source_id}")
         record.status = "deleting"
-        record.deletion_requested_at = datetime.utcnow()
+        record.deletion_requested_at = utc_now_naive()
         self.db.flush()
         self.db.refresh(record)
         return record
@@ -198,7 +198,7 @@ class KnowledgeRepository:
             raise ValueError(f"knowledge source not found: {source_id}")
         record.status = "deleted"
         record.processing_version_id = None
-        record.deleted_at = datetime.utcnow()
+        record.deleted_at = utc_now_naive()
         self.db.flush()
         self.db.refresh(record)
         return record

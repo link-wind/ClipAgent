@@ -30,6 +30,7 @@ from sqlalchemy import (
     text,
 )
 from sqlalchemy.orm import sessionmaker
+from backend.utils.time import utc_now_naive
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -908,7 +909,7 @@ class AlembicPersistenceTests(unittest.TestCase):
         try:
             metadata.create_all(engine)
             with engine.connect() as conn:
-                now = datetime.utcnow()
+                now = utc_now_naive()
                 conn.execute(
                     agent_sessions.insert(),
                     [
