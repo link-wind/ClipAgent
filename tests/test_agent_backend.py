@@ -3142,6 +3142,9 @@ class FrontendClientContractTests(unittest.TestCase):
         self.assertIn("AgentRunDetail", panel_source)
         self.assertIn("traceEvents: AgentTraceEvent[]", panel_source)
         self.assertIn("aria-label=\"运行详情\"", panel_source)
+        self.assertIn("mx-5 mb-5", panel_source)
+        self.assertIn("border-border", panel_source)
+        self.assertIn("bg-[#fbfcfa]", panel_source)
         self.assertIn("运行详情", panel_source)
         self.assertIn("展开运行详情", panel_source)
         self.assertIn("Skill Activity", panel_source)
@@ -3165,6 +3168,24 @@ class FrontendClientContractTests(unittest.TestCase):
         self.assertIn("Number.isNaN", panel_source)
         self.assertIn("activeRunKeyRef", panel_source)
         self.assertIn("latestRunKeyRef", panel_source)
+
+    def test_workspace_embeds_run_detail_panel_without_store_expansion(self):
+        workspace_source = (ROOT / "src" / "components" / "workspace" / "BriefWorkspacePage.tsx").read_text(
+            encoding="utf-8"
+        )
+        store_source = (ROOT / "src" / "stores" / "useAgentStore.ts").read_text(encoding="utf-8")
+
+        self.assertIn("import RunDetailPanel from '@/components/workspace/RunDetailPanel';", workspace_source)
+        self.assertIn("const traceEvents = useAgentStore((state) => state.traceEvents);", workspace_source)
+        self.assertIn("const hasRunTrace = traceEvents.some((event) => event.runId);", workspace_source)
+        self.assertIn("session && hasRunTrace", workspace_source)
+        self.assertIn("<RunDetailPanel", workspace_source)
+        self.assertIn("sessionId={session?.id ?? null}", workspace_source)
+        self.assertIn("traceEvents={traceEvents}", workspace_source)
+        self.assertNotIn("getSessionTrace", workspace_source)
+        self.assertNotIn("runDetail:", store_source)
+        self.assertNotIn("setRunDetail", store_source)
+        self.assertNotIn("getSessionTrace", store_source)
 
     def test_frontend_trace_stream_listens_for_runtime_event_contract(self):
         api_source = (ROOT / "src" / "lib" / "agentApi.ts").read_text(encoding="utf-8")

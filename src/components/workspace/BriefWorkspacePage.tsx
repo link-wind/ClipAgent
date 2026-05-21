@@ -5,6 +5,7 @@ import Link from 'next/link';
 import ProductShell from '@/components/layout/ProductShell';
 import Button from '@/components/common/Button';
 import AiStepFlow from '@/components/workspace/AiStepFlow';
+import RunDetailPanel from '@/components/workspace/RunDetailPanel';
 import {
   confirmGroundingCandidates,
   confirmAgentSession,
@@ -228,6 +229,7 @@ function buildFinalPlanSummaryItems(step: WorkspaceStep) {
 
 export default function BriefWorkspacePage() {
   const session = useAgentStore((state) => state.session);
+  const traceEvents = useAgentStore((state) => state.traceEvents);
   const activeSessionId = useAgentStore((state) => state.activeSessionId);
   const isSubmitting = useAgentStore((state) => state.isSubmitting);
   const setSession = useAgentStore((state) => state.setSession);
@@ -542,6 +544,7 @@ export default function BriefWorkspacePage() {
   const showFailurePanel = Boolean((session?.status === 'failed' || failedStep) && !isSessionActivelyExecuting);
   const showExecutionHandoff = Boolean(session?.activeJobId || executionSteps.some((step) => step.status !== 'pending'));
   const showPlanConfirmAction = Boolean(canConfirmPlan || session?.status === 'plan_ready');
+  const hasRunTrace = traceEvents.some((event) => event.runId);
   const hasExecutionFeedbackRequeue = Boolean(
     isSessionActivelyExecuting &&
       session?.events?.some((event) => event.eventType === 'job_requeued_after_replan')
@@ -901,6 +904,10 @@ export default function BriefWorkspacePage() {
                     ))}
                   </div>
                 </section>
+              ) : null}
+
+              {session && hasRunTrace ? (
+                <RunDetailPanel sessionId={session?.id ?? null} traceEvents={traceEvents} />
               ) : null}
 
               {resultUrl ? (

@@ -191,7 +191,7 @@ export default function RunDetailPanel({ sessionId, traceEvents }: RunDetailPane
   return (
     <section
       aria-label="运行详情"
-      className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm"
+      className="mx-5 mb-5 rounded-lg border border-border bg-[#fbfcfa] p-4"
     >
       <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div className="min-w-0">
