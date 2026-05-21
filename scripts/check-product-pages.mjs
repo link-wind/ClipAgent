@@ -85,6 +85,22 @@ async function main() {
   assertExcludes(workspaceHtml, '每一步先显示进度，再给出结果', 'workspace 页面仍保留过多解释文案');
   assertExcludes(workspaceHtml, '底部输入区用于继续补充信息', 'workspace 页面仍保留过多输入说明');
 
+  const briefWorkspaceSource = await readText('src/components/workspace/BriefWorkspacePage.tsx');
+  assertIncludes(briefWorkspaceSource, 'RunDetailPanel', 'BriefWorkspacePage 缺少运行详情组件引用');
+  assertIncludes(briefWorkspaceSource, 'hasRunTrace', 'BriefWorkspacePage 缺少运行详情 trace gating');
+  assertIncludes(
+    briefWorkspaceSource,
+    'session && hasRunTrace',
+    'BriefWorkspacePage 缺少 session + trace 运行详情挂载条件',
+  );
+
+  const runDetailPanelSource = await readText('src/components/workspace/RunDetailPanel.tsx');
+  assertIncludes(runDetailPanelSource, '运行详情', 'RunDetailPanel 缺少中文标题');
+  assertIncludes(runDetailPanelSource, 'aria-label="运行详情"', 'RunDetailPanel 缺少运行详情 aria label');
+  assertIncludes(runDetailPanelSource, 'Run ${runId}', 'RunDetailPanel 缺少 run id 标题');
+  assertIncludes(runDetailPanelSource, '展开运行详情', 'RunDetailPanel 缺少展开入口文案');
+  assertIncludes(runDetailPanelSource, 'mx-5 mb-5', 'RunDetailPanel 缺少根布局样式关键字');
+
   const tasksHtml = await readText('.next/server/app/tasks.html');
   assertIncludes(tasksHtml, '任务控制台', 'tasks 页面缺少控制台标题');
   assertIncludes(tasksHtml, '任务列表', 'tasks 页面缺少任务列表区块');
