@@ -22,3 +22,22 @@ class ToolCallRepository:
             .order_by(ToolCallRecord.started_at.asc(), ToolCallRecord.id.asc())
         )
         return list(self.db.scalars(stmt))
+
+    def list_for_step(self, step_id: str) -> list[ToolCallRecord]:
+        stmt = (
+            select(ToolCallRecord)
+            .where(ToolCallRecord.step_id == step_id)
+            .order_by(ToolCallRecord.started_at.asc(), ToolCallRecord.id.asc())
+        )
+        return list(self.db.scalars(stmt))
+
+    def list_for_run_ids(self, run_ids: list[str]) -> list[ToolCallRecord]:
+        if not run_ids:
+            return []
+
+        stmt = (
+            select(ToolCallRecord)
+            .where(ToolCallRecord.run_id.in_(run_ids))
+            .order_by(ToolCallRecord.started_at.asc(), ToolCallRecord.id.asc())
+        )
+        return list(self.db.scalars(stmt))

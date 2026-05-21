@@ -228,3 +228,35 @@ class AgentDashboardSummary(BaseModel):
     completedTasks: int = 0
     failedTasks: int = 0
     recentTasks: List[AgentTaskSummary] = Field(default_factory=list)
+
+
+class AgentToolCallSummary(BaseModel):
+    id: str
+    toolId: str
+    status: str
+    actor: str = ""
+    actorRole: str = "planner"
+    stepId: str = ""
+    resultSummary: str = ""
+    resultRef: str = ""
+    errorMessage: str = ""
+    startedAt: Optional[str] = None
+    finishedAt: Optional[str] = None
+
+
+class AgentSkillActivity(BaseModel):
+    skillId: str
+    skillVersion: str = ""
+    status: str
+    reason: str = ""
+    inputSummary: str = ""
+    outputSummary: str = ""
+    errorMessage: str = ""
+    runType: str = ""
+
+
+class AgentRunDetail(AgentRunSummary):
+    trace: List[AgentTraceEvent] = Field(default_factory=list)
+    toolCalls: List[AgentToolCallSummary] = Field(default_factory=list)
+    skillActivity: Optional[AgentSkillActivity] = None
+    steps: List[AgentStep] = Field(default_factory=list)

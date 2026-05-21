@@ -359,6 +359,156 @@ class AgentStreamServiceTests(unittest.TestCase):
         self.assertEqual(steps[6].status, "succeeded")
         self.assertEqual(steps[6].summary, "素材已准备完成")
 
+    def test_run_read_model_assembler_builds_tool_call_and_skill_activity_summaries(self):
+        from backend.app.read_models.run_assembler import RunReadModelAssembler
+
+        run_row = SimpleNamespace(
+            id="run-1",
+            session_id="session-1",
+            trigger_type="user_message",
+            status="succeeded",
+            summary="已生成方案",
+            started_at=datetime(2026, 5, 20, 10, 0, 0),
+            finished_at=datetime(2026, 5, 20, 10, 3, 0),
+            created_at=datetime(2026, 5, 20, 10, 0, 0),
+        )
+        trace_rows = [
+            SimpleNamespace(
+                id="trace-1",
+                session_id="session-1",
+                run_id="run-1",
+                step_id="select_strategy",
+                job_id=None,
+                event_type="skill_selected",
+                level="info",
+                message="selected",
+                payload_json={
+                    "skillId": "builtin.product_intro_video",
+                    "skillVersion": "0.1.0",
+                    "reason": "selected",
+                    "runType": "initial_planning",
+                },
+                sequence=1,
+                actor_role="planner",
+                created_at=datetime(2026, 5, 20, 10, 0, 1),
+            ),
+            SimpleNamespace(
+                id="trace-2",
+                session_id="session-1",
+                run_id="run-1",
+                step_id="build_planner_request",
+                job_id=None,
+                event_type="skill_run_succeeded",
+                level="info",
+                message="ready",
+                payload_json={
+                    "skillId": "builtin.product_intro_video",
+                    "skillVersion": "0.1.0",
+                    "skillRunSummary": {
+                        "skillId": "builtin.product_intro_video",
+                        "skillVersion": "0.1.0",
+                        "status": "succeeded",
+                        "inputSummary": "输入概要",
+                        "outputSummary": "输出概要",
+                        "errorMessage": "",
+                    },
+                },
+                sequence=2,
+                actor_role="planner",
+                created_at=datetime(2026, 5, 20, 10, 0, 2),
+            ),
+        ]
+        tool_call_rows = [
+            SimpleNamespace(
+                id="tool-call-1",
+                run_id="run-1",
+                step_id="retrieve_context",
+                tool_id="read_project_knowledge",
+                status="succeeded",
+                arguments_json={"query": "产品介绍"},
+                result_summary="Read one project knowledge document.",
+                result_ref="knowledge:doc-1",
+                error_message="",
+                actor="agent_runtime",
+                actor_role="planner",
+                started_at=datetime(2026, 5, 20, 10, 0, 3),
+                finished_at=datetime(2026, 5, 20, 10, 0, 4),
+            )
+        ]
+
+        detail = RunReadModelAssembler().build_run_detail(
+            run_row,
+            [],
+            trace_rows,
+            tool_call_rows,
+        )
+
+        self.assertEqual(detail.id, "run-1")
+        self.assertEqual(detail.skillActivity.skillId, "builtin.product_intro_video")
+        self.assertEqual(detail.skillActivity.skillVersion, "0.1.0")
+        self.assertEqual(detail.skillActivity.status, "succeeded")
+        self.assertEqual(detail.skillActivity.reason, "selected")
+        self.assertTrue(detail.skillActivity.inputSummary)
+        self.assertTrue(detail.skillActivity.outputSummary)
+        self.assertEqual(detail.skillActivity.runType, "initial_planning")
+        self.assertEqual(len(detail.toolCalls), 1)
+        self.assertEqual(detail.toolCalls[0].toolId, "read_project_knowledge")
+        self.assertEqual(detail.toolCalls[0].status, "succeeded")
+        self.assertEqual(detail.toolCalls[0].actor, "agent_runtime")
+        self.assertEqual(detail.toolCalls[0].actorRole, "planner")
+        self.assertEqual(len(detail.trace), 2)
+
+    def test_run_read_model_assembler_uses_injected_step_snapshot_service_for_steps(self):
+        from backend.app.read_models.run_assembler import RunReadModelAssembler
+        from backend.models.agent import AgentStep
+
+        class StubStepSnapshotService:
+            def __init__(self):
+                self.received = None
+
+            def build_persisted_steps(self, step_rows):
+                self.received = list(step_rows)
+                return [
+                    AgentStep(
+                        id="prepare_assets",
+                        title="准备素材",
+                        description="准备素材",
+                        status="succeeded",
+                        summary="由注入的 service 构建",
+                    )
+                ]
+
+        step_snapshot_service = StubStepSnapshotService()
+        assembler = RunReadModelAssembler(step_snapshot_service=step_snapshot_service)
+
+        run_row = SimpleNamespace(
+            id="run-1",
+            session_id="session-1",
+            trigger_type="user_message",
+            status="succeeded",
+            summary="已生成方案",
+            created_at=datetime(2026, 5, 20, 10, 0, 0),
+        )
+        step_rows = [
+            SimpleNamespace(
+                step_key="prepare_assets",
+                title="准备素材",
+                description="准备素材",
+                status="succeeded",
+                progress=1.0,
+                summary="由注入的 service 构建",
+                result_json=None,
+                started_at=None,
+                finished_at=None,
+            )
+        ]
+
+        detail = assembler.build_run_detail(run_row, step_rows, [], [])
+
+        self.assertEqual(step_snapshot_service.received, step_rows)
+        self.assertEqual(detail.steps[0].id, "prepare_assets")
+        self.assertEqual(detail.steps[0].summary, "由注入的 service 构建")
+
 
 class AgentApiTests(unittest.TestCase):
     def setUp(self):
