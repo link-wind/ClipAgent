@@ -3113,6 +3113,25 @@ class FrontendClientContractTests(unittest.TestCase):
         self.assertIn("extractTraceStreamPayload(event)", store_source)
         self.assertIn("currentTraceStream: null", store_source)
 
+    def test_frontend_agent_api_exposes_run_detail_contract(self):
+        api_source = (ROOT / "src" / "lib" / "agentApi.ts").read_text(encoding="utf-8")
+
+        self.assertIn("export interface AgentToolCallSummary", api_source)
+        self.assertIn("toolId: string", api_source)
+        self.assertIn("actorRole: string", api_source)
+        self.assertIn("resultRef: string", api_source)
+        self.assertIn("export interface AgentSkillActivity", api_source)
+        self.assertIn("skillVersion: string", api_source)
+        self.assertIn("inputSummary: string", api_source)
+        self.assertIn("outputSummary: string", api_source)
+        self.assertIn("export interface AgentRunDetail", api_source)
+        self.assertIn("toolCalls: AgentToolCallSummary[]", api_source)
+        self.assertIn("skillActivity: AgentSkillActivity | null", api_source)
+        self.assertIn("steps: AgentStep[]", api_source)
+        self.assertIn("trace: AgentTraceEvent[]", api_source)
+        self.assertIn("export function getAgentRunDetail", api_source)
+        self.assertIn("`/api/agent/sessions/${encodedSessionId}/runs/${encodedRunId}`", api_source)
+
     def test_frontend_trace_stream_listens_for_runtime_event_contract(self):
         api_source = (ROOT / "src" / "lib" / "agentApi.ts").read_text(encoding="utf-8")
 

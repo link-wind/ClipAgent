@@ -79,6 +79,46 @@ export interface AgentTraceStreamPayload {
   message: string
 }
 
+export interface AgentToolCallSummary {
+  id: string
+  toolId: string
+  status: string
+  actor: string
+  actorRole: string
+  stepId: string
+  resultSummary: string
+  resultRef: string
+  errorMessage: string
+  startedAt: string | null
+  finishedAt: string | null
+}
+
+export interface AgentSkillActivity {
+  skillId: string
+  skillVersion: string
+  status: string
+  reason: string
+  inputSummary: string
+  outputSummary: string
+  errorMessage: string
+  runType: string
+}
+
+export interface AgentRunDetail {
+  id: string
+  sessionId: string
+  triggerType: string
+  status: string
+  summary: string
+  startedAt: string | null
+  finishedAt: string | null
+  createdAt: string
+  trace: AgentTraceEvent[]
+  toolCalls: AgentToolCallSummary[]
+  skillActivity: AgentSkillActivity | null
+  steps: AgentStep[]
+}
+
 export interface AgentErrorInfo {
   message: string
   retryableStep?: string | null
@@ -270,6 +310,13 @@ export function getAgentSessionEvents(sessionId: string): Promise<AgentEvent[]> 
   const encodedSessionId = encodeURIComponent(sessionId)
 
   return requestJson<AgentEvent[]>(`/api/agent/sessions/${encodedSessionId}/events`)
+}
+
+export function getAgentRunDetail(sessionId: string, runId: string): Promise<AgentRunDetail> {
+  const encodedSessionId = encodeURIComponent(sessionId)
+  const encodedRunId = encodeURIComponent(runId)
+
+  return requestJson<AgentRunDetail>(`/api/agent/sessions/${encodedSessionId}/runs/${encodedRunId}`)
 }
 
 export interface AgentTraceSubscriptionHandlers {
