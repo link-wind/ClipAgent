@@ -3132,6 +3132,40 @@ class FrontendClientContractTests(unittest.TestCase):
         self.assertIn("export function getAgentRunDetail", api_source)
         self.assertIn("`/api/agent/sessions/${encodedSessionId}/runs/${encodedRunId}`", api_source)
 
+    def test_workspace_run_detail_panel_component_contract(self):
+        panel_source = (ROOT / "src" / "components" / "workspace" / "RunDetailPanel.tsx").read_text(
+            encoding="utf-8"
+        )
+
+        self.assertIn("export function findLatestRunId", panel_source)
+        self.assertIn("getAgentRunDetail", panel_source)
+        self.assertIn("AgentRunDetail", panel_source)
+        self.assertIn("traceEvents: AgentTraceEvent[]", panel_source)
+        self.assertIn("aria-label=\"运行详情\"", panel_source)
+        self.assertIn("运行详情", panel_source)
+        self.assertIn("展开运行详情", panel_source)
+        self.assertIn("Skill Activity", panel_source)
+        self.assertIn("Tool Calls", panel_source)
+        self.assertIn("Trace Timeline", panel_source)
+        self.assertIn("Step Snapshot", panel_source)
+        self.assertIn("skillActivity", panel_source)
+        self.assertIn("reason", panel_source)
+        self.assertIn("inputSummary", panel_source)
+        self.assertIn("outputSummary", panel_source)
+        self.assertIn("errorMessage", panel_source)
+        self.assertIn("toolCalls", panel_source)
+        self.assertIn("actorRole", panel_source)
+        self.assertIn("progress", panel_source)
+        self.assertIn("runDetail.trace", panel_source)
+        self.assertIn("runDetail.steps", panel_source)
+        self.assertIn("aria-expanded", panel_source)
+        self.assertIn("aria-controls", panel_source)
+        self.assertIn("role=\"status\"", panel_source)
+        self.assertIn("role=\"alert\"", panel_source)
+        self.assertIn("Number.isNaN", panel_source)
+        self.assertIn("activeRunKeyRef", panel_source)
+        self.assertIn("latestRunKeyRef", panel_source)
+
     def test_frontend_trace_stream_listens_for_runtime_event_contract(self):
         api_source = (ROOT / "src" / "lib" / "agentApi.ts").read_text(encoding="utf-8")
 
