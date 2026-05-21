@@ -7,6 +7,7 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
 from backend.app.agent.run_service import ActiveOperationConflict
+from backend.app.agent.run_read_service import AgentRunReadService
 from backend.app.agent.session_use_cases import AgentReadService, AgentSessionService
 from backend.app.agent.stream_service import AgentStreamService, format_sse_event
 from backend.app.execution.execution_service import AgentExecutionService
@@ -16,6 +17,7 @@ from backend.db.repositories import AgentRunRepository, AgentSessionRepository, 
 from backend.models.agent import (
     AgentDashboardSummary,
     AgentEvent,
+    AgentRunDetail,
     AgentRunSummary,
     AgentSession,
     AgentTaskDetail,
@@ -30,6 +32,7 @@ session_service = AgentSessionService(session_factory=SessionLocal)
 read_service = AgentReadService(session_factory=SessionLocal)
 execution_service = AgentExecutionService(session_factory=SessionLocal)
 task_read_service = AgentTaskReadService(session_factory=SessionLocal)
+run_read_service = AgentRunReadService(session_factory=SessionLocal)
 STREAM_BATCH_LIMIT = 50
 STREAM_POLL_INTERVAL_SECONDS = 0.5
 STREAM_HEARTBEAT_INTERVAL_SECONDS = 10.0
@@ -200,6 +203,14 @@ async def list_session_runs(session_id: str):
         return await run_in_threadpool(read_runs)
     except KeyError:
         raise HTTPException(status_code=404, detail="Session not found")
+
+
+@router.get("/sessions/{session_id}/runs/{run_id}", response_model=AgentRunDetail)
+async def get_run_detail(session_id: str, run_id: str):
+    try:
+        return await run_in_threadpool(run_read_service.read_run, session_id, run_id)
+    except KeyError:
+        raise HTTPException(status_code=404, detail="Run not found")
 
 
 @router.get("/sessions/{session_id}/runs/{run_id}/trace", response_model=list[AgentTraceEvent])

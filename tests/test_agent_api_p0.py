@@ -1,5 +1,6 @@
 import unittest
 from pathlib import Path
+from datetime import datetime
 from unittest.mock import patch
 
 import httpx
@@ -13,7 +14,11 @@ from backend.db.repositories import (
     AgentArtifactRepository,
     AgentEventRepository,
     AgentJobRepository,
+    AgentRunRepository,
     AgentSessionRepository,
+    AgentStepRepository,
+    AgentTraceEventRepository,
+    ToolCallRepository,
 )
 from backend.main import app
 from backend.app.execution.execution_service import AgentExecutionService
@@ -233,6 +238,155 @@ class AgentApiP0ContractTests(unittest.TestCase):
             "read_service",
             self.read_service,
         ):
+            asyncio.run(_run())
+
+    def test_get_run_detail_returns_tool_calls_skill_activity_and_trace(self):
+        from backend.app.agent.run_read_service import AgentRunReadService
+
+        async def _run():
+            session = self.session_service.create_session("做一个产品介绍视频")
+            run_id = None
+
+            with self.session_factory() as db:
+                session_repo = AgentSessionRepository(db)
+                run_repo = AgentRunRepository(db)
+                step_repo = AgentStepRepository(db)
+                trace_repo = AgentTraceEventRepository(db)
+                tool_call_repo = ToolCallRepository(db)
+
+                session_record = session_repo.get(session.id)
+                self.assertIsNotNone(session_record)
+
+                run_record = run_repo.create(
+                    session_id=session.id,
+                    trigger_type="user_message",
+                    status="succeeded",
+                    summary="已生成方案",
+                )
+                run_id = run_record.id
+                step_record = step_repo.create(
+                    session_id=session.id,
+                    run_id=run_id,
+                    step_key="prepare_assets",
+                    title="准备素材",
+                    description="准备素材",
+                    status="succeeded",
+                    progress=1.0,
+                    summary="素材已准备完成",
+                    sequence=1,
+                )
+                trace_repo.create(
+                    session_id=session.id,
+                    run_id=run_id,
+                    step_id=step_record.id,
+                    event_type="skill_selected",
+                    message="selected",
+                    payload_json={
+                        "skillId": "builtin.product_intro_video",
+                        "skillVersion": "0.1.0",
+                        "reason": "selected",
+                        "runType": "initial_planning",
+                    },
+                )
+                trace_repo.create(
+                    session_id=session.id,
+                    run_id=run_id,
+                    step_id=step_record.id,
+                    event_type="skill_run_succeeded",
+                    message="ready",
+                    payload_json={
+                        "skillRunSummary": {
+                            "skillId": "builtin.product_intro_video",
+                            "skillVersion": "0.1.0",
+                            "status": "succeeded",
+                            "inputSummary": "输入概要",
+                            "outputSummary": "输出概要",
+                            "errorMessage": "",
+                        }
+                    },
+                )
+                tool_call_repo.create_tool_call(
+                    id="tool-call-1",
+                    run_id=run_id,
+                    step_id=step_record.id,
+                    tool_id="read_project_knowledge",
+                    status="succeeded",
+                    arguments_json={"query": "产品介绍"},
+                    result_summary="Read one project knowledge document.",
+                    result_ref="knowledge:doc-1",
+                    error_message="",
+                    actor="agent_runtime",
+                    actor_role="planner",
+                    started_at=datetime(2026, 5, 20, 10, 0, 3),
+                    finished_at=datetime(2026, 5, 20, 10, 0, 4),
+                )
+                db.commit()
+
+            transport = httpx.ASGITransport(app=app)
+            async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as client:
+                response = await client.get(f"/api/agent/sessions/{session.id}/runs/{run_id}")
+                self.assertEqual(response.status_code, 200)
+                payload = response.json()
+                self.assertEqual(payload["id"], run_id)
+                self.assertEqual(payload["skillActivity"]["skillId"], "builtin.product_intro_video")
+                self.assertEqual(payload["skillActivity"]["skillVersion"], "0.1.0")
+                self.assertEqual(payload["skillActivity"]["status"], "succeeded")
+                self.assertEqual(payload["skillActivity"]["reason"], "selected")
+                self.assertTrue(payload["skillActivity"]["inputSummary"])
+                self.assertTrue(payload["skillActivity"]["outputSummary"])
+                self.assertEqual(payload["skillActivity"]["errorMessage"], "")
+                self.assertEqual(payload["skillActivity"]["runType"], "initial_planning")
+                self.assertEqual(len(payload["toolCalls"]), 1)
+                self.assertEqual(payload["toolCalls"][0]["toolId"], "read_project_knowledge")
+                self.assertEqual(payload["toolCalls"][0]["actor"], "agent_runtime")
+                self.assertEqual(payload["toolCalls"][0]["actorRole"], "planner")
+                self.assertEqual(payload["toolCalls"][0]["resultRef"], "knowledge:doc-1")
+                self.assertIsNotNone(payload["toolCalls"][0]["startedAt"])
+                self.assertIsNotNone(payload["toolCalls"][0]["finishedAt"])
+                self.assertEqual(payload["steps"][0]["id"], "prepare_assets")
+                self.assertEqual(len(payload["trace"]), 2)
+
+        import asyncio
+
+        run_read_service = AgentRunReadService(session_factory=self.session_factory)
+        with patch.object(agent_api_module, "run_read_service", run_read_service):
+            asyncio.run(_run())
+
+    def test_get_run_detail_returns_404_when_run_missing_or_belongs_to_other_session(self):
+        async def _run():
+            session = self.session_service.create_session("做一个产品介绍视频")
+            other_session = self.session_service.create_session("做一个备用会话")
+            run_id = None
+
+            with self.session_factory() as db:
+                run_repo = AgentRunRepository(db)
+                run_record = run_repo.create(
+                    session_id=other_session.id,
+                    trigger_type="user_message",
+                    status="succeeded",
+                    summary="已生成方案",
+                )
+                run_id = run_record.id
+                db.commit()
+
+            transport = httpx.ASGITransport(app=app)
+            async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as client:
+                missing_response = await client.get(f"/api/agent/sessions/{session.id}/runs/run-missing")
+                self.assertEqual(missing_response.status_code, 404)
+                self.assertEqual(missing_response.json()["detail"], "Run not found")
+
+                wrong_session_response = await client.get(
+                    f"/api/agent/sessions/{session.id}/runs/{run_id}"
+                )
+                self.assertEqual(wrong_session_response.status_code, 404)
+                self.assertEqual(wrong_session_response.json()["detail"], "Run not found")
+
+        import asyncio
+
+        from backend.app.agent.run_read_service import AgentRunReadService
+
+        run_read_service = AgentRunReadService(session_factory=self.session_factory)
+        with patch.object(agent_api_module, "run_read_service", run_read_service):
             asyncio.run(_run())
 
     def test_agent_session_response_includes_standard_steps_from_prompt_and_plan(self):
