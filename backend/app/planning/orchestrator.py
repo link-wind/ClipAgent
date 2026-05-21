@@ -401,6 +401,7 @@ class PlannerOrchestrator:
         select_step = None
         build_step = None
         build_summary_payload = None
+        selection_payload = {}
 
         try:
             if step_service is not None:
@@ -518,9 +519,14 @@ class PlannerOrchestrator:
                     level="error",
                     message=str(exc),
                     payload={
+                        **selection_payload,
                         "runType": run_type,
                         "message": str(exc),
-                        **({"skillRunSummary": build_summary_payload} if build_summary_payload else {}),
+                        "skillRunSummary": self._skill_run_failed_summary_payload(
+                            selection_payload=selection_payload,
+                            build_summary_payload=build_summary_payload,
+                            error_message=str(exc),
+                        ),
                     },
                 )
             )
@@ -595,4 +601,21 @@ class PlannerOrchestrator:
             "inputSummary": summary.input_summary,
             "outputSummary": summary.output_summary,
             "errorMessage": summary.error_message,
+        }
+
+    def _skill_run_failed_summary_payload(
+        self,
+        *,
+        selection_payload: dict,
+        build_summary_payload: dict | None,
+        error_message: str,
+    ) -> dict:
+        return {
+            "skillId": (build_summary_payload or {}).get("skillId") or selection_payload.get("skillId", ""),
+            "skillVersion": (build_summary_payload or {}).get("skillVersion")
+            or selection_payload.get("skillVersion", ""),
+            "status": "failed",
+            "inputSummary": (build_summary_payload or {}).get("inputSummary", ""),
+            "outputSummary": (build_summary_payload or {}).get("outputSummary", ""),
+            "errorMessage": error_message,
         }

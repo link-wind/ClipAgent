@@ -5,6 +5,7 @@ from uuid import uuid4
 from backend.db.repositories import AgentStepRepository, ToolCallRepository
 from backend.domain.tools.contracts import ToolCallRequest, ToolCallResult, ToolCallSummary
 from backend.runtime.trace_recorder import TraceEvent, TraceRecorder
+from backend.utils.time import utc_now_naive
 
 
 class ToolCallService:
@@ -18,6 +19,7 @@ class ToolCallService:
         request: ToolCallRequest,
         result: ToolCallResult,
     ) -> ToolCallSummary:
+        now = utc_now_naive()
         summary = ToolCallSummary(
             tool_id=request.tool_id,
             status=result.status,
@@ -39,6 +41,8 @@ class ToolCallService:
                 error_message=result.error_message,
                 actor=request.actor,
                 actor_role=request.actor_role,
+                started_at=now,
+                finished_at=now,
             )
 
         if self.trace_recorder is not None:

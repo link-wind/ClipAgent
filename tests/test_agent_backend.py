@@ -1259,6 +1259,238 @@ class AgentApiTests(unittest.TestCase):
         self.assertEqual(events[0].actor_role, "researcher")
         self.assertEqual(events[0].actor_id, "runtime-actor")
 
+    def test_tool_call_service_persists_finished_at_and_trace_payload_contract(self):
+        from backend.app.tools.tool_call_service import ToolCallService
+        from backend.db.repositories import (
+            AgentRunRepository,
+            AgentSessionRepository,
+            AgentStepRepository,
+            AgentTraceEventRepository,
+            ToolCallRepository,
+        )
+        from backend.domain.tools.contracts import ToolCallRequest, ToolCallResult
+        from backend.runtime.trace_recorder import TraceRecorder
+
+        with self.session_factory() as db:
+            session = AgentSessionRepository(db).create(
+                id="session-tool-2",
+                status="active",
+                progress=0.0,
+                active_operation_type="none",
+                planner_trace_json={},
+            )
+            run = AgentRunRepository(db).create(
+                id="run-tool-2",
+                session_id=session.id,
+                trigger_type="planning",
+                status="running",
+            )
+            step = AgentStepRepository(db).create(
+                id="step-tool-2",
+                session_id=session.id,
+                run_id=run.id,
+                step_key="retrieve_context",
+                title="Retrieve context",
+                description="",
+                status="running",
+            )
+            db.commit()
+
+            service = ToolCallService(
+                db_session=db,
+                tool_call_repository=ToolCallRepository(db),
+                trace_recorder=TraceRecorder(db),
+            )
+            request = ToolCallRequest(
+                session_id=session.id,
+                run_id=run.id,
+                step_id=step.id,
+                tool_id="read_project_knowledge",
+                arguments={"documentId": "doc-1"},
+                actor="runtime-actor",
+                actor_role="researcher",
+                permission_scope="project",
+            )
+            result = ToolCallResult(
+                status="succeeded",
+                data={"summary": "done"},
+                result_summary="done",
+                result_ref="tool:read_project_knowledge",
+                error_message="",
+            )
+
+            service.record_tool_call(request, result)
+            db.commit()
+            tool_calls = ToolCallRepository(db).list_for_run(run.id)
+            events = AgentTraceEventRepository(db).list_for_session(session.id)
+
+        self.assertEqual(len(tool_calls), 1)
+        self.assertIsNotNone(tool_calls[0].started_at)
+        self.assertIsNotNone(tool_calls[0].finished_at)
+        self.assertEqual(tool_calls[0].actor, "runtime-actor")
+        self.assertEqual(tool_calls[0].actor_role, "researcher")
+        self.assertEqual(events[0].payload_json["toolId"], "read_project_knowledge")
+        self.assertEqual(events[0].payload_json["resultRef"], "tool:read_project_knowledge")
+        self.assertEqual(events[0].payload_json["status"], "succeeded")
+
+    def test_planner_orchestrator_failure_payload_keeps_skill_selection_contract(self):
+        from backend.app.planning.orchestrator import PlannerOrchestrator
+        from backend.db.repositories import AgentRunRepository, AgentSessionRepository, AgentTraceEventRepository
+        from backend.domain.skills.contracts import PlannerRequest, SkillRunSummary, SkillSelection
+
+        class StubSkillEngine:
+            def select_skill(self, request):
+                self.request = request
+                return SkillSelection(
+                    skill_id="builtin.product_intro_video",
+                    version="0.1.0",
+                    reason="selected",
+                )
+
+            def build_planner_request(self, request, selection):
+                self.build_request = (request, selection)
+                return SimpleNamespace(
+                    summary=SkillRunSummary(
+                        skill_id=selection.skill_id,
+                        skill_version=selection.version,
+                        status="failed",
+                        input_summary="输入概要",
+                        output_summary="",
+                        error_message="handler import failed",
+                    ),
+                    planner_request=None,
+                )
+
+        with self.session_factory() as db:
+            session = AgentSessionRepository(db).create(
+                id="session-plan-2",
+                status="active",
+                progress=0.0,
+                active_operation_type="none",
+                planner_trace_json={},
+            )
+            run = AgentRunRepository(db).create(
+                id="run-plan-2",
+                session_id=session.id,
+                trigger_type="user_message",
+                status="running",
+            )
+            db.commit()
+
+            orchestrator = PlannerOrchestrator(skill_engine=StubSkillEngine())
+
+            with self.assertRaisesRegex(RuntimeError, "handler import failed"):
+                orchestrator._record_skill_observability(
+                    db=db,
+                    session_record=session,
+                    run_id=run.id,
+                    run_type="initial_planning",
+                    user_message="做一个产品介绍视频",
+                )
+
+            events = AgentTraceEventRepository(db).list_for_run(run.id)
+
+        self.assertIn("skill_selected", [event.event_type for event in events])
+        self.assertIn("skill_run_failed", [event.event_type for event in events])
+        failed_payload = events[-1].payload_json
+        self.assertEqual(failed_payload["runType"], "initial_planning")
+        self.assertEqual(failed_payload["skillId"], "builtin.product_intro_video")
+        self.assertEqual(failed_payload["skillVersion"], "0.1.0")
+        self.assertEqual(failed_payload["reason"], "selected")
+        self.assertEqual(failed_payload["skillRunSummary"]["skillId"], "builtin.product_intro_video")
+        self.assertEqual(failed_payload["skillRunSummary"]["skillVersion"], "0.1.0")
+        self.assertEqual(failed_payload["skillRunSummary"]["status"], "failed")
+        self.assertEqual(failed_payload["skillRunSummary"]["errorMessage"], "handler import failed")
+
+    def test_planner_orchestrator_failure_payload_overrides_success_summary_after_build(self):
+        from backend.app.planning.orchestrator import PlannerOrchestrator
+        from backend.db.repositories import AgentRunRepository, AgentSessionRepository, AgentTraceEventRepository
+        from backend.domain.skills.contracts import PlannerRequest, SkillRunSummary, SkillSelection
+        from backend.app.agent.step_service import AgentStepService
+
+        class StubSkillEngine:
+            def select_skill(self, request):
+                self.request = request
+                return SkillSelection(
+                    skill_id="builtin.product_intro_video",
+                    version="0.1.0",
+                    reason="selected",
+                )
+
+            def build_planner_request(self, request, selection):
+                self.build_request = (request, selection)
+                return SimpleNamespace(
+                    summary=SkillRunSummary(
+                        skill_id=selection.skill_id,
+                        skill_version=selection.version,
+                        status="succeeded",
+                        input_summary="输入概要",
+                        output_summary="输出概要",
+                        error_message="",
+                    ),
+                    planner_request=PlannerRequest(
+                        action="build_planner_request",
+                        system_prompt="",
+                        messages=[],
+                        context_items=[],
+                        output_schema={},
+                        constraints={},
+                        failure_context={},
+                        retry_strategy_hint="",
+                        failed_scene_ids=[],
+                    ),
+                )
+
+        call_count = {"count": 0}
+
+        def fail_on_second_succeed_step(*args, **kwargs):
+            call_count["count"] += 1
+            if call_count["count"] == 2:
+                raise RuntimeError("step service failed after successful build")
+            return None
+
+        with self.session_factory() as db:
+            session = AgentSessionRepository(db).create(
+                id="session-plan-3",
+                status="active",
+                progress=0.0,
+                active_operation_type="none",
+                planner_trace_json={},
+            )
+            run = AgentRunRepository(db).create(
+                id="run-plan-3",
+                session_id=session.id,
+                trigger_type="user_message",
+                status="running",
+            )
+            db.commit()
+
+            orchestrator = PlannerOrchestrator(skill_engine=StubSkillEngine())
+
+            with patch.object(AgentStepService, "succeed_step", side_effect=fail_on_second_succeed_step):
+                with self.assertRaisesRegex(RuntimeError, "step service failed after successful build"):
+                    orchestrator._record_skill_observability(
+                        db=db,
+                        session_record=session,
+                        run_id=run.id,
+                        run_type="initial_planning",
+                        user_message="做一个产品介绍视频",
+                    )
+
+            events = AgentTraceEventRepository(db).list_for_run(run.id)
+
+        failed_event = next(event for event in events if event.event_type == "skill_run_failed")
+        failed_payload = failed_event.payload_json
+        self.assertEqual(failed_payload["skillRunSummary"]["status"], "failed")
+        self.assertEqual(
+            failed_payload["skillRunSummary"]["errorMessage"],
+            "step service failed after successful build",
+        )
+        self.assertEqual(failed_payload["skillId"], "builtin.product_intro_video")
+        self.assertEqual(failed_payload["skillVersion"], "0.1.0")
+        self.assertEqual(failed_payload["reason"], "selected")
+        self.assertEqual(failed_payload["runType"], "initial_planning")
+
     def test_get_session_returns_created_session(self):
         from backend.main import app
 

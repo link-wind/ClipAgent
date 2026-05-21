@@ -125,6 +125,17 @@ class AgentRuntimeArchitectureTests(unittest.TestCase):
         self.assertIn("self.run_assembler = RunReadModelAssembler()", source)
         self.assertNotIn("SessionReadModelAssembler", source)
 
+    def test_run_detail_mapping_stays_inside_run_assembler_boundary(self) -> None:
+        api_source = (ROOT / "backend" / "api" / "agent.py").read_text(encoding="utf-8")
+        run_read_service_source = (ROOT / "backend" / "app" / "agent" / "run_read_service.py").read_text(encoding="utf-8")
+
+        for source, context in (
+            (api_source, "backend.api.agent"),
+            (run_read_service_source, "backend.app.agent.run_read_service"),
+        ):
+            self.assertNotIn("AgentToolCallSummary(", source, context)
+            self.assertNotIn("AgentSkillActivity(", source, context)
+
     def test_application_boundary_reexports_existing_use_cases(self) -> None:
         session_use_cases = importlib.import_module("backend.app.agent.session_use_cases")
         job_use_cases = importlib.import_module("backend.app.execution.job_use_cases")
