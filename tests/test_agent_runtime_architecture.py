@@ -102,6 +102,7 @@ class AgentRuntimeArchitectureTests(unittest.TestCase):
     def test_read_model_assembler_boundary_files_exist(self) -> None:
         expected_paths = [
             "backend/app/read_models/__init__.py",
+            "backend/app/read_models/run_assembler.py",
             "backend/app/read_models/session_assembler.py",
             "backend/app/read_models/step_assembler.py",
             "backend/app/read_models/trace_assembler.py",
@@ -109,6 +110,20 @@ class AgentRuntimeArchitectureTests(unittest.TestCase):
 
         for relative_path in expected_paths:
             self.assertTrue((ROOT / relative_path).is_file(), relative_path)
+
+    def test_run_observability_read_path_uses_run_assembler_boundary(self) -> None:
+        source_path = ROOT / "backend" / "app" / "agent" / "run_read_service.py"
+        self.assertTrue(source_path.is_file(), str(source_path))
+        source = source_path.read_text(encoding="utf-8")
+        module = ast.parse(source)
+
+        self.assertTrue(
+            any(isinstance(node, ast.ClassDef) and node.name == "AgentRunReadService" for node in module.body),
+            "AgentRunReadService must be implemented in backend.app.agent.run_read_service",
+        )
+        self.assertIn("from backend.app.read_models.run_assembler import RunReadModelAssembler", source)
+        self.assertIn("self.run_assembler = RunReadModelAssembler()", source)
+        self.assertNotIn("SessionReadModelAssembler", source)
 
     def test_application_boundary_reexports_existing_use_cases(self) -> None:
         session_use_cases = importlib.import_module("backend.app.agent.session_use_cases")
